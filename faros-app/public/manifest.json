@@ -1,0 +1,16 @@
+{
+  "name": "Faros Training",
+  "short_name": "Faros",
+  "description": "Plataforma de entrenamiento de natación de élite",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050505",
+  "theme_color": "#e6ff00",
+  "orientation": "portrait-primary",
+  "lang": "es",
+  "categories": ["sports", "health", "fitness"],
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
