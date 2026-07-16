@@ -1,16 +1,38 @@
 {
+  "id": "/",
   "name": "Faros Training",
   "short_name": "Faros",
-  "description": "Plataforma de entrenamiento de natación de élite",
+  "description": "Plataforma integral de entrenamiento acuático de élite. Planes, asistencia, rankings y analítica en tiempo real.",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
   "background_color": "#050505",
-  "theme_color": "#e6ff00",
+  "theme_color": "#050505",
   "orientation": "portrait-primary",
   "lang": "es",
+  "dir": "ltr",
   "categories": ["sports", "health", "fitness"],
   "icons": [
     { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
-  ]
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    {
+      "name": "Mi Dashboard",
+      "short_name": "Dashboard",
+      "description": "Ir directo a tu panel de entrenamiento",
+      "url": "/dashboard",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Portal Entrenador",
+      "short_name": "Portal",
+      "description": "Gestión de clases y asistencia",
+      "url": "/portal",
+      "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }]
+    }
+  ],
+  "prefer_related_applications": false
 }
