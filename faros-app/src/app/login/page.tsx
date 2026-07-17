@@ -2,11 +2,14 @@
 
 // ============================================================
 // FAROS — Login
+// Paso intermedio entre la landing y los paneles: si ya hay
+// sesión, salta directo al panel del rol; siempre ofrece
+// retorno a la landing (logo + enlace explícito).
 // Split layout: cinematic brand video (left) + form (right).
-// The horizontal video shows the Faros lighthouse logo forming.
 // ============================================================
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { motion } from 'motion/react'
 import { useAuth } from '@/contexts/AuthContext'
@@ -19,10 +22,17 @@ const ROLE_HOME: Record<string, string> = {
 
 export default function LoginPage() {
   const router = useRouter()
-  const { signIn, error, clearError, isMockMode } = useAuth()
+  const { user, loading: authLoading, signIn, error, clearError, isMockMode } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+
+  // Con sesión activa el login no aporta nada: directo al panel.
+  useEffect(() => {
+    if (!authLoading && user) {
+      router.replace(ROLE_HOME[user.role] ?? '/dashboard')
+    }
+  }, [user, authLoading, router])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -93,13 +103,27 @@ export default function LoginPage() {
             </video>
             <div className="absolute inset-0 bg-gradient-to-t from-[#050505] to-transparent" />
             <div className="absolute bottom-4 left-4">
-              <FarosWordmark size="sm" />
+              <Link href="/" aria-label="Volver a la página principal">
+                <FarosWordmark size="sm" />
+              </Link>
             </div>
           </div>
 
-          <div className="hidden lg:block mb-8">
-            <FarosWordmark />
+          <div className="hidden lg:flex items-center justify-between mb-8">
+            <Link href="/" aria-label="Volver a la página principal">
+              <FarosWordmark />
+            </Link>
           </div>
+
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 label-caps text-[10px] text-[var(--color-on-surface-variant)] hover:text-[var(--color-primary-fixed)] transition-colors duration-200 mb-6 group"
+          >
+            <span className="material-symbols-outlined text-[16px] transition-transform duration-200 group-hover:-translate-x-0.5">
+              arrow_back
+            </span>
+            Volver al inicio
+          </Link>
 
           <p className="label-caps text-[10px] text-[var(--color-primary-fixed)] mb-3">
             Acceso de atletas

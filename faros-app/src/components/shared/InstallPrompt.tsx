@@ -62,7 +62,7 @@ export function InstallPrompt() {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 24 }}
           transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
-          className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[200] w-[calc(100%-2.5rem)] max-w-sm"
+          className="fixed bottom-24 md:bottom-6 left-1/2 -translate-x-1/2 z-[200] w-[calc(100%-2.5rem)] max-w-sm"
           role="dialog"
           aria-label="Instalar aplicación"
         >

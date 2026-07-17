@@ -403,19 +403,22 @@ export default function LandingPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10 md:items-end">
             {PLANES.map((plan, i) => (
               <Reveal key={plan.id} delay={0.07 * i}>
-                <div
-                  className={`liquid-glass rounded-3xl p-8 md:p-10 flex flex-col ${
-                    plan.featured
-                      ? '!border-[var(--color-primary-fixed)] shadow-[0_0_40px_rgba(230,255,0,0.15)] relative md:-translate-y-4'
-                      : ''
-                  }`}
-                >
+                {/* Wrapper relativo: el badge vive FUERA del liquid-glass
+                    (overflow:hidden) para que nunca se recorte. */}
+                <div className={`relative ${plan.featured ? 'md:-translate-y-4 pt-4' : ''}`}>
+                  {plan.featured && (
+                    <div className="absolute top-0 left-1/2 -translate-x-1/2 z-20 bg-[var(--color-primary-fixed)] text-black label-caps text-[10px] px-5 py-2 rounded-full shadow-[0_0_20px_rgba(230,255,0,0.4)] whitespace-nowrap">
+                      Recomendado
+                    </div>
+                  )}
+                  <div
+                    className={`liquid-glass rounded-3xl p-8 md:p-10 flex flex-col ${
+                      plan.featured
+                        ? '!border-[var(--color-primary-fixed)] shadow-[0_0_40px_rgba(230,255,0,0.15)]'
+                        : ''
+                    }`}
+                  >
                   <div className="relative z-10 flex flex-col h-full">
-                    {plan.featured && (
-                      <div className="absolute -top-13 left-1/2 -translate-x-1/2 bg-[var(--color-primary-fixed)] text-black label-caps text-[10px] px-5 py-2 rounded-full shadow-[0_0_20px_rgba(230,255,0,0.4)] whitespace-nowrap">
-                        Recomendado
-                      </div>
-                    )}
                     <div className={`text-center mb-8 pb-8 border-b ${plan.featured ? 'border-[rgba(230,255,0,0.2)] pt-2' : 'border-white/10'}`}>
                       <h3 className="font-display text-headline-md font-extrabold text-white uppercase mb-3 tracking-wide">{plan.name}</h3>
                       <p className={`font-display font-black flex items-baseline justify-center ${plan.featured ? 'text-[var(--color-primary-fixed)] text-6xl drop-shadow-[0_0_15px_rgba(230,255,0,0.4)]' : 'text-white text-5xl'}`}>
@@ -463,6 +466,7 @@ export default function LandingPage() {
                     >
                       Elegir {plan.name}
                     </Link>
+                  </div>
                   </div>
                 </div>
               </Reveal>

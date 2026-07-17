@@ -136,7 +136,7 @@ export default function AdminPage() {
                     >
                       {kpi.delta}
                     </span>
-                    <span className="text-[10px] text-[var(--color-on-surface-variant)]/40 uppercase">{kpi.deltaLabel}</span>
+                    <span className="text-[10px] text-[var(--color-on-surface-variant)]/60 uppercase">{kpi.deltaLabel}</span>
                   </div>
                 )}
                 {kpi.progress !== undefined && (
@@ -201,7 +201,7 @@ export default function AdminPage() {
                           boxShadow: '0 0 15px rgba(230,255,0,0.2)',
                         }}
                       />
-                      <span className="mt-5 text-[10px] font-black uppercase text-[var(--color-on-surface-variant)]/40 tracking-[0.2em]">
+                      <span className="mt-5 text-[10px] font-black uppercase text-[var(--color-on-surface-variant)]/60 tracking-[0.2em]">
                         {bar.mes}
                       </span>
                     </div>
@@ -252,7 +252,7 @@ export default function AdminPage() {
                           <button
                             onClick={() => resolver(a.id)}
                             aria-label={`Rechazar ${a.titulo}`}
-                            className="w-9 h-9 flex items-center justify-center text-[var(--color-on-surface-variant)]/40 hover:text-[var(--color-danger-crimson)] hover:bg-[rgba(239,68,68,0.1)] rounded-xl transition-colors duration-200 active:scale-[0.94]"
+                            className="w-9 h-9 flex items-center justify-center text-[var(--color-on-surface-variant)]/60 hover:text-[var(--color-danger-crimson)] hover:bg-[rgba(239,68,68,0.1)] rounded-xl transition-colors duration-200 active:scale-[0.94]"
                           >
                             <span className="material-symbols-outlined text-[20px]">close</span>
                           </button>
@@ -317,7 +317,7 @@ export default function AdminPage() {
                 <thead>
                   <tr className="border-b border-white/5 bg-white/[0.01]">
                     {['Usuario', 'Estado', 'Asistencia', 'Standing', ''].map((h) => (
-                      <th key={h} className="px-6 md:px-8 py-5 label-caps text-[9px] text-[var(--color-on-surface-variant)]/40">
+                      <th key={h} className="px-6 md:px-8 py-5 label-caps text-[9px] text-[var(--color-on-surface-variant)]/60">
                         {h}
                       </th>
                     ))}
@@ -335,7 +335,7 @@ export default function AdminPage() {
                             </span>
                             <div>
                               <p className="font-black text-white text-[15px]">{u.nombre}</p>
-                              <p className="text-[10px] text-[var(--color-on-surface-variant)]/40 uppercase tracking-widest font-bold mt-0.5">
+                              <p className="text-[10px] text-[var(--color-on-surface-variant)]/60 uppercase tracking-widest font-bold mt-0.5">
                                 {u.rol}
                               </p>
                             </div>

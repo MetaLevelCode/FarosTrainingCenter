@@ -70,14 +70,14 @@ export default function DashboardPage() {
               </h2>
               <div className="flex flex-wrap gap-8">
                 <div className="flex flex-col">
-                  <span className="label-caps text-[var(--color-on-surface-variant)]/40 mb-1">Tier</span>
+                  <span className="label-caps text-[var(--color-on-surface-variant)]/60 mb-1">Tier</span>
                   <span className="font-display text-headline-md font-extrabold text-white uppercase">
                     {user?.tier ?? 'Swim Pro'}
                   </span>
                 </div>
                 <div className="w-px h-10 bg-white/10 hidden sm:block" />
                 <div className="flex flex-col">
-                  <span className="label-caps text-[var(--color-on-surface-variant)]/40 mb-1">Estado</span>
+                  <span className="label-caps text-[var(--color-on-surface-variant)]/60 mb-1">Estado</span>
                   <span className="flex items-center gap-2 text-[var(--color-success-emerald)] font-display font-extrabold">
                     <span className="w-2.5 h-2.5 rounded-full bg-[var(--color-success-emerald)] shadow-[0_0_10px_#10B981]" />
                     Activo
@@ -85,7 +85,7 @@ export default function DashboardPage() {
                 </div>
                 <div className="w-px h-10 bg-white/10 hidden sm:block" />
                 <div className="flex flex-col">
-                  <span className="label-caps text-[var(--color-on-surface-variant)]/40 mb-1">Rating</span>
+                  <span className="label-caps text-[var(--color-on-surface-variant)]/60 mb-1">Rating</span>
                   <span className="font-display text-headline-md font-extrabold text-[var(--color-primary-fixed)]">91.2%</span>
                 </div>
               </div>
@@ -173,7 +173,7 @@ export default function DashboardPage() {
                               : 'bg-white/5 hover:bg-[rgba(230,255,0,0.2)] transition-colors duration-200'
                           }`}
                         />
-                        <span className={`label-caps text-[9px] ${actual ? 'text-[var(--color-primary-fixed)]' : 'text-[var(--color-on-surface-variant)]/40'}`}>
+                        <span className={`label-caps text-[9px] ${actual ? 'text-[var(--color-primary-fixed)]' : 'text-[var(--color-on-surface-variant)]/60'}`}>
                           {v.semana}
                         </span>
                       </div>
@@ -194,7 +194,7 @@ export default function DashboardPage() {
                 </div>
                 <div className="flex items-baseline gap-3 mb-6">
                   <span className="font-display text-display-lg font-black text-white leading-none">12</span>
-                  <span className="label-caps text-[var(--color-on-surface-variant)]/40">/ 20 sesiones</span>
+                  <span className="label-caps text-[var(--color-on-surface-variant)]/60">/ 20 sesiones</span>
                 </div>
                 <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden mb-4">
                   <div className="h-full bg-[var(--color-primary-fixed)] w-[60%] shadow-[0_0_15px_rgba(230,255,0,0.4)] rounded-full" />
@@ -231,7 +231,7 @@ export default function DashboardPage() {
                       <div className={`w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-black ${
                         r.you ? 'bg-[var(--color-primary-fixed)] text-black' : 'bg-white/10 border border-white/10 text-white'
                       }`}>
-                        {r.name.slice(0, 2).toUpperCase()}
+                        {r.name.split(' ').map((p) => p.replace(/[^\p{L}]/gu, '')[0] ?? '').slice(0, 2).join('').toUpperCase()}
                       </div>
                       <span className={`flex-1 label-caps ${r.you ? 'text-white font-black' : 'text-[var(--color-on-surface-variant)]/70'}`}>
                         {r.name}
@@ -265,7 +265,7 @@ export default function DashboardPage() {
                       <span className="block font-display text-sm font-extrabold text-white uppercase group-hover/card:text-[var(--color-primary-fixed)] transition-colors duration-200">
                         {g.nombre}
                       </span>
-                      <span className="block text-[11px] text-[var(--color-on-surface-variant)]/40 label-caps mt-1">
+                      <span className="block text-[11px] text-[var(--color-on-surface-variant)]/60 label-caps mt-1">
                         {g.detalle}
                       </span>
                     </div>
