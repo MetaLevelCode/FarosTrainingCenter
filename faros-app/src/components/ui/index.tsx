@@ -5,7 +5,7 @@
 // ============================================================
 
 import { motion, HTMLMotionProps } from 'motion/react'
-import { forwardRef, ReactNode } from 'react'
+import { forwardRef, ReactNode, useId } from 'react'
 
 // ── BUTTON ──
 type ButtonVariant = 'primary' | 'outline' | 'ghost' | 'danger'
@@ -99,15 +99,18 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
-  { label, error, className = '', ...props }, ref,
+  { label, error, id: idProp, className = '', ...props }, ref,
 ) {
+  const autoId = useId()
+  const id = idProp ?? autoId
   return (
     <div className="flex flex-col gap-2">
       {label && (
-        <label className="label-caps text-[10px] text-[var(--color-on-surface-variant)]">{label}</label>
+        <label htmlFor={id} className="label-caps text-[10px] text-[var(--color-on-surface-variant)]">{label}</label>
       )}
       <input
         ref={ref}
+        id={id}
         className={`
           w-full bg-white/5 border border-white/5 rounded-2xl px-6 py-4
           text-[var(--color-on-surface)] placeholder:text-[var(--color-on-surface-variant)]/30

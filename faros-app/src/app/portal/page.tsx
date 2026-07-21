@@ -56,7 +56,7 @@ const ALUMNOS_INICIALES = [
 ]
 
 function iniciales(nombre: string) {
-  return nombre.split(' ').map((p) => p[0]).slice(0, 2).join('').toUpperCase()
+  return nombre.split(' ').filter(Boolean).map((p) => p[0]).slice(0, 2).join('').toUpperCase()
 }
 
 export default function PortalPage() {
