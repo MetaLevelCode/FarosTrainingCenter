@@ -55,8 +55,9 @@ export default function LoginPage() {
         <div className="bg-zinc-900/80 backdrop-blur-sm border border-zinc-800 rounded-2xl p-8 shadow-2xl animate-fade-in-up [animation-delay:0.1s]">
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="animate-slide-right stagger-1">
-              <label className="block text-xs font-semibold text-zinc-400 mb-2 uppercase tracking-wider">Correo</label>
+              <label htmlFor="login-email" className="block text-xs font-semibold text-zinc-400 mb-2 uppercase tracking-wider">Correo</label>
               <input
+                id="login-email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -67,8 +68,9 @@ export default function LoginPage() {
             </div>
 
             <div className="animate-slide-right stagger-2">
-              <label className="block text-xs font-semibold text-zinc-400 mb-2 uppercase tracking-wider">Contraseña</label>
+              <label htmlFor="login-password" className="block text-xs font-semibold text-zinc-400 mb-2 uppercase tracking-wider">Contraseña</label>
               <input
+                id="login-password"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
