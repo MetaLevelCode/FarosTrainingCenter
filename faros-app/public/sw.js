@@ -8,7 +8,7 @@
 //   · Firebase / APIs ............ never intercepted
 // Bump VERSION on every deploy that should invalidate caches.
 // ============================================================
-const VERSION = 'faros-v2'
+const VERSION = 'faros-v3'
 const PRECACHE = `${VERSION}-precache`
 const RUNTIME = `${VERSION}-runtime`
 const MEDIA = `${VERSION}-media`
@@ -130,8 +130,7 @@ self.addEventListener('fetch', (e) => {
     return
   }
 
-  // Everything else same-origin: stale-while-revalidate
-  if (url.origin === self.location.origin) {
-    e.respondWith(staleWhileRevalidate(request, RUNTIME))
-  }
+  // Anything else (RSC payloads, JSON, un-hashed dev assets) goes
+  // straight to the network: caching those causes stale-JS-vs-fresh-HTML
+  // hydration mismatches after each deploy.
 })
