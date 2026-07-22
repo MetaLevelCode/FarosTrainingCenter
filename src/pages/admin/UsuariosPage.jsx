@@ -7,6 +7,7 @@ const FILTROS = ["Todos", "Estudiante", "Profesor"];
 export default function UsuariosPage() {
   const [usuarios, setUsuarios] = useState([]);
   const [loading, setLoading] = useState(true);
+  
   const [filtro, setFiltro] = useState("Todos");
   const [busqueda, setBusqueda] = useState("");
   const [seleccionado, setSeleccionado] = useState(null);
@@ -52,11 +53,11 @@ export default function UsuariosPage() {
   }
 
   return (
-    <div className="p-4 md:p-8 animate-fade-in-up">
+    <div className="p-8 animate-fade-in-up">
 
       {/* Header */}
-      <div className="mb-6 md:mb-8">
-        <h2 className="text-2xl md:text-3xl font-black text-gray-900 dark:text-white tracking-tight transition-colors duration-300">
+      <div className="mb-8">
+        <h2 className="text-3xl font-black text-gray-900 dark:text-white tracking-tight transition-colors duration-300">
           Usuarios
         </h2>
         <p className="text-sm text-gray-500 dark:text-zinc-500 mt-1 transition-colors duration-300">
@@ -65,18 +66,18 @@ export default function UsuariosPage() {
       </div>
 
       {/* Stats rápidas */}
-      <div className="grid grid-cols-3 gap-3 md:gap-4 mb-6 md:mb-8">
+      <div className="grid grid-cols-3 gap-4 mb-8">
         {[
           { label: "Total", value: usuarios.length, color: "text-gray-900 dark:text-white" },
-          { label: "Estudiantes", value: usuarios.filter(u => u.Rol === "Estudiante").length, color: "text-[#FAFE00]" },
-          { label: "Profesores", value: usuarios.filter(u => u.Rol === "Profesor").length, color: "text-blue-400" },
+          { label: "Estudiantes", value: usuarios.filter(u => u.Rol === "Estudiante").length, color: "text-[#b8bc00] dark:text-[#FAFE00]" },
+          { label: "Profesores", value: usuarios.filter(u => u.Rol === "Profesor").length, color: "text-blue-500 dark:text-blue-400" },
         ].map((stat, i) => (
           <div
             key={stat.label}
-            className={`bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-2xl p-3 md:p-5 transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 animate-fade-in-up stagger-${i + 1}`}
+            className={`bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-2xl p-5 transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5 animate-fade-in-up stagger-${i + 1}`}
           >
             <p className="text-xs font-semibold text-gray-400 dark:text-zinc-500 uppercase tracking-wider mb-1 transition-colors duration-300">{stat.label}</p>
-            <p className={`text-2xl md:text-3xl font-black ${stat.color} transition-colors duration-300`}>{stat.value}</p>
+            <p className={`text-3xl font-black ${stat.color} transition-colors duration-300`}>{stat.value}</p>
           </div>
         ))}
       </div>
@@ -134,91 +135,60 @@ export default function UsuariosPage() {
           <p className="text-gray-400 dark:text-zinc-600 text-sm">No se encontraron usuarios</p>
         </div>
       ) : (
-        <>
-          {/* Tabla — solo desktop */}
-          <div className="hidden md:block bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-zinc-800 overflow-hidden shadow-sm transition-colors duration-300 animate-fade-in-up stagger-5">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-900/50">
-                  <th className="text-left px-6 py-4 font-semibold text-gray-500 dark:text-zinc-400 text-xs uppercase tracking-wider">Nombre</th>
-                  <th className="text-left px-6 py-4 font-semibold text-gray-500 dark:text-zinc-400 text-xs uppercase tracking-wider">Rol</th>
-                  <th className="text-left px-6 py-4 font-semibold text-gray-500 dark:text-zinc-400 text-xs uppercase tracking-wider">Documento</th>
-                  <th className="text-left px-6 py-4 font-semibold text-gray-500 dark:text-zinc-400 text-xs uppercase tracking-wider">Teléfono</th>
-                  <th className="text-left px-6 py-4 font-semibold text-gray-500 dark:text-zinc-400 text-xs uppercase tracking-wider">Clases</th>
+        <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-200 dark:border-zinc-800 overflow-hidden shadow-sm transition-colors duration-300 animate-fade-in-up stagger-5">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-900/50 transition-colors duration-300">
+                <th className="text-left px-6 py-4 font-semibold text-gray-500 dark:text-zinc-400 text-xs uppercase tracking-wider transition-colors duration-300">Nombre</th>
+                <th className="text-left px-6 py-4 font-semibold text-gray-500 dark:text-zinc-400 text-xs uppercase tracking-wider transition-colors duration-300">Rol</th>
+                <th className="text-left px-6 py-4 font-semibold text-gray-500 dark:text-zinc-400 text-xs uppercase tracking-wider transition-colors duration-300">Documento</th>
+                <th className="text-left px-6 py-4 font-semibold text-gray-500 dark:text-zinc-400 text-xs uppercase tracking-wider transition-colors duration-300">Teléfono</th>
+                <th className="text-left px-6 py-4 font-semibold text-gray-500 dark:text-zinc-400 text-xs uppercase tracking-wider transition-colors duration-300">Clases</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50 dark:divide-zinc-800 transition-colors duration-300">
+              {filtrados.map((u, i) => (
+                <tr
+                  key={u.id}
+                  onClick={() => setSeleccionado(u)}
+                  className={`hover:bg-gray-50 dark:hover:bg-zinc-800/70 cursor-pointer transition-all duration-150 hover:shadow-sm animate-fade-in-up`}
+                  style={{ animationDelay: `${i * 0.04}s` }}
+                >
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-3">
+                      {u.Foto ? (
+                        <img src={u.Foto} className="w-9 h-9 rounded-full object-cover ring-2 ring-gray-100 dark:ring-zinc-800 transition-all duration-200 hover:ring-[#FAFE00]" alt="" />
+                      ) : (
+                        <div className="w-9 h-9 rounded-full bg-[#FAFE00] flex items-center justify-center text-xs text-black font-black transition-transform duration-200 hover:scale-110">
+                          {u.NombreCompleto?.[0] || "?"}
+                        </div>
+                      )}
+                      <span className="font-semibold text-gray-900 dark:text-white transition-colors duration-300">{u.NombreCompleto || "—"}</span>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold transition-all duration-200 ${
+                      u.Rol === "Profesor"
+                        ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
+                        : "bg-[#FAFE00]/15 text-[#b8bc00] dark:text-[#FAFE00]"
+                    }`}>
+                      {u.Rol || "—"}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-gray-500 dark:text-zinc-400 transition-colors duration-300">{u.Documento || "—"}</td>
+                  <td className="px-6 py-4 text-gray-500 dark:text-zinc-400 transition-colors duration-300">{telefono(u)}</td>
+                  <td className="px-6 py-4">
+                    <span className="text-gray-500 dark:text-zinc-400 transition-colors duration-300">
+                      {u.Rol === "Estudiante"
+                        ? `${u.ClasesDisponibles ?? "—"} disponibles`
+                        : `${u.ClasesDadas ?? "—"} dadas`}
+                    </span>
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50 dark:divide-zinc-800">
-                {filtrados.map((u, i) => (
-                  <tr
-                    key={u.id}
-                    onClick={() => setSeleccionado(u)}
-                    className="hover:bg-gray-50 dark:hover:bg-zinc-800/70 cursor-pointer transition-all duration-150 animate-fade-in-up"
-                    style={{ animationDelay: `${i * 0.04}s` }}
-                  >
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        {u.Foto ? (
-                          <img src={u.Foto} className="w-9 h-9 rounded-full object-cover ring-2 ring-gray-100 dark:ring-zinc-800 hover:ring-[#FAFE00] transition-all duration-200" alt="" />
-                        ) : (
-                          <div className="w-9 h-9 rounded-full bg-[#FAFE00] flex items-center justify-center text-xs text-black font-black hover:scale-110 transition-transform duration-200">
-                            {u.NombreCompleto?.[0] || "?"}
-                          </div>
-                        )}
-                        <span className="font-semibold text-gray-900 dark:text-white">{u.NombreCompleto || "—"}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${
-                        u.Rol === "Profesor"
-                          ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
-                          : "bg-[#FAFE00] text-black dark:bg-[#FAFE00]/15 dark:text-[#FAFE00]"
-                      }`}>{u.Rol || "—"}</span>
-                    </td>
-                    <td className="px-6 py-4 text-gray-500 dark:text-zinc-400">{u.Documento || "—"}</td>
-                    <td className="px-6 py-4 text-gray-500 dark:text-zinc-400">{telefono(u)}</td>
-                    <td className="px-6 py-4 text-gray-500 dark:text-zinc-400">
-                      {u.Rol === "Estudiante" ? `${u.ClasesDisponibles ?? "—"} disponibles` : `${u.ClasesDadas ?? "—"} dadas`}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Cards — solo móvil */}
-          <div className="md:hidden space-y-3 animate-fade-in-up stagger-5">
-            {filtrados.map((u, i) => (
-              <div
-                key={u.id}
-                onClick={() => setSeleccionado(u)}
-                className="bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-2xl p-4 flex items-center gap-4 cursor-pointer active:scale-[0.98] transition-all duration-150 hover:shadow-md animate-fade-in-up"
-                style={{ animationDelay: `${i * 0.04}s` }}
-              >
-                {u.Foto ? (
-                  <img src={u.Foto} className="w-12 h-12 rounded-full object-cover ring-2 ring-gray-100 dark:ring-zinc-700 flex-shrink-0" alt="" />
-                ) : (
-                  <div className="w-12 h-12 rounded-full bg-[#FAFE00] flex items-center justify-center text-base text-black font-black flex-shrink-0">
-                    {u.NombreCompleto?.[0] || "?"}
-                  </div>
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-gray-900 dark:text-white truncate">{u.NombreCompleto || "—"}</p>
-                  <p className="text-xs text-gray-400 dark:text-zinc-500 mt-0.5">{u.Documento || "—"} · {telefono(u)}</p>
-                </div>
-                <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-                  <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                    u.Rol === "Profesor"
-                      ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
-                      : "bg-[#FAFE00] text-black dark:bg-[#FAFE00]/15 dark:text-[#FAFE00]"
-                  }`}>{u.Rol || "—"}</span>
-                  <span className="text-xs text-gray-400 dark:text-zinc-500">
-                    {u.Rol === "Estudiante" ? `${u.ClasesDisponibles ?? "—"} cls` : `${u.ClasesDadas ?? "—"} dadas`}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {/* Modal de detalle */}
@@ -246,7 +216,7 @@ export default function UsuariosPage() {
                   <span className={`inline-flex mt-1 px-3 py-0.5 rounded-full text-xs font-semibold ${
                     seleccionado.Rol === "Profesor"
                       ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300"
-                      : "bg-[#FAFE00] text-black dark:bg-[#FAFE00]/15 dark:text-[#FAFE00]"
+                      : "bg-[#FAFE00]/15 text-[#b8bc00] dark:text-[#FAFE00]"
                   }`}>
                     {seleccionado.Rol || "—"}
                   </span>
