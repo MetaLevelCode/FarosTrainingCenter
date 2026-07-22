@@ -1,0 +1,172 @@
+=== ESTRUCTURA COMPLETA DE FIRESTORE ===
+
+📦 COLECCIÓN: caja_negra
+========================================
+
+  📄 DOCUMENTO: LsH0yAG14dRFrjRW4xBg
+    - usuario_id: rDd6WcC5AGfn05j65JmX
+    - tipo: reserva_clase
+    - descripcion: Reserva para Natación Grupal UTP Martes
+    - monto: 0
+    - clase_id: z6kPElWotrObNqR9ewwR
+    - fecha_movimiento: 2026-07-31T20:31:37.000Z
+
+📦 COLECCIÓN: catalogo
+========================================
+
+  📄 DOCUMENTO: 0VFhcIqfyLfwL96RxS1q
+    - codigo: NG
+    - nombre: Natación Grupal
+    - modalidad: Grupal
+    - estado: true
+
+  📄 DOCUMENTO: 1yWCMBzPOpG5aEKfXk2R
+    - codigo: NP
+    - estado: true
+    - modalidad: Personalizada
+    - nombre: Clase Personalizada
+
+📦 COLECCIÓN: categorias
+========================================
+
+  📄 DOCUMENTO: 1Qpt4b25ncUqD6UTh7yA
+    - nombre: Eventos
+    - tipo: ingreso
+    - color: #60a5fa
+
+  📄 DOCUMENTO: 4Td5zjkAzL85Rj7zBnC7
+    - nombre: Otros
+    - tipo: egreso
+    - color: #94a3b8
+
+  📄 DOCUMENTO: 6YjqWVNlzaZTADAAX3eP
+    - nombre: Matrículas
+    - tipo: ingreso
+    - color: #34d399
+
+  📄 DOCUMENTO: 7vrapvpcDWzsyh1I5Etl
+    - nombre: Nómina
+    - tipo: egreso
+    - color: #f87171
+
+  📄 DOCUMENTO: OmQvQg8M2RAWX6WZvMsh
+    - nombre: Planes
+    - tipo: ingreso
+    - color: #FAFE00
+
+  📄 DOCUMENTO: XH8Ju4UryGbfFoZLcB2r
+    - nombre: Servicios
+    - tipo: egreso
+    - color: #fb923c
+
+  📄 DOCUMENTO: oHbaXNHppZ4ZLZHANR7E
+    - nombre: Mantenimiento
+    - tipo: egreso
+    - color: #c084fc
+
+📦 COLECCIÓN: clases
+========================================
+
+  📄 DOCUMENTO: z6kPElWotrObNqR9ewwR
+    - categoria_codigo: NG
+    - Sede: UTP
+    - nivel_requerimiento: Tiburones
+    - fecha_hora_inicio: 2026-07-06T23:00:00.000Z
+    - fecha_hora_fin: 2026-07-07T00:00:00.000Z
+    - instructor_id: od0SAbL1GnyQR9Nqf5wK
+    - cupo_maximo: 10
+    - estudiantes_inscritos: ["rDd6WcC5AGfn05j65JmX"]
+    - estado: programada
+    - cupos_disponibles: 10
+
+📦 COLECCIÓN: movimientos
+========================================
+
+  📄 DOCUMENTO: 8Om5OLe0uveVrHr5TAfs
+    - tipo: egreso
+    - monto: 3000
+    - categoriaId: 4Td5zjkAzL85Rj7zBnC7
+    - categoriaNombre: Otros
+    - categoriaColor: #94a3b8
+    - descripcion: papitas
+    - fecha: 2026-05-17T17:00:00.000Z
+    - creadoEn: 2026-06-17T03:23:01.000Z
+    - origen: manual
+
+  📄 DOCUMENTO: GgfRUt9uXbkaOL7D9gdJ
+    - tipo: ingreso
+    - monto: 100000
+    - categoriaId: OmQvQg8M2RAWX6WZvMsh
+    - categoriaNombre: Planes
+    - categoriaColor: #FAFE00
+    - descripcion: Plan
+    - fecha: 2026-06-16T17:00:00.000Z
+    - creadoEn: 2026-06-16T21:27:20.000Z
+    - origen: manual
+
+  📄 DOCUMENTO: WU5ZfVkEsnsO7HAd0OvO
+    - tipo: egreso
+    - monto: 20000
+    - categoriaId: 7vrapvpcDWzsyh1I5Etl
+    - categoriaNombre: Nómina
+    - categoriaColor: #f87171
+    - descripcion: Nose
+    - fecha: 2026-06-16T17:00:00.000Z
+    - creadoEn: 2026-06-16T22:21:13.000Z
+    - origen: manual
+
+  📄 DOCUMENTO: u5bOMlHmkQLVk6GfI31u
+    - tipo: egreso
+    - monto: 30000
+    - categoriaId: oHbaXNHppZ4ZLZHANR7E
+    - categoriaNombre: Mantenimiento
+    - categoriaColor: #c084fc
+    - descripcion: Pagandole a MetaLevel
+    - fecha: 2026-06-17T17:00:00.000Z
+    - creadoEn: 2026-06-17T03:11:42.000Z
+    - origen: manual
+
+📦 COLECCIÓN: planes
+========================================
+
+  📄 DOCUMENTO: Xmxh2TtLpAsUzponv3GR
+    - nombre: Plan 3 Clases semanales UTP
+    - sede_aplica: UTP
+    - sesiones_incluidas: 12
+    - precio_total: 120000
+    - estado: true
+    - categoria_id: 0VFhcIqfyLfwL96RxS1q
+
+📦 COLECCIÓN: usuarios
+========================================
+
+  📄 DOCUMENTO: od0SAbL1GnyQR9Nqf5wK
+    - NombreCompleto: Juancho
+    - ClasesDadas: 0
+    - Documento: 1111111111111
+    - NumeroContacto: 333333333
+    - Rol: Profesor
+
+  📄 DOCUMENTO: rDd6WcC5AGfn05j65JmX
+    - uid: rDd6WcC5AGfn05j65JmX
+    - nombres: Santiago
+    - apellidos: Guerra Puertas
+    - email: santiguerrapuertas@gmail.com
+    - rol: estudiante
+    - sede_preferida: UTP
+    - nivel: Tiburones
+    - fecha_registro: 2026-07-04T19:57:27.000Z
+    - foto_perfil: 
+    - dificultades: [""]
+
+    📦 COLECCIÓN: suscripciones
+    ========================================
+
+      📄 DOCUMENTO: sqNh7o39VCD3nxn5veqJ
+        - nombre_plan: Natacion Grupal UTP x12
+        - sesiones_compradas: 12
+        - sesiones_restantes: 12
+        - estado: activa
+        - fecha_compra: 2026-07-04T20:00:33.000Z
+        - fecha_vencimiento: 2026-08-04T05:00:00.000Z
+        - plan-id: Xmxh2TtLpAsUzponv3GR

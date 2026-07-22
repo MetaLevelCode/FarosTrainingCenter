@@ -5,6 +5,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import LoginPage from "./pages/LoginPage";
 import AdminLayout from "./pages/admin/AdminLayout";
 import UsuariosPage from "./pages/admin/UsuariosPage";
+import FinanzasPage from "./pages/admin/FinanzasPage";
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
           >
             <Route index element={<Navigate to="usuarios" replace />} />
             <Route path="usuarios" element={<UsuariosPage />} />
+            <Route path="finanzas" element={<FinanzasPage />} />
           </Route>
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>

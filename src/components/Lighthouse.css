@@ -1,0 +1,122 @@
+.lighthouse-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: radial-gradient(circle at bottom, #0f172a 0%, #020617 100%);
+  overflow: hidden;
+  z-index: 1000;
+  display: flex;
+}
+
+.lighthouse-mobile-container {
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.lighthouse-desktop-container {
+  align-items: center;
+  justify-content: flex-start;
+}
+
+/* Lighthouse Body */
+.lighthouse-body {
+  background: linear-gradient(to right, #e2e8f0, #94a3b8);
+  border: 2px solid #334155;
+  box-shadow: inset -10px 0 20px rgba(0,0,0,0.2), 0 0 15px rgba(0,0,0,0.5);
+  position: relative;
+  z-index: 10;
+}
+
+.lighthouse-stripes {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 20px,
+    rgba(220, 38, 38, 0.8) 20px,
+    rgba(220, 38, 38, 0.8) 40px
+  );
+  mix-blend-mode: multiply;
+}
+
+/* Top Light Room */
+.lighthouse-top {
+  position: absolute;
+  background: #1e293b;
+  border-radius: 50% 50% 0 0;
+  border: 2px solid #334155;
+  box-shadow: 0 -5px 15px rgba(0,0,0,0.5);
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  z-index: 11;
+}
+
+.lighthouse-bulb {
+  background: #fef08a;
+  border-radius: 50%;
+  box-shadow: 0 0 20px #fef08a, 0 0 40px #fde047;
+  position: relative;
+  z-index: 12;
+}
+
+/* Light Beam Effects */
+.light-beam-mobile {
+  position: absolute;
+  background: radial-gradient(circle, rgba(254, 240, 138, 0.95) 0%, rgba(253, 224, 71, 0.8) 40%, transparent 100%);
+  border-radius: 50%;
+  z-index: 20;
+  mix-blend-mode: screen;
+  box-shadow: 0 0 50px rgba(253, 224, 71, 0.5);
+  transform-origin: center center;
+}
+
+.light-beam-desktop {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100vh;
+  background: linear-gradient(90deg, rgba(254, 240, 138, 0.95) 0%, rgba(253, 224, 71, 0.7) 30%, transparent 100%);
+  z-index: 20;
+  mix-blend-mode: screen;
+  box-shadow: 10px 0 50px rgba(253, 224, 71, 0.3);
+  transform-origin: left center;
+}
+
+/* Stars Background */
+.stars {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image: 
+    radial-gradient(2px 2px at 20px 30px, #eee, rgba(0,0,0,0)),
+    radial-gradient(2px 2px at 40px 70px, #fff, rgba(0,0,0,0)),
+    radial-gradient(2px 2px at 50px 160px, #ddd, rgba(0,0,0,0)),
+    radial-gradient(2px 2px at 90px 40px, #fff, rgba(0,0,0,0)),
+    radial-gradient(2px 2px at 130px 80px, #fff, rgba(0,0,0,0)),
+    radial-gradient(2px 2px at 160px 120px, #ddd, rgba(0,0,0,0));
+  background-repeat: repeat;
+  background-size: 200px 200px;
+  opacity: 0.5;
+  z-index: 1;
+}
+
+.options-screen {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background: #f8fafc;
+  color: #0f172a;
+}
