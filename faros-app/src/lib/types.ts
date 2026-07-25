@@ -4,6 +4,14 @@
 
 export type UserRole = 'alumno' | 'entrenador' | 'admin'
 
+export type TipoDocumento = 'CC' | 'TI' | 'CE'
+
+export interface ContactoEmergencia {
+  nombre: string
+  parentesco: string
+  telefono: string
+}
+
 export interface FarosUser {
   uid: string
   email: string
@@ -15,6 +23,18 @@ export interface FarosUser {
   plan?: 'basico' | 'pro' | 'elite'
   tier?: string
   active?: boolean
+  // Datos personales — estándar Colombia
+  tipoDocumento?: TipoDocumento
+  documento?: string
+  fechaNacimiento?: string
+  genero?: string
+  telefono?: string
+  ciudad?: string
+  departamento?: string
+  // Salud y seguridad
+  eps?: string
+  rh?: string
+  contactoEmergencia?: ContactoEmergencia
 }
 
 export interface TrainingPlan {

@@ -27,10 +27,20 @@ const MOCK_USERS: Record<string, FarosUser & { password: string }> = {
   'alumno@faros.com': {
     uid: 'mock-1', email: 'alumno@faros.com', displayName: 'Carlos Méndez',
     role: 'alumno', plan: 'pro', tier: 'Swim Pro', active: true, password: '123456',
+    tipoDocumento: 'CC', documento: '1.088.301.457',
+    fechaNacimiento: '14 de marzo de 1998', genero: 'Masculino',
+    telefono: '+57 310 842 5567', ciudad: 'Pereira', departamento: 'Risaralda',
+    eps: 'Nueva EPS', rh: 'O+',
+    contactoEmergencia: { nombre: 'María Méndez', parentesco: 'Madre', telefono: '+57 312 559 0148' },
   },
   'entrenador@faros.com': {
     uid: 'mock-2', email: 'entrenador@faros.com', displayName: 'Ana Torres',
     role: 'entrenador', active: true, password: '123456',
+    tipoDocumento: 'CC', documento: '1.093.774.210',
+    fechaNacimiento: '02 de septiembre de 1991', genero: 'Femenino',
+    telefono: '+57 315 226 7841', ciudad: 'Pereira', departamento: 'Risaralda',
+    eps: 'Sura EPS', rh: 'A+',
+    contactoEmergencia: { nombre: 'Jorge Torres', parentesco: 'Esposo', telefono: '+57 300 771 3320' },
   },
   'admin@faros.com': {
     uid: 'mock-3', email: 'admin@faros.com', displayName: 'Luis Faros',
@@ -83,6 +93,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             plan: data?.plan,
             tier: data?.tier,
             active: data?.active ?? true,
+            tipoDocumento: data?.tipoDocumento,
+            documento: data?.documento,
+            fechaNacimiento: data?.fechaNacimiento,
+            genero: data?.genero,
+            telefono: data?.telefono,
+            ciudad: data?.ciudad,
+            departamento: data?.departamento,
+            eps: data?.eps,
+            rh: data?.rh,
+            contactoEmergencia: data?.contactoEmergencia,
           })
         } catch {
           setUser({
