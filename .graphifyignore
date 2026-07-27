@@ -1,0 +1,8 @@
+# Fuera del grafo: nada de esto es código de la aplicación.
+.agents/
+.claude/
+.codex/
+graphify-out/
+node_modules/
+.next/
+faros-app/public/

@@ -1,2 +1,6 @@
 .claude/settings.local.json
 __pycache__/
+
+# Grafo de conocimiento: artefacto derivado del código.
+# Se regenera con `graphify . --code-only --no-label`
+graphify-out/
