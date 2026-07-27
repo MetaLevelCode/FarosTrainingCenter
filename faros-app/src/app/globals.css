@@ -194,6 +194,7 @@ h1, h2, h3, h4, h5, h6 {
    gama media. El vidrio se mantiene con el mismo tinte y borde. */
 @media (max-width: 768px) {
   .liquid-glass::before { animation: none; opacity: 0; }
+
   .liquid-glass {
     backdrop-filter: blur(6px);
     -webkit-backdrop-filter: blur(6px);
@@ -222,6 +223,13 @@ h1, h2, h3, h4, h5, h6 {
   0%, 100% { border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%; }
   34% { border-radius: 70% 30% 50% 50% / 30% 30% 70% 70%; }
   67% { border-radius: 100% 60% 60% 100% / 100% 100% 60% 60%; }
+}
+
+/* En móvil se congela: animar border-radius en blobs de 400–800px con
+   desenfoque repinta una superficie enorme en cada frame. La forma
+   orgánica se conserva, sólo deja de deformarse. */
+@media (max-width: 768px) {
+  .organic-curve { animation: none; }
 }
 
 /* Hero background paths — drawn strokes that fade in/out */

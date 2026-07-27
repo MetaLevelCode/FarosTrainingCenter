@@ -18,6 +18,7 @@ import { FarosWordmark } from '@/components/ui'
 import { WaterBackground } from '@/components/shared/WaterBackground'
 import { FloatingPaths } from '@/components/shared/FloatingPaths'
 import { NadarCTA } from '@/components/shared/NadarCTA'
+import { AnimatedFooter } from '@/components/shared/AnimatedFooter'
 
 const EASE = [0.23, 1, 0.32, 1] as const
 
@@ -405,30 +406,19 @@ export default function LandingPage() {
       </main>
 
       {/* ══ FOOTER ══ */}
-      <footer className="relative z-10 bg-black/60 backdrop-blur-xl border-t border-[var(--color-surface-stroke)] py-12 pb-32 md:pb-12 mt-12">
-        <div className="flex flex-col md:flex-row justify-between items-center px-5 md:px-10 max-w-[1400px] mx-auto gap-8">
-          <FarosWordmark size="sm" />
-          <div className="flex gap-4">
-            <a
-              href="mailto:contacto@farostraining.com"
-              aria-label="Correo"
-              className="w-11 h-11 flex items-center justify-center rounded-xl text-[var(--color-on-surface-variant)] hover:text-[var(--color-primary-fixed)] hover:bg-white/5 transition-[color,background-color] duration-200"
-            >
-              <span className="material-symbols-outlined">mail</span>
-            </a>
-            <a
-              href="#hero"
-              aria-label="Volver arriba"
-              className="w-11 h-11 flex items-center justify-center rounded-xl text-[var(--color-on-surface-variant)] hover:text-[var(--color-primary-fixed)] hover:bg-white/5 transition-[color,background-color] duration-200"
-            >
-              <span className="material-symbols-outlined">arrow_upward</span>
-            </a>
-          </div>
-          <p className="text-[var(--color-on-surface-variant)] text-xs text-center md:text-right">
-            © {new Date().getFullYear()} Faros Training. Todos los derechos reservados.
-          </p>
-        </div>
-      </footer>
+      {/* Pie con oleaje: cierra la página como la superficie del agua */}
+      <AnimatedFooter
+        leftLinks={[
+          { href: '/login', label: 'Acceso' },
+          { href: '#planes', label: 'Planes' },
+        ]}
+        rightLinks={[
+          { href: '#info', label: 'Información' },
+          { href: '#media', label: 'Publicaciones' },
+          { href: 'mailto:contacto@farostraining.com', label: 'Contacto' },
+        ]}
+        copyrightText={`Faros Training ${new Date().getFullYear()}. Todos los derechos reservados.`}
+      />
     </div>
   )
 }
