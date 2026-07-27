@@ -14,6 +14,7 @@ import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button } from '@/components/ui'
+import { ROSTER, describirPlan } from '@/lib/planes'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -50,16 +51,27 @@ type Transaccion = {
   fecha: string
 }
 
-const PENDIENTES_INICIALES: Transaccion[] = [
-  { id: 't1', nombre: 'Carlos Méndez', programa: 'Plan Pro · Mensual', monto: 59_000, metodo: 'Nequi', fecha: 'Hoy · 08:12 AM' },
-  { id: 't2', nombre: 'Sofía Ruiz', programa: 'Plan Pro · Mensual', monto: 59_000, metodo: 'Bancolombia', fecha: 'Hoy · 07:40 AM' },
-  { id: 't3', nombre: 'Diego Morales', programa: 'Plan Elite · Mensual', monto: 99_000, metodo: 'Daviplata', fecha: 'Ayer · 06:20 PM' },
-]
+// Pagos pendientes de aprobar: cada uno corresponde al PLAN REAL del
+// atleta en el roster, con la tarifa que calcula lib/planes.ts.
+const PENDIENTES_INICIALES: Transaccion[] = ROSTER.slice(0, 3).map((a, i) => {
+  const info = describirPlan(a.plan)
+  return {
+    id: `t${i + 1}`,
+    nombre: a.nombre,
+    programa: `${info.titulo} · ${info.frecuenciaLabel}`,
+    monto: info.precioMensual,
+    metodo: ['Nequi', 'Bancolombia', 'Daviplata'][i] ?? 'Nequi',
+    fecha: ['Hoy · 08:12 AM', 'Hoy · 07:40 AM', 'Ayer · 06:20 PM'][i] ?? 'Hoy',
+  }
+})
+
+const infoValentina = describirPlan(ROSTER[3].plan)
+const infoMariana = describirPlan(ROSTER[5].plan)
 
 const HISTORIAL: (Transaccion & { tipo: 'ingreso' | 'egreso'; estado: 'Aprobado' | 'Registrado' })[] = [
-  { id: 'h1', nombre: 'Valentina Castro', programa: 'Plan Base · Mensual', monto: 29_000, metodo: 'Nequi', fecha: '14 Jul', tipo: 'ingreso', estado: 'Aprobado' },
+  { id: 'h1', nombre: ROSTER[3].nombre, programa: `${infoValentina.titulo} · ${infoValentina.frecuenciaLabel}`, monto: infoValentina.precioMensual, metodo: 'Nequi', fecha: '14 Jul', tipo: 'ingreso', estado: 'Aprobado' },
   { id: 'h2', nombre: 'Mantenimiento Piscina A', programa: 'Egreso operativo', monto: 1_800_000, metodo: 'Transferencia', fecha: '12 Jul', tipo: 'egreso', estado: 'Registrado' },
-  { id: 'h3', nombre: 'Mariana Duque', programa: 'Plan Elite · Mensual', monto: 99_000, metodo: 'Bancolombia', fecha: '11 Jul', tipo: 'ingreso', estado: 'Aprobado' },
+  { id: 'h3', nombre: ROSTER[5].nombre, programa: `${infoMariana.titulo} · ${infoMariana.frecuenciaLabel}`, monto: infoMariana.precioMensual, metodo: 'Bancolombia', fecha: '11 Jul', tipo: 'ingreso', estado: 'Aprobado' },
   { id: 'h4', nombre: 'Nómina entrenadores', programa: 'Egreso operativo', monto: 6_200_000, metodo: 'Transferencia', fecha: '05 Jul', tipo: 'egreso', estado: 'Registrado' },
 ]
 
@@ -193,18 +205,20 @@ export default function FinanzasPage() {
                       </div>
                       <div className="flex items-center justify-between">
                         <span className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">{t.metodo} · {t.fecha}</span>
-                        <div className="flex gap-2">
+                        {/* 44px y separados: son acciones de dinero, un
+                            mis-tap aprueba lo que se quería rechazar. */}
+                        <div className="flex gap-3">
                           <button
                             onClick={() => resolver(t.id)}
                             aria-label={`Rechazar transacción de ${t.nombre}`}
-                            className="w-9 h-9 flex items-center justify-center text-[var(--color-on-surface-variant)]/40 hover:text-[var(--color-danger-crimson)] hover:bg-[rgba(239,68,68,0.1)] rounded-xl transition-colors duration-200 active:scale-[0.94]"
+                            className="w-11 h-11 flex items-center justify-center text-[var(--color-on-surface-variant)]/50 hover:text-[var(--color-danger-crimson)] hover:bg-[rgba(239,68,68,0.1)] rounded-xl transition-colors duration-200 active:scale-[0.94]"
                           >
                             <span className="material-symbols-outlined text-[20px]">close</span>
                           </button>
                           <button
                             onClick={() => resolver(t.id)}
                             aria-label={`Aprobar transacción de ${t.nombre}`}
-                            className="w-9 h-9 flex items-center justify-center text-[var(--color-primary-fixed)] bg-[rgba(230,255,0,0.05)] border border-[rgba(230,255,0,0.2)] hover:bg-[var(--color-primary-fixed)] hover:text-black rounded-xl transition-colors duration-200 active:scale-[0.94]"
+                            className="w-11 h-11 flex items-center justify-center text-[var(--color-primary-fixed)] bg-[rgba(230,255,0,0.05)] border border-[rgba(230,255,0,0.2)] hover:bg-[var(--color-primary-fixed)] hover:text-black rounded-xl transition-colors duration-200 active:scale-[0.94]"
                           >
                             <span className="material-symbols-outlined text-[20px]">check</span>
                           </button>

@@ -13,6 +13,7 @@ import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
+import { ROSTER, describirPlan, pctAsistencia } from '@/lib/planes'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -27,15 +28,19 @@ function Reveal({ children, delay = 0 }: { children: React.ReactNode; delay?: nu
 }
 
 // ── Datos de ejemplo (se reemplazan por Firestore) ──
-const RANKING = [
-  { pos: 1, nombre: 'M. Anderson', rating: 98.4, asistencias: 19, tú: false },
-  { pos: 2, nombre: 'L. Fernández', rating: 95.1, asistencias: 18, tú: false },
-  { pos: 3, nombre: 'V. Castro', rating: 93.7, asistencias: 18, tú: false },
-  { pos: 4, nombre: 'Carlos Méndez', rating: 91.2, asistencias: 12, tú: true },
-  { pos: 5, nombre: 'S. López', rating: 89.7, asistencias: 15, tú: false },
-  { pos: 6, nombre: 'D. Morales', rating: 87.3, asistencias: 14, tú: false },
-  { pos: 7, nombre: 'A. Rojas', rating: 84.9, asistencias: 11, tú: false },
-]
+// El ranking sale del roster real: el rating es el % de asistencia
+// sobre las sesiones que paga el plan de cada atleta.
+const RANKING = [...ROSTER]
+  .map((a) => ({
+    id: a.id,
+    nombre: a.nombre,
+    rating: pctAsistencia(a),
+    asistencias: a.asistidas,
+    sesionesMes: describirPlan(a.plan).sesionesMes,
+    plan: describirPlan(a.plan).etiqueta,
+  }))
+  .sort((a, b) => b.rating - a.rating)
+  .map((a, i) => ({ ...a, pos: i + 1, tú: a.id === 'FR-0922' }))
 
 // Chequeos de velocidad: % del objetivo por distancia
 const RITMOS = [

@@ -3,9 +3,12 @@
 // ============================================================
 // FAROS — Alumno Dashboard
 // Ported from Stitch "dashboard_alumno_magnet_edition".
+// Toda la información deriva del PLAN CONTRATADO del alumno
+// (lib/planes.ts): sesiones del mes, horarios, grupo y compañeros.
 // ============================================================
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import Link from 'next/link'
 import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
@@ -13,6 +16,7 @@ import { Card, Badge, Button } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { ScrollVideoPanel } from '@/components/shared/ScrollVideoPanel'
 import { BrandImageStrip } from '@/components/shared/BrandImageStrip'
+import { ROSTER, describirPlan, pctAsistencia } from '@/lib/planes'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -34,17 +38,33 @@ const VELOCIDAD = [
   { semana: 'S4', pct: 70 }, { semana: 'S5', pct: 65 }, { semana: 'S6', pct: 91 },
 ]
 
-const GRUPOS = [
-  { dia: 'MAR 18', nombre: 'Endurance Squad', detalle: '06:00 AM • Piscina A' },
-  { dia: 'JUE 20', nombre: 'Sprint Técnico', detalle: '05:30 PM • Piscina B' },
-]
-
 export default function DashboardPage() {
   const { authorized, loading } = useRoleGuard(['alumno'])
   const { user } = useAuth()
   const firstName = user?.displayName?.split(' ')[0] ?? 'Atleta'
   const [mensaje, setMensaje] = useState('')
   const [transmitido, setTransmitido] = useState(false)
+
+  // ── Todo se deriva del plan contratado ──
+  const yo = useMemo(
+    () => ROSTER.find((a) => a.nombre === user?.displayName) ?? ROSTER[0],
+    [user?.displayName],
+  )
+  const plan = user?.planActivo ?? yo.plan
+  const info = useMemo(() => describirPlan(plan), [plan])
+  const asistidas = yo.asistidas
+  const restantes = Math.max(0, info.sesionesMes - asistidas)
+  const pctSesiones = info.sesionesMes ? Math.round((asistidas / info.sesionesMes) * 100) : 0
+
+  // Compañeros del mismo grupo → ranking por % de asistencia de su plan
+  const companeros = useMemo(() => {
+    const mismos = plan.tipo === 'grupal'
+      ? ROSTER.filter((a) => a.plan.tipo === 'grupal' && a.plan.grupoId === plan.grupoId)
+      : ROSTER.filter((a) => a.entrenador === yo.entrenador)
+    return [...mismos]
+      .sort((a, b) => pctAsistencia(b) - pctAsistencia(a))
+      .map((a, i) => ({ ...a, pos: i + 1, pct: pctAsistencia(a) }))
+  }, [plan, yo.entrenador])
 
   function enviarFeedback(e: React.FormEvent) {
     e.preventDefault()
@@ -63,16 +83,23 @@ export default function DashboardPage() {
           <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
             <div className="lg:col-span-7">
               <p className="label-caps text-[var(--color-primary-fixed)] mb-4 tracking-[0.2em]">
-                Elite Performance Status
+                {info.subtitulo}
               </p>
               <h2 className="font-display text-display-lg text-white mb-6 leading-none tracking-tighter uppercase">
                 Hola,<br />{firstName}
               </h2>
               <div className="flex flex-wrap gap-8">
                 <div className="flex flex-col">
-                  <span className="label-caps text-[var(--color-on-surface-variant)]/60 mb-1">Tier</span>
+                  <span className="label-caps text-[var(--color-on-surface-variant)]/60 mb-1">Tu plan</span>
                   <span className="font-display text-headline-md font-extrabold text-white uppercase">
-                    {user?.tier ?? 'Swim Pro'}
+                    {info.titulo}
+                  </span>
+                </div>
+                <div className="w-px h-10 bg-white/10 hidden sm:block" />
+                <div className="flex flex-col">
+                  <span className="label-caps text-[var(--color-on-surface-variant)]/60 mb-1">Frecuencia</span>
+                  <span className="font-display text-headline-md font-extrabold text-white uppercase">
+                    {plan.week}× / semana
                   </span>
                 </div>
                 <div className="w-px h-10 bg-white/10 hidden sm:block" />
@@ -80,13 +107,8 @@ export default function DashboardPage() {
                   <span className="label-caps text-[var(--color-on-surface-variant)]/60 mb-1">Estado</span>
                   <span className="flex items-center gap-2 text-[var(--color-success-emerald)] font-display font-extrabold">
                     <span className="w-2.5 h-2.5 rounded-full bg-[var(--color-success-emerald)] shadow-[0_0_10px_#10B981]" />
-                    Activo
+                    {plan.estado === 'activo' ? 'Activo' : plan.estado === 'pendiente' ? 'Pendiente' : 'Vencido'}
                   </span>
-                </div>
-                <div className="w-px h-10 bg-white/10 hidden sm:block" />
-                <div className="flex flex-col">
-                  <span className="label-caps text-[var(--color-on-surface-variant)]/60 mb-1">Rating</span>
-                  <span className="font-display text-headline-md font-extrabold text-[var(--color-primary-fixed)]">91.2%</span>
                 </div>
               </div>
             </div>
@@ -98,9 +120,16 @@ export default function DashboardPage() {
           <div className="lg:col-span-8 space-y-6">
             <Reveal delay={0.1}>
               <Card padding="lg">
-                <div className="flex items-center gap-4 mb-8">
-                  <Badge variant="primary">Intensivo B</Badge>
-                  <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/60">Enfoque recuperación</span>
+                <div className="flex flex-wrap items-center gap-3 mb-8">
+                  <Badge variant="primary">{info.tipoLabel}</Badge>
+                  <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/60">
+                    {info.titulo}
+                  </span>
+                  {info.horarios.map((h) => (
+                    <span key={h} className="label-caps text-[9px] px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[var(--color-on-surface-variant)]/70">
+                      {h}
+                    </span>
+                  ))}
                 </div>
                 <h3 className="font-display text-headline-lg text-white mb-10 uppercase tracking-tighter">
                   Clase del Día
@@ -189,88 +218,108 @@ export default function DashboardPage() {
             <Reveal delay={0.2}>
               <Card>
                 <div className="flex justify-between items-start mb-6">
-                  <h3 className="label-caps text-[var(--color-on-surface-variant)]/60">Asistencia</h3>
+                  <h3 className="label-caps text-[var(--color-on-surface-variant)]/60">Asistencia del mes</h3>
                   <span className="material-symbols-outlined text-[var(--color-success-emerald)] text-[24px]">check_circle</span>
                 </div>
                 <div className="flex items-baseline gap-3 mb-6">
-                  <span className="font-display text-display-lg font-black text-white leading-none">12</span>
-                  <span className="label-caps text-[var(--color-on-surface-variant)]/60">/ 20 sesiones</span>
+                  <span className="font-display text-display-lg font-black text-white leading-none">{asistidas}</span>
+                  <span className="label-caps text-[var(--color-on-surface-variant)]/60">/ {info.sesionesMes} sesiones</span>
                 </div>
                 <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden mb-4">
-                  <div className="h-full bg-[var(--color-primary-fixed)] w-[60%] shadow-[0_0_15px_rgba(230,255,0,0.4)] rounded-full" />
+                  <motion.div
+                    initial={{ width: 0 }}
+                    animate={{ width: `${pctSesiones}%` }}
+                    transition={{ duration: 0.8, ease: EASE }}
+                    className="h-full bg-[var(--color-primary-fixed)] shadow-[0_0_15px_rgba(230,255,0,0.4)] rounded-full"
+                  />
                 </div>
                 <p className="label-caps text-[11px] text-[var(--color-on-surface-variant)]/60">
-                  8 sesiones para completar ciclo
+                  {restantes > 0
+                    ? `Te quedan ${restantes} de tu plan ${plan.week}×/semana`
+                    : 'Completaste las sesiones del mes'}
                 </p>
               </Card>
             </Reveal>
 
             <Reveal delay={0.3}>
               <Card>
-                <div className="flex justify-between items-center mb-8">
-                  <h3 className="label-caps text-[var(--color-on-surface-variant)]/60">Standings</h3>
+                <div className="flex justify-between items-center mb-2">
+                  <h3 className="label-caps text-[var(--color-on-surface-variant)]/60">Tu grupo</h3>
                   <span className="material-symbols-outlined text-[var(--color-primary-fixed)]">military_tech</span>
                 </div>
+                <p className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50 mb-6">
+                  {info.titulo} · asistencia del mes
+                </p>
                 <div className="space-y-3">
-                  {[
-                    { pos: '01', name: 'M. Anderson', score: '98.4%', you: false },
-                    { pos: '04', name: `${firstName} (Tú)`, score: '91.2%', you: true },
-                    { pos: '05', name: 'S. López', score: '89.7%', you: false },
-                  ].map((r) => (
-                    <div
-                      key={r.pos}
-                      className={`flex items-center gap-4 p-3 rounded-2xl transition-colors ${
-                        r.you
-                          ? 'bg-[rgba(230,255,0,0.1)] border border-[rgba(230,255,0,0.2)]'
-                          : 'hover:bg-white/5'
-                      }`}
-                    >
-                      <span className={`font-black text-[12px] w-4 ${r.you ? 'text-[var(--color-primary-fixed)]' : 'text-[var(--color-on-surface-variant)]/20'}`}>
-                        {r.pos}
-                      </span>
-                      <div className={`w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-black ${
-                        r.you ? 'bg-[var(--color-primary-fixed)] text-black' : 'bg-white/10 border border-white/10 text-white'
-                      }`}>
-                        {r.name.split(' ').map((p) => p.replace(/[^\p{L}]/gu, '')[0] ?? '').slice(0, 2).join('').toUpperCase()}
+                  {companeros.map((r) => {
+                    const eresTu = r.id === yo.id
+                    return (
+                      <div
+                        key={r.id}
+                        className={`flex items-center gap-4 p-3 rounded-2xl transition-colors ${
+                          eresTu
+                            ? 'bg-[rgba(230,255,0,0.1)] border border-[rgba(230,255,0,0.2)]'
+                            : 'hover:bg-white/5'
+                        }`}
+                      >
+                        <span className={`font-black text-[12px] w-4 ${eresTu ? 'text-[var(--color-primary-fixed)]' : 'text-[var(--color-on-surface-variant)]/30'}`}>
+                          {String(r.pos).padStart(2, '0')}
+                        </span>
+                        <div className={`w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-black shrink-0 ${
+                          eresTu ? 'bg-[var(--color-primary-fixed)] text-black' : 'bg-white/10 border border-white/10 text-white'
+                        }`}>
+                          {r.nombre.split(' ').filter(Boolean).map((p) => p[0]).slice(0, 2).join('').toUpperCase()}
+                        </div>
+                        <span className={`flex-1 label-caps truncate ${eresTu ? 'text-white font-black' : 'text-[var(--color-on-surface-variant)]/70'}`}>
+                          {eresTu ? `${firstName} (Tú)` : r.nombre}
+                        </span>
+                        <span className={`font-black ${eresTu ? 'text-[var(--color-primary-fixed)]' : 'text-[var(--color-on-surface-variant)]/60'}`}>
+                          {r.pct}%
+                        </span>
                       </div>
-                      <span className={`flex-1 label-caps ${r.you ? 'text-white font-black' : 'text-[var(--color-on-surface-variant)]/70'}`}>
-                        {r.name}
-                      </span>
-                      <span className={`font-black ${r.you ? 'text-[var(--color-primary-fixed)]' : 'text-[var(--color-on-surface-variant)]/50'}`}>
-                        {r.score}
-                      </span>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </Card>
             </Reveal>
 
             <Reveal delay={0.35}>
               <Card>
-                <h3 className="label-caps text-[var(--color-on-surface-variant)]/60 mb-6">Grupos próximos</h3>
-                <div className="space-y-4">
-                  {GRUPOS.map((g) => (
-                    <div
-                      key={g.nombre}
-                      className="p-5 rounded-2xl border border-white/5 bg-white/5 hover:border-[rgba(230,255,0,0.2)] transition-[border-color] duration-300 group/card"
-                    >
-                      <div className="flex justify-between items-start mb-3">
-                        <span className="bg-white/10 px-3 py-1.5 rounded-lg text-[10px] font-black text-[var(--color-on-surface-variant)]">
-                          {g.dia}
-                        </span>
-                        <button className="label-caps text-[9px] text-[var(--color-danger-crimson)]/70 hover:text-[var(--color-danger-crimson)] transition-colors duration-200">
-                          Cancelar
-                        </button>
-                      </div>
-                      <span className="block font-display text-sm font-extrabold text-white uppercase group-hover/card:text-[var(--color-primary-fixed)] transition-colors duration-200">
-                        {g.nombre}
-                      </span>
-                      <span className="block text-[11px] text-[var(--color-on-surface-variant)]/60 label-caps mt-1">
-                        {g.detalle}
-                      </span>
-                    </div>
-                  ))}
+                <div className="flex justify-between items-center mb-6">
+                  <h3 className="label-caps text-[var(--color-on-surface-variant)]/60">Tu plan</h3>
+                  <span className="material-symbols-outlined text-[var(--color-primary-fixed)]">workspace_premium</span>
                 </div>
+
+                <p className="font-display text-2xl font-black text-white uppercase tracking-tight leading-tight">
+                  {info.titulo}
+                </p>
+                <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/60 mt-2 mb-5">
+                  {info.frecuenciaLabel} · {info.sesionesMes} sesiones/mes
+                </p>
+
+                {info.horarios.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-5">
+                    {info.horarios.map((h) => (
+                      <span key={h} className="label-caps text-[9px] px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[var(--color-on-surface-variant)]/70">
+                        {h}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between py-4 border-y border-white/5 mb-5">
+                  <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50">Mensualidad</span>
+                  <span className="font-display font-black text-[var(--color-primary-fixed)]">{info.precioTexto}</span>
+                </div>
+
+                <div className="flex items-center justify-between mb-6">
+                  <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50">Próximo pago</span>
+                  <span className="text-sm text-white">{plan.proximoPago}</span>
+                </div>
+
+                <Link href="/dashboard/planes" className="block">
+                  <Button variant="outline" size="md" fullWidth>Cambiar mi plan</Button>
+                </Link>
               </Card>
             </Reveal>
           </div>

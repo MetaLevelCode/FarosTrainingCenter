@@ -9,10 +9,10 @@
 // extra. Al confirmar, la solicitud viaja a administración.
 // ============================================================
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'motion/react'
-import { useRoleGuard } from '@/hooks/useRoleGuard'
+import { useAuth } from '@/contexts/AuthContext'
 import { FarosWordmark, Spinner, Button } from '@/components/ui'
 import { WaterBackground } from '@/components/shared/WaterBackground'
 import {
@@ -49,7 +49,7 @@ const STEP_TITULO: Record<StepKey, string> = {
 // ── Lista de beneficios revelada al expandir ──
 function Bullets({ items }: { items: string[] }) {
   return (
-    <ul className="space-y-3">
+    <ul className="space-y-4">
       {items.map((t) => (
         <li key={t} className="flex items-start gap-3 text-sm text-[var(--color-on-surface-variant)]/85">
           <span className="material-symbols-outlined text-[var(--color-primary-fixed)] text-[17px] mt-0.5 shrink-0">check_circle</span>
@@ -75,7 +75,7 @@ function ChoiceCard({ selected, onClick, icon, title, desc, meta, expand }: {
           : 'border-white/8 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.05]'
       }`}
     >
-      <div className="flex items-start gap-5 p-6 md:p-7">
+      <div className="flex items-start gap-5 p-7 md:p-8">
         {icon && (
           <span className={`material-symbols-outlined text-[26px] shrink-0 mt-0.5 transition-colors duration-300 ${
             selected ? 'text-[var(--color-primary-fixed)]' : 'text-[var(--color-on-surface-variant)]/70'
@@ -83,7 +83,7 @@ function ChoiceCard({ selected, onClick, icon, title, desc, meta, expand }: {
         )}
         <div className="min-w-0 flex-1">
           <p className="font-display text-base font-extrabold text-white uppercase tracking-tight">{title}</p>
-          {desc && <p className="text-sm text-[var(--color-on-surface-variant)]/60 mt-2 leading-relaxed">{desc}</p>}
+          {desc && <p className="text-sm text-[var(--color-on-surface-variant)]/60 mt-3 leading-relaxed">{desc}</p>}
           {meta}
         </div>
         <span className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 transition-colors duration-300 ${
@@ -98,9 +98,9 @@ function ChoiceCard({ selected, onClick, icon, title, desc, meta, expand }: {
           initial={{ opacity: 0, y: -6 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, ease: EASE }}
-          className="px-6 md:px-7 pb-7"
+          className="px-7 md:px-8 pb-8"
         >
-          <div className="border-t border-white/8 pt-5 md:pl-[46px]">
+          <div className="border-t border-white/8 pt-6 md:pl-[46px]">
             {expand}
           </div>
         </motion.div>
@@ -150,12 +150,29 @@ function DatoRow({ icon, label, value }: { icon: string; label: string; value: s
   )
 }
 
+const PENDIENTE_KEY = 'faros-plan-pendiente'
+
 export default function PlanesFlowPage() {
-  const { authorized, loading } = useRoleGuard(['alumno'])
+  // Abierto a invitados: cualquiera puede armar su plan; al final se
+  // pide cuenta/sesión sólo para enviarlo (sin perder el progreso).
+  const { user, loading } = useAuth()
   const [sel, setSel] = useState<SeleccionPlan>(SELECCION_INICIAL)
   const [stepIdx, setStepIdx] = useState(0)
   const [dir, setDir] = useState(1)
   const [solicitado, setSolicitado] = useState(false)
+  const [necesitaCuenta, setNecesitaCuenta] = useState(false)
+
+  // Restaura el plan que un invitado dejó a medias antes de iniciar sesión.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(PENDIENTE_KEY)
+      if (!raw) return
+      localStorage.removeItem(PENDIENTE_KEY)
+      const saved = JSON.parse(raw) as SeleccionPlan
+      setSel(saved)
+      setStepIdx(stepsFor(saved.tipo).length - 1) // directo al resumen
+    } catch {}
+  }, [])
 
   const steps = useMemo(() => stepsFor(sel.tipo), [sel.tipo])
   const stepKey = steps[Math.min(stepIdx, steps.length - 1)]
@@ -185,7 +202,17 @@ export default function PlanesFlowPage() {
     setSel({ ...SELECCION_INICIAL, tipo, week: tipo === 'conjunto' ? 1 : 2 })
   }
 
-  if (loading || !authorized) {
+  function solicitar() {
+    if (user) {
+      setSolicitado(true) // sesión activa → va a administración
+    } else {
+      // Invitado: guarda el progreso y pide cuenta/sesión.
+      try { localStorage.setItem(PENDIENTE_KEY, JSON.stringify(sel)) } catch {}
+      setNecesitaCuenta(true)
+    }
+  }
+
+  if (loading) {
     return (
       <div className="min-h-dvh flex items-center justify-center" style={{ background: '#050505' }}>
         <Spinner size="lg" />
@@ -206,7 +233,7 @@ export default function PlanesFlowPage() {
         <Link
           href="/dashboard"
           aria-label="Salir del flujo"
-          className="w-10 h-10 rounded-full border border-white/10 bg-white/5 flex items-center justify-center text-[var(--color-on-surface-variant)] hover:text-white hover:border-white/25 transition-colors duration-200"
+          className="w-11 h-11 rounded-full border border-white/10 bg-white/5 flex items-center justify-center text-[var(--color-on-surface-variant)] hover:text-white hover:border-white/25 transition-colors duration-200"
         >
           <span className="material-symbols-outlined text-[20px]">close</span>
         </Link>
@@ -244,7 +271,7 @@ export default function PlanesFlowPage() {
 
             {/* PASO: TIPO */}
             {stepKey === 'tipo' && (
-              <div className="space-y-5">
+              <div className="space-y-6">
                 {TIPOS.map((t) => (
                   <ChoiceCard
                     key={t.id}
@@ -261,7 +288,7 @@ export default function PlanesFlowPage() {
 
             {/* PASO: GRUPO */}
             {stepKey === 'grupo' && (
-              <div className="space-y-5">
+              <div className="space-y-6">
                 {GRUPOS.map((g) => (
                   <ChoiceCard
                     key={g.id}
@@ -284,7 +311,7 @@ export default function PlanesFlowPage() {
                       </div>
                     }
                     expand={
-                      <div className="space-y-3.5">
+                      <div className="space-y-4">
                         <DatoRow icon="stairs" label="Nivel" value={g.nivel} />
                         <DatoRow icon="event_seat" label="Cupos" value={g.cupos} />
                         <DatoRow icon="sports" label="Coach" value={g.coach} />
@@ -297,7 +324,7 @@ export default function PlanesFlowPage() {
 
             {/* PASO: PERSONAL */}
             {stepKey === 'personal' && (
-              <div className="space-y-5">
+              <div className="space-y-6">
                 {PERSONALES.map((p) => (
                   <ChoiceCard
                     key={p.id}
@@ -314,7 +341,7 @@ export default function PlanesFlowPage() {
 
             {/* PASO: CONJUNTO */}
             {stepKey === 'conjunto' && (
-              <div className="space-y-5">
+              <div className="space-y-6">
                 {CONJUNTOS.map((c) => (
                   <ChoiceCard
                     key={c.id}
@@ -331,7 +358,7 @@ export default function PlanesFlowPage() {
 
             {/* PASO: FRECUENCIA (+ personas si aplica) */}
             {stepKey === 'frecuencia' && (
-              <div className="space-y-5">
+              <div className="space-y-6">
                 {FRECUENCIAS
                   .filter((f) => sel.tipo !== 'conjunto' || f.week <= 2)
                   .map((f) => {
@@ -391,7 +418,7 @@ export default function PlanesFlowPage() {
             )}
 
             {/* PASO: RESUMEN */}
-            {stepKey === 'resumen' && !solicitado && (
+            {stepKey === 'resumen' && !solicitado && !necesitaCuenta && (
               <div className="rounded-[2rem] liquid-glass p-8 md:p-10">
                 <div className="relative z-10">
                   <span className="label-caps text-[10px] text-[var(--color-primary-fixed)]">{resumen.subtitulo}</span>
@@ -448,12 +475,48 @@ export default function PlanesFlowPage() {
                     </div>
                   )}
 
-                  <Button fullWidth size="lg" onClick={() => setSolicitado(true)}>
-                    Solicitar este plan
+                  <Button fullWidth size="lg" onClick={solicitar}>
+                    {user ? 'Solicitar este plan' : 'Continuar'}
                   </Button>
                   <p className="text-[11px] text-[var(--color-on-surface-variant)]/40 text-center mt-5">
-                    Tu solicitud pasa a administración para aprobación del pago.
+                    {user
+                      ? 'Tu solicitud pasa a administración para aprobación del pago.'
+                      : 'Necesitas una cuenta para enviar tu solicitud. No perderás tu plan.'}
                   </p>
+                </div>
+              </div>
+            )}
+
+            {/* PASO: INVITADO — crear cuenta / iniciar sesión ── */}
+            {stepKey === 'resumen' && necesitaCuenta && (
+              <div className="rounded-[2rem] liquid-glass p-8 md:p-10 text-center">
+                <div className="relative z-10 flex flex-col items-center">
+                  <span className="w-16 h-16 rounded-full bg-[rgba(230,255,0,0.12)] border border-[rgba(230,255,0,0.3)] flex items-center justify-center mb-6">
+                    <span className="material-symbols-outlined text-[var(--color-primary-fixed)] text-[30px]">person_add</span>
+                  </span>
+                  <h2 className="font-display text-2xl font-black text-white uppercase tracking-tight mb-3">
+                    Un último paso
+                  </h2>
+                  <p className="text-sm text-[var(--color-on-surface-variant)]/70 max-w-sm mb-2 leading-relaxed">
+                    Tu plan <span className="text-white font-bold">{resumen.titulo}</span> quedó guardado.
+                    Crea una cuenta o inicia sesión para enviarlo a administración.
+                  </p>
+                  <p className="label-caps text-[9px] text-[var(--color-primary-fixed)] mb-8">Tu progreso no se pierde</p>
+
+                  <div className="flex flex-col sm:flex-row gap-3 w-full max-w-sm">
+                    <Link href="/login?next=/dashboard/planes" className="flex-1">
+                      <Button fullWidth size="lg">Iniciar sesión</Button>
+                    </Link>
+                    <Link href="/login?next=/dashboard/planes" className="flex-1">
+                      <Button fullWidth size="lg" variant="outline">Crear cuenta</Button>
+                    </Link>
+                  </div>
+                  <button
+                    onClick={() => setNecesitaCuenta(false)}
+                    className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 hover:text-white transition-colors duration-200 mt-6"
+                  >
+                    Seguir editando mi plan
+                  </button>
                 </div>
               </div>
             )}
@@ -488,13 +551,13 @@ export default function PlanesFlowPage() {
       </main>
 
       {/* ── Navegación inferior ── */}
-      {!(stepKey === 'resumen' && solicitado) && (
+      {!(stepKey === 'resumen' && (solicitado || necesitaCuenta)) && (
         <footer className="relative z-10 px-5 md:px-10 py-6 shrink-0 border-t border-white/5 bg-[rgba(5,5,5,0.6)] backdrop-blur-xl">
           <div className="max-w-xl mx-auto flex items-center justify-between gap-4">
             <button
               onClick={goBack}
               disabled={stepIdx === 0}
-              className="label-caps text-[11px] text-[var(--color-on-surface-variant)] hover:text-white disabled:opacity-30 disabled:hover:text-[var(--color-on-surface-variant)] transition-colors duration-200 flex items-center gap-2"
+              className="label-caps text-[11px] min-h-[44px] px-3 -ml-3 rounded-xl text-[var(--color-on-surface-variant)] hover:text-white hover:bg-white/5 disabled:opacity-30 disabled:hover:text-[var(--color-on-surface-variant)] disabled:hover:bg-transparent transition-[color,background-color] duration-200 flex items-center gap-2"
             >
               <span className="material-symbols-outlined text-[18px]">arrow_back</span>
               Atrás

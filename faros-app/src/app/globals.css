@@ -226,6 +226,17 @@ h1, h2, h3, h4, h5, h6 {
   50% { opacity: 1; }
 }
 
+/* ── Onda de agua — CTA "a nadar" (ripple concéntrico al hacer clic) ── */
+@keyframes waterRipple {
+  0%   { transform: scale(0.5); opacity: 0.6; }
+  100% { transform: scale(16); opacity: 0; }
+}
+@keyframes waterSplash {
+  0%   { transform: scale(0.4); opacity: 0.45; }
+  70%  { opacity: 0.12; }
+  100% { transform: scale(11); opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

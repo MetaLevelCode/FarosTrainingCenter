@@ -238,3 +238,125 @@ export function resumenPlan(sel: SeleccionPlan): { titulo: string; subtitulo: st
   }
   return { titulo: '', subtitulo: '', horarios: [] }
 }
+
+// ============================================================
+// PLAN ASIGNADO — el plan que un usuario ya tiene contratado.
+// Es la fuente de verdad compartida por el dashboard del alumno,
+// el portal del entrenador y el panel admin: todos describen el
+// mismo plan con las mismas cifras.
+// ============================================================
+
+export type EstadoPlan = 'activo' | 'pendiente' | 'vencido'
+
+export interface PlanAsignado extends SeleccionPlan {
+  estado: EstadoPlan
+  desde: string        // fecha de inicio (texto legible)
+  proximoPago: string  // próximo corte
+}
+
+export interface PlanDescrito {
+  titulo: string
+  subtitulo: string
+  horarios: string[]
+  frecuenciaLabel: string
+  sesionesMes: number
+  precioMensual: number
+  precioTexto: string
+  etiqueta: string      // versión corta para tablas y chips
+  tipoLabel: string
+}
+
+const TIPO_LABEL: Record<TipoPlan, string> = {
+  grupal: 'Grupal',
+  personal: 'Personalizado',
+  conjunto: 'Conjunto',
+  vacaciones: 'Vacaciones',
+}
+
+/** Describe un plan (asignado o en construcción) con cifras coherentes. */
+export function describirPlan(sel: SeleccionPlan): PlanDescrito {
+  const resumen = resumenPlan(sel)
+  const precio = calcularPrecio(sel)
+  const freq = FRECUENCIAS.find((f) => f.week === sel.week)
+
+  const sesionesMes =
+    sel.tipo === 'vacaciones' ? 10
+    : sel.tipo === 'conjunto' ? (sel.week === 1 ? 4 : 8)
+    : freq?.mes ?? 0
+
+  const frecuenciaLabel =
+    sel.tipo === 'vacaciones' ? 'Programa de 2 semanas' : freq?.label ?? ''
+
+  const etiqueta =
+    sel.tipo === 'vacaciones'
+      ? `Vacaciones · ${sel.ninos} ${sel.ninos === 1 ? 'niño' : 'niños'}`
+      : `${resumen.titulo} · ${sel.week}x`
+
+  return {
+    titulo: resumen.titulo,
+    subtitulo: resumen.subtitulo,
+    horarios: resumen.horarios,
+    frecuenciaLabel,
+    sesionesMes,
+    precioMensual: precio.total,
+    precioTexto: precio.disponible ? fmtCOP(precio.total) : 'Por confirmar',
+    etiqueta,
+    tipoLabel: sel.tipo ? TIPO_LABEL[sel.tipo] : '',
+  }
+}
+
+// ── Roster compartido (se reemplaza por Firestore) ──
+// Los mismos atletas y planes aparecen en el portal del entrenador,
+// el directorio admin y el ranking del alumno.
+export interface AtletaRoster {
+  id: string
+  nombre: string
+  plan: PlanAsignado
+  entrenador: string
+  asistidas: number     // sesiones asistidas del mes
+  documento: string
+  estadoCuenta: 'Activo' | 'Suspendido'
+}
+
+const HOY_DESDE = '03 Jul 2026'
+const PROX_PAGO = '03 Ago 2026'
+
+export const ROSTER: AtletaRoster[] = [
+  {
+    id: 'FR-0922', nombre: 'Carlos Méndez', entrenador: 'Ana Torres', asistidas: 6,
+    documento: 'C.C. 1.088.301.457', estadoCuenta: 'Activo',
+    plan: { tipo: 'grupal', grupoId: 'knowill', personalId: null, conjuntoId: null, week: 2, personas: 1, ninos: 0, estado: 'activo', desde: HOY_DESDE, proximoPago: PROX_PAGO },
+  },
+  {
+    id: 'FR-1045', nombre: 'Sofía Ruiz', entrenador: 'Ana Torres', asistidas: 11,
+    documento: 'C.C. 1.088.442.190', estadoCuenta: 'Activo',
+    plan: { tipo: 'grupal', grupoId: 'knowill', personalId: null, conjuntoId: null, week: 3, personas: 1, ninos: 0, estado: 'activo', desde: HOY_DESDE, proximoPago: PROX_PAGO },
+  },
+  {
+    id: 'FR-0871', nombre: 'Diego Morales', entrenador: 'Ana Torres', asistidas: 7,
+    documento: 'C.C. 1.089.110.774', estadoCuenta: 'Activo',
+    plan: { tipo: 'personal', grupoId: null, personalId: 'individual', conjuntoId: null, week: 2, personas: 1, ninos: 0, estado: 'activo', desde: HOY_DESDE, proximoPago: PROX_PAGO },
+  },
+  {
+    id: 'FR-1198', nombre: 'Valentina Castro', entrenador: 'Felipe Cárdenas', asistidas: 3,
+    documento: 'C.C. 1.092.663.028', estadoCuenta: 'Activo',
+    plan: { tipo: 'grupal', grupoId: 'estrellas', personalId: null, conjuntoId: null, week: 1, personas: 1, ninos: 0, estado: 'activo', desde: HOY_DESDE, proximoPago: PROX_PAGO },
+  },
+  {
+    id: 'FR-0634', nombre: 'Andrés Rojas', entrenador: 'Ana Torres', asistidas: 2,
+    documento: 'T.I. 1.011.556.201', estadoCuenta: 'Suspendido',
+    plan: { tipo: 'personal', grupoId: null, personalId: 'pareja', conjuntoId: null, week: 2, personas: 2, ninos: 0, estado: 'vencido', desde: '01 Jun 2026', proximoPago: 'Vencido' },
+  },
+  {
+    id: 'FR-1302', nombre: 'Mariana Duque', entrenador: 'Felipe Cárdenas', asistidas: 8,
+    documento: 'C.C. 1.093.008.771', estadoCuenta: 'Activo',
+    plan: { tipo: 'conjunto', grupoId: null, personalId: null, conjuntoId: 'nat-acuagym', week: 2, personas: 1, ninos: 0, estado: 'activo', desde: HOY_DESDE, proximoPago: PROX_PAGO },
+  },
+]
+
+/** Porcentaje de asistencia del mes según las sesiones que paga su plan. */
+export function pctAsistencia(a: AtletaRoster): number {
+  const { sesionesMes } = describirPlan(a.plan)
+  if (!sesionesMes) return 0
+  return Math.min(100, Math.round((a.asistidas / sesionesMes) * 100))
+}

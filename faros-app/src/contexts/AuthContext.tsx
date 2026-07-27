@@ -17,6 +17,7 @@ import {
 } from 'firebase/auth'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { auth, db } from '@/lib/firebase'
+import { ROSTER } from '@/lib/planes'
 import type { FarosUser, UserRole } from '@/lib/types'
 
 // Detect if Firebase is actually configured
@@ -26,7 +27,9 @@ const HAS_FIREBASE = Boolean(process.env.NEXT_PUBLIC_FIREBASE_API_KEY)
 const MOCK_USERS: Record<string, FarosUser & { password: string }> = {
   'alumno@faros.com': {
     uid: 'mock-1', email: 'alumno@faros.com', displayName: 'Carlos Méndez',
-    role: 'alumno', plan: 'pro', tier: 'Swim Pro', active: true, password: '123456',
+    role: 'alumno', active: true, password: '123456',
+    // Mismo plan que figura en ROSTER (lib/planes.ts): Grupal Knowill 2x/sem.
+    planActivo: ROSTER[0].plan,
     tipoDocumento: 'CC', documento: '1.088.301.457',
     fechaNacimiento: '14 de marzo de 1998', genero: 'Masculino',
     telefono: '+57 310 842 5567', ciudad: 'Pereira', departamento: 'Risaralda',
@@ -90,8 +93,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             displayName: fbUser.displayName ?? data?.displayName ?? 'Atleta',
             role: (data?.role as UserRole) ?? 'alumno',
             photoURL: fbUser.photoURL ?? undefined,
-            plan: data?.plan,
-            tier: data?.tier,
+            planActivo: data?.planActivo,
             active: data?.active ?? true,
             tipoDocumento: data?.tipoDocumento,
             documento: data?.documento,

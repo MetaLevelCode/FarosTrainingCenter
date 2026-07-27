@@ -2,6 +2,8 @@
 // FAROS — Domain Types
 // ============================================================
 
+import type { PlanAsignado } from './planes'
+
 export type UserRole = 'alumno' | 'entrenador' | 'admin'
 
 export type TipoDocumento = 'CC' | 'TI' | 'CE'
@@ -19,9 +21,10 @@ export interface FarosUser {
   role: UserRole
   photoURL?: string
   createdAt?: number
-  // Alumno-specific
-  plan?: 'basico' | 'pro' | 'elite'
-  tier?: string
+  // Alumno-specific — el plan contratado real (ver lib/planes.ts).
+  // Reemplaza los antiguos `plan: 'basico'|'pro'|'elite'` y `tier`,
+  // que no correspondían al sistema de planes del club.
+  planActivo?: PlanAsignado
   active?: boolean
   // Datos personales — estándar Colombia
   tipoDocumento?: TipoDocumento

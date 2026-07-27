@@ -23,9 +23,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   { variant = 'primary', size = 'md', loading, fullWidth, children, className = '', disabled, ...props },
   ref,
 ) {
+  // En pantallas táctiles (pointer: coarse) todo botón llega al mínimo
+  // de 44px sin engordar la UI en escritorio.
   const sizes: Record<ButtonSize, string> = {
-    sm: 'px-4 py-2 text-[11px]',
-    md: 'px-7 py-3.5 text-[12px]',
+    sm: 'px-4 py-2 text-[11px] [@media(pointer:coarse)]:min-h-[44px]',
+    md: 'px-7 py-3.5 text-[12px] [@media(pointer:coarse)]:min-h-[44px]',
     lg: 'px-10 py-5 text-[13px]',
   }
   const variants: Record<ButtonVariant, string> = {

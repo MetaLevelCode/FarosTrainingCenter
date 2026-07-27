@@ -42,7 +42,7 @@ type Clase = {
 
 const CLASES: Clase[] = [
   {
-    id: 'c1', hora: '06:00 AM', titulo: 'Técnica de Mariposa', tipo: 'Grupal', piscina: 'Piscina A',
+    id: 'c1', hora: '06:00 PM', titulo: 'Knowill UTP · Técnica', tipo: 'Grupal', piscina: 'Piscina A',
     estado: 'completado',
     plan: [
       'Calentamiento: 400 m libre progresivo',
@@ -60,7 +60,7 @@ const CLASES: Clase[] = [
     ],
   },
   {
-    id: 'c2', hora: '05:30 PM', titulo: 'Velocidad · Juan Pérez', tipo: 'Personal', piscina: 'Piscina B',
+    id: 'c2', hora: '05:30 PM', titulo: 'Personalizado · Diego Morales', tipo: 'Personal', piscina: 'Piscina B',
     estado: 'en-curso',
     plan: [
       'Activación: 300 m mixto',
@@ -70,7 +70,7 @@ const CLASES: Clase[] = [
     ],
     observaciones: 'Trabajar la fase subacuática tras la salida. Objetivo < 31 s en los 50 m. Revisar entrada de mano.',
     asistentes: [
-      { nombre: 'Juan Pérez', presente: true },
+      { nombre: 'Diego Morales', presente: true },
     ],
   },
   {

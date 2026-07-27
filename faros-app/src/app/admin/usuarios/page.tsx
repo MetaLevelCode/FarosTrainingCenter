@@ -12,6 +12,7 @@ import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button } from '@/components/ui'
+import { ROSTER, describirPlan } from '@/lib/planes'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -38,14 +39,24 @@ type Usuario = {
   estado: Estado
 }
 
-const USUARIOS_INICIALES: Usuario[] = [
-  { id: 'FR-0922', nombre: 'Carlos Méndez', rol: 'alumno', detalle: 'Plan Pro · Tier 1', documento: 'C.C. 1.088.301.457', ciclos: 3, estado: 'Activo' },
-  { id: 'FR-1045', nombre: 'Sofía Ruiz', rol: 'alumno', detalle: 'Plan Pro · Tier 2', documento: 'C.C. 1.088.442.190', ciclos: 4, estado: 'Activo' },
-  { id: 'FR-0871', nombre: 'Diego Morales', rol: 'alumno', detalle: 'Plan Elite · Tier 1', documento: 'C.C. 1.089.110.774', ciclos: 5, estado: 'Activo' },
-  { id: 'FR-0634', nombre: 'Andrés Rojas', rol: 'alumno', detalle: 'Plan Pro · Tier 3', documento: 'T.I. 1.011.556.201', ciclos: 1, estado: 'Suspendido' },
+// Atletas derivados del roster compartido: el detalle es su PLAN real
+// (el mismo que ve el alumno en su dashboard y el coach en su portal).
+const ATLETAS: Usuario[] = ROSTER.map((a) => ({
+  id: a.id,
+  nombre: a.nombre,
+  rol: 'alumno' as const,
+  detalle: describirPlan(a.plan).etiqueta,
+  documento: a.documento,
+  ciclos: a.plan.estado === 'vencido' ? 1 : 3,
+  estado: a.estadoCuenta,
+}))
+
+const STAFF: Usuario[] = [
   { id: 'FR-C002', nombre: 'Ana Torres', rol: 'entrenador', detalle: 'Velocidad y técnica', documento: 'C.C. 1.093.774.210', ciclos: 12, estado: 'Activo' },
   { id: 'FR-C005', nombre: 'Felipe Cárdenas', rol: 'entrenador', detalle: 'Resistencia · Auxiliar', documento: 'C.C. 1.087.902.336', ciclos: 8, estado: 'Activo' },
 ]
+
+const USUARIOS_INICIALES: Usuario[] = [...ATLETAS, ...STAFF]
 
 function ini(nombre: string) {
   return nombre.split(' ').filter(Boolean).map((p) => p[0]).slice(0, 2).join('').toUpperCase()

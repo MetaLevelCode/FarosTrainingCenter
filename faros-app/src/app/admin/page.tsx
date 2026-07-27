@@ -12,6 +12,7 @@ import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button } from '@/components/ui'
+import { ROSTER, describirPlan, pctAsistencia, fmtCOP } from '@/lib/planes'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -26,18 +27,20 @@ function Reveal({ children, delay = 0 }: { children: React.ReactNode; delay?: nu
 }
 
 // ── Datos de ejemplo (se reemplazan por Firestore) ──
+// Mismas cifras que /admin/finanzas (COP) para no contradecirse.
 const KPIS = [
   {
-    label: 'Ingresos netos', value: '$42,850', icon: 'trending_up', tone: 'success' as const,
+    label: 'Ingresos netos', value: fmtCOP(42_850_000), icon: 'trending_up', tone: 'success' as const,
     delta: '+12.5%', deltaLabel: 'vs. mes anterior',
   },
   {
-    label: 'Egresos operativos', value: '$12,400', icon: 'trending_down', tone: 'danger' as const,
+    label: 'Egresos operativos', value: fmtCOP(12_400_000), icon: 'trending_down', tone: 'danger' as const,
     delta: '−3.2%', deltaLabel: 'vs. mes anterior',
   },
   {
-    label: 'Atletas activos', value: '1,204', icon: 'shield_person', tone: 'primary' as const,
-    progress: 82,
+    label: 'Atletas activos', value: String(ROSTER.filter((a) => a.estadoCuenta === 'Activo').length),
+    icon: 'shield_person', tone: 'primary' as const,
+    progress: Math.round((ROSTER.filter((a) => a.estadoCuenta === 'Activo').length / ROSTER.length) * 100),
   },
   {
     label: 'Ocupación de piscinas', value: '88%', icon: 'pool', tone: 'primary' as const,
@@ -54,21 +57,41 @@ const STREAM_7D = [
   { mes: 'JUE', pct: 78 }, { mes: 'VIE', pct: 91 }, { mes: 'SÁB', pct: 60 },
 ]
 
-const APROBACIONES_INICIALES = [
-  { id: 1, titulo: 'Protocolo de Fuerza v2.4', detalle: 'Macro-ciclo A • Activo', coach: 'Coach Marcos', prioridad: true },
-  { id: 2, titulo: 'Plan Resistencia Juvenil', detalle: 'Micro-ciclo 3 • Borrador', coach: 'Coach Ana', prioridad: false },
-  { id: 3, titulo: 'Rutina Aquafitness Adultos', detalle: 'Ciclo mensual • Activo', coach: 'Coach Felipe', prioridad: false },
-  { id: 4, titulo: 'Preparación Torneo Regional', detalle: 'Macro-ciclo B • Urgente', coach: 'Coach Marcos', prioridad: true },
+// Solicitudes de plan que llegan del flujo "Arma tu plan": el admin
+// aprueba el pago y el plan queda activo para el alumno.
+const SOLICITUDES_INICIALES = [
+  {
+    id: 1, solicitante: 'Camila Herrera', prioridad: true,
+    sel: { tipo: 'grupal' as const, grupoId: 'knowill', personalId: null, conjuntoId: null, week: 3, personas: 1, ninos: 0 },
+  },
+  {
+    id: 2, solicitante: 'Julián Ospina', prioridad: false,
+    sel: { tipo: 'personal' as const, grupoId: null, personalId: 'individual', conjuntoId: null, week: 2, personas: 1, ninos: 0 },
+  },
+  {
+    id: 3, solicitante: 'Familia Ramírez', prioridad: false,
+    sel: { tipo: 'personal' as const, grupoId: null, personalId: 'familia', conjuntoId: null, week: 2, personas: 3, ninos: 0 },
+  },
+  {
+    id: 4, solicitante: 'Rafael Solano', prioridad: true,
+    sel: { tipo: 'conjunto' as const, grupoId: null, personalId: null, conjuntoId: 'nat-acuagym', week: 2, personas: 1, ninos: 0 },
+  },
 ]
 
 type Filtro = 'todos' | 'atletas' | 'staff'
 
+// Directorio derivado del roster compartido + staff.
 const USUARIOS = [
-  { nombre: 'Rafael Solano', rol: 'Atleta Pro • Tier 1', tipo: 'atletas', estado: 'Activo', asistencia: 98, standing: 'Campeón' },
-  { nombre: 'Camila Herrera', rol: 'Atleta • Tier 2', tipo: 'atletas', estado: 'Activo', asistencia: 87, standing: 'Avanzado' },
-  { nombre: 'Ana Torres', rol: 'Entrenadora principal', tipo: 'staff', estado: 'Activo', asistencia: 95, standing: 'Staff' },
-  { nombre: 'Julián Ospina', rol: 'Atleta • Tier 3', tipo: 'atletas', estado: 'Suspendido', asistencia: 41, standing: 'En riesgo' },
-  { nombre: 'Felipe Cárdenas', rol: 'Entrenador auxiliar', tipo: 'staff', estado: 'Activo', asistencia: 92, standing: 'Staff' },
+  ...ROSTER.map((a) => ({
+    nombre: a.nombre,
+    rol: describirPlan(a.plan).etiqueta,
+    tipo: 'atletas' as const,
+    estado: a.estadoCuenta,
+    asistencia: pctAsistencia(a),
+    standing: describirPlan(a.plan).tipoLabel,
+  })),
+  { nombre: 'Ana Torres', rol: 'Entrenadora principal', tipo: 'staff' as const, estado: 'Activo', asistencia: 95, standing: 'Staff' },
+  { nombre: 'Felipe Cárdenas', rol: 'Entrenador auxiliar', tipo: 'staff' as const, estado: 'Activo', asistencia: 92, standing: 'Staff' },
 ]
 
 function iniciales(nombre: string) {
@@ -79,7 +102,7 @@ export default function AdminPage() {
   const { authorized, loading } = useRoleGuard(['admin'])
   const [rango, setRango] = useState<'7D' | '30D'>('30D')
   const [filtro, setFiltro] = useState<Filtro>('todos')
-  const [aprobaciones, setAprobaciones] = useState(APROBACIONES_INICIALES)
+  const [aprobaciones, setAprobaciones] = useState(SOLICITUDES_INICIALES)
 
   const stream = rango === '30D' ? STREAM_30D : STREAM_7D
   const usuariosVisibles = useMemo(
@@ -215,7 +238,7 @@ export default function AdminPage() {
             <Reveal delay={0.2}>
               <Card padding="none" className="overflow-hidden h-full flex flex-col">
                 <div className="p-6 md:p-8 border-b border-white/5 flex justify-between items-center bg-white/[0.01]">
-                  <h3 className="label-caps text-xs text-white">Aprobaciones</h3>
+                  <h3 className="label-caps text-xs text-white">Solicitudes de plan</h3>
                   <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase ${
                     aprobaciones.length > 0
                       ? 'bg-[var(--color-danger-crimson)] text-white shadow-[0_0_20px_rgba(239,68,68,0.3)]'
@@ -225,52 +248,60 @@ export default function AdminPage() {
                   </span>
                 </div>
                 <div className="flex-1 p-5 space-y-4 overflow-y-auto max-h-[400px]">
-                  {aprobaciones.map((a) => (
-                    <div
-                      key={a.id}
-                      className="p-5 bg-white/[0.02] border border-white/5 rounded-2xl hover:border-[rgba(230,255,0,0.3)] hover:bg-white/[0.04] transition-[border-color,background-color] duration-300"
-                    >
-                      <div className="flex justify-between items-start mb-4 gap-3">
-                        <div className="min-w-0">
-                          <p className="text-[14px] font-black text-white mb-1 truncate">{a.titulo}</p>
-                          <p className="text-[9px] text-[var(--color-on-surface-variant)]/50 uppercase tracking-widest font-bold">{a.detalle}</p>
+                  {aprobaciones.map((a) => {
+                    const info = describirPlan(a.sel)
+                    return (
+                      <div
+                        key={a.id}
+                        className="p-5 bg-white/[0.02] border border-white/5 rounded-2xl hover:border-[rgba(230,255,0,0.3)] hover:bg-white/[0.04] transition-[border-color,background-color] duration-300"
+                      >
+                        <div className="flex justify-between items-start mb-4 gap-3">
+                          <div className="min-w-0">
+                            <p className="text-[14px] font-black text-white mb-1 truncate">{info.titulo}</p>
+                            <p className="text-[9px] text-[var(--color-on-surface-variant)]/50 uppercase tracking-widest font-bold">
+                              {info.tipoLabel} · {info.frecuenciaLabel}
+                            </p>
+                          </div>
+                          {a.prioridad && (
+                            <span className="text-[9px] font-black text-[var(--color-primary-fixed)] bg-[rgba(230,255,0,0.1)] px-2 py-1 rounded border border-[rgba(230,255,0,0.2)] shrink-0">
+                              PRIORIDAD
+                            </span>
+                          )}
                         </div>
-                        {a.prioridad && (
-                          <span className="text-[9px] font-black text-[var(--color-primary-fixed)] bg-[rgba(230,255,0,0.1)] px-2 py-1 rounded border border-[rgba(230,255,0,0.2)] shrink-0">
-                            PRIORIDAD
+                        <div className="flex items-center justify-between mb-4">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-[10px] font-black text-[var(--color-on-surface-variant)] border border-white/5 shrink-0">
+                              {iniciales(a.solicitante)}
+                            </span>
+                            <span className="text-xs text-[var(--color-on-surface-variant)]/80 font-bold truncate">{a.solicitante}</span>
+                          </div>
+                          <span className="font-display font-black text-[var(--color-primary-fixed)] text-sm shrink-0">
+                            {info.precioTexto}
                           </span>
-                        )}
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <span className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-[10px] font-black text-[var(--color-on-surface-variant)] border border-white/5 shrink-0">
-                            {iniciales(a.coach)}
-                          </span>
-                          <span className="text-xs text-[var(--color-on-surface-variant)]/80 font-bold truncate">{a.coach}</span>
                         </div>
-                        <div className="flex gap-2 shrink-0">
+                        <div className="flex gap-3 justify-end">
                           <button
                             onClick={() => resolver(a.id)}
-                            aria-label={`Rechazar ${a.titulo}`}
-                            className="w-9 h-9 flex items-center justify-center text-[var(--color-on-surface-variant)]/60 hover:text-[var(--color-danger-crimson)] hover:bg-[rgba(239,68,68,0.1)] rounded-xl transition-colors duration-200 active:scale-[0.94]"
+                            aria-label={`Rechazar solicitud de ${a.solicitante}`}
+                            className="w-11 h-11 flex items-center justify-center text-[var(--color-on-surface-variant)]/60 hover:text-[var(--color-danger-crimson)] hover:bg-[rgba(239,68,68,0.1)] rounded-xl transition-colors duration-200 active:scale-[0.94]"
                           >
                             <span className="material-symbols-outlined text-[20px]">close</span>
                           </button>
                           <button
                             onClick={() => resolver(a.id)}
-                            aria-label={`Aprobar ${a.titulo}`}
-                            className="w-9 h-9 flex items-center justify-center text-[var(--color-primary-fixed)] bg-[rgba(230,255,0,0.05)] border border-[rgba(230,255,0,0.2)] hover:bg-[var(--color-primary-fixed)] hover:text-black rounded-xl transition-colors duration-200 active:scale-[0.94]"
+                            aria-label={`Aprobar solicitud de ${a.solicitante}`}
+                            className="w-11 h-11 flex items-center justify-center text-[var(--color-primary-fixed)] bg-[rgba(230,255,0,0.05)] border border-[rgba(230,255,0,0.2)] hover:bg-[var(--color-primary-fixed)] hover:text-black rounded-xl transition-colors duration-200 active:scale-[0.94]"
                           >
                             <span className="material-symbols-outlined text-[20px]">check</span>
                           </button>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                   {aprobaciones.length === 0 && (
                     <div className="text-center py-12">
                       <span className="material-symbols-outlined text-[var(--color-success-emerald)] text-4xl mb-3 block">task_alt</span>
-                      <p className="text-sm text-[var(--color-on-surface-variant)]/60">No hay planes pendientes de revisión.</p>
+                      <p className="text-sm text-[var(--color-on-surface-variant)]/60">No hay solicitudes de plan pendientes.</p>
                     </div>
                   )}
                 </div>

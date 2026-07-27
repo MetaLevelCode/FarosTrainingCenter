@@ -37,8 +37,8 @@ const CLASES = [
     detalle: 'Piscina A • 9 atletas', estado: 'completado' as const,
   },
   {
-    hora: '05:30', meridiano: 'PM', tipo: 'Personal', titulo: 'Velocidad • Juan Pérez',
-    detalle: 'Piscina B • Elite Pro', estado: 'en-curso' as const,
+    hora: '05:30', meridiano: 'PM', tipo: 'Personal', titulo: 'Velocidad • Diego Morales',
+    detalle: 'Piscina B • Personalizado individual', estado: 'en-curso' as const,
   },
   {
     hora: '07:00', meridiano: 'PM', tipo: 'Grupal', titulo: 'Aquafitness Nocturno',

@@ -19,6 +19,7 @@ import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
+import { ROSTER, describirPlan } from '@/lib/planes'
 import type { TipoDocumento } from '@/lib/types'
 
 const EASE = [0.22, 1, 0.36, 1] as const
@@ -31,13 +32,6 @@ function Reveal({ children, delay = 0 }: { children: React.ReactNode; delay?: nu
       transition={{ duration: 0.6, delay, ease: EASE }}
     >{children}</motion.div>
   )
-}
-
-// Mapeo de plan → detalles comerciales (se reemplaza por Firestore)
-const PLAN_INFO: Record<string, { nombre: string; precio: string; color: string }> = {
-  basico: { nombre: 'Base', precio: '$29.000 / mes', color: 'text-white' },
-  pro: { nombre: 'Pro', precio: '$59.000 / mes', color: 'text-[var(--color-primary-fixed)]' },
-  elite: { nombre: 'Elite', precio: '$99.000 / mes', color: 'text-[var(--color-primary-fixed)]' },
 }
 
 const DOC_LABEL: Record<TipoDocumento, string> = {
@@ -75,8 +69,9 @@ export default function PerfilPage() {
 
   const nombre = user?.displayName ?? 'Atleta'
   const email = user?.email ?? '—'
-  const plan = PLAN_INFO[user?.plan ?? 'pro'] ?? PLAN_INFO.pro
-  const tier = user?.tier ?? 'Swim Pro'
+  // El plan contratado real (mismo dato que ve el coach y el admin).
+  const planActivo = user?.planActivo ?? ROSTER[0].plan
+  const plan = describirPlan(planActivo)
 
   // Datos personales (usuario real → fallback demo Colombia)
   const tipoDoc = user?.tipoDocumento ?? DEMO.tipoDocumento
@@ -172,22 +167,37 @@ export default function PerfilPage() {
                   <span className="material-symbols-outlined text-[var(--color-primary-fixed)]">workspace_premium</span>
                 </div>
 
-                <div className="flex items-baseline gap-3 mb-2">
-                  <span className={`font-display text-4xl font-black leading-none ${plan.color}`}>{plan.nombre}</span>
-                </div>
-                <p className="label-caps text-[11px] text-[var(--color-on-surface-variant)]/60 mb-6">{plan.precio}</p>
+                <p className="font-display text-3xl font-black leading-tight text-[var(--color-primary-fixed)] mb-2">
+                  {plan.titulo}
+                </p>
+                <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/60 mb-1">
+                  {plan.tipoLabel} · {plan.frecuenciaLabel}
+                </p>
+                <p className="label-caps text-[11px] text-white mb-6">
+                  {plan.precioTexto} <span className="text-[var(--color-on-surface-variant)]/50">/ mes</span>
+                </p>
+
+                {plan.horarios.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-5">
+                    {plan.horarios.map((h) => (
+                      <span key={h} className="label-caps text-[9px] px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[var(--color-on-surface-variant)]/70">
+                        {h}
+                      </span>
+                    ))}
+                  </div>
+                )}
 
                 <div className="rounded-2xl border border-[rgba(16,185,129,0.25)] bg-[rgba(16,185,129,0.08)] p-4 flex items-center gap-3 mb-4">
                   <span className="material-symbols-outlined text-[var(--color-success-emerald)]">verified</span>
                   <div>
                     <p className="text-sm font-bold text-white">Aprobado por administración</p>
-                    <p className="text-[11px] text-[var(--color-on-surface-variant)]/60">Confirmado el 03 Jul 2026</p>
+                    <p className="text-[11px] text-[var(--color-on-surface-variant)]/60">Activo desde {planActivo.desde}</p>
                   </div>
                 </div>
 
                 <div className="flex items-center justify-between mt-auto pt-4 border-t border-white/5">
                   <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50">Próximo pago</span>
-                  <span className="font-display font-black text-white text-sm">03 Ago 2026</span>
+                  <span className="font-display font-black text-white text-sm">{planActivo.proximoPago}</span>
                 </div>
               </Card>
             </Reveal>

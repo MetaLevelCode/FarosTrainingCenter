@@ -9,6 +9,7 @@
 // ============================================================
 
 import { useEffect, useState } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { motion } from 'motion/react'
@@ -20,6 +21,13 @@ const ROLE_HOME: Record<string, string> = {
   alumno: '/dashboard', entrenador: '/portal', admin: '/admin',
 }
 
+// Lee ?next= y sólo acepta rutas internas (evita open-redirect).
+function getNext(): string | null {
+  if (typeof window === 'undefined') return null
+  const n = new URLSearchParams(window.location.search).get('next')
+  return n && n.startsWith('/') && !n.startsWith('//') ? n : null
+}
+
 export default function LoginPage() {
   const router = useRouter()
   const { user, loading: authLoading, signIn, error, clearError, isMockMode } = useAuth()
@@ -27,10 +35,21 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // Con sesión activa el login no aporta nada: directo al panel.
+  // Arranca en false (igual en servidor y cliente) y sólo pasa a true
+  // en lg+, para no descargar el video en celular.
+  const [esEscritorio, setEsEscritorio] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)')
+    const sync = () => setEsEscritorio(mq.matches)
+    sync()
+    mq.addEventListener('change', sync)
+    return () => mq.removeEventListener('change', sync)
+  }, [])
+
+  // Con sesión activa el login no aporta nada: directo al destino/panel.
   useEffect(() => {
     if (!authLoading && user) {
-      router.replace(ROLE_HOME[user.role] ?? '/dashboard')
+      router.replace(getNext() ?? ROLE_HOME[user.role] ?? '/dashboard')
     }
   }, [user, authLoading, router])
 
@@ -40,7 +59,7 @@ export default function LoginPage() {
     setLoading(true)
     const res = await signIn(email, password)
     setLoading(false)
-    if (res.ok && res.role) router.replace(ROLE_HOME[res.role] ?? '/dashboard')
+    if (res.ok && res.role) router.replace(getNext() ?? ROLE_HOME[res.role] ?? '/dashboard')
   }
 
   const demos = [
@@ -55,13 +74,20 @@ export default function LoginPage() {
 
       {/* ── LEFT: Cinematic brand video ── */}
       <div className="relative hidden lg:flex items-center justify-center overflow-hidden border-r border-[var(--color-surface-stroke)]">
-        <video
-          className="absolute inset-0 w-full h-full object-cover"
-          autoPlay muted loop playsInline
-          poster="/media/hero-poster.jpg"
-        >
-          <source src="/media/hero-horizontal.mp4" type="video/mp4" />
-        </video>
+        {/* El clip (4,2 MB) SÓLO se monta en lg+. Ocultarlo con CSS no
+            basta: `autoPlay` anula `preload="none"` y el navegador lo
+            descarga igual, aunque esté display:none. */}
+        {esEscritorio ? (
+          <video
+            className="absolute inset-0 w-full h-full object-cover"
+            autoPlay muted loop playsInline
+            poster="/media/hero-poster.jpg"
+          >
+            <source src="/media/hero-horizontal.mp4" type="video/mp4" />
+          </video>
+        ) : (
+          <Image src="/media/hero-poster.jpg" alt="" fill sizes="50vw" className="object-cover" />
+        )}
 
         <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-transparent to-[#050505]/40 pointer-events-none" />
         <div className="absolute inset-0 bg-gradient-to-r from-transparent to-[#050505]/60 pointer-events-none" />
@@ -92,15 +118,18 @@ export default function LoginPage() {
           transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
           className="w-full max-w-[400px]"
         >
-          {/* Mobile: inline video header */}
+          {/* Mobile: cabecera con imagen, NO video.
+              El clip pesa 4,2 MB y en datos móviles no se justifica:
+              usamos el póster (30 KB) con el mismo encuadre. */}
           <div className="lg:hidden mb-8 rounded-3xl overflow-hidden relative aspect-video border border-[var(--color-surface-stroke)]">
-            <video
-              className="w-full h-full object-cover"
-              autoPlay muted loop playsInline
-              poster="/media/hero-poster.jpg"
-            >
-              <source src="/media/hero-horizontal.mp4" type="video/mp4" />
-            </video>
+            <Image
+              src="/media/hero-poster.jpg"
+              alt=""
+              fill
+              sizes="(max-width: 1024px) 100vw, 0px"
+              priority
+              className="object-cover"
+            />
             <div className="absolute inset-0 bg-gradient-to-t from-[#050505] to-transparent" />
             <div className="absolute bottom-4 left-4">
               <Link href="/" aria-label="Volver a la página principal">

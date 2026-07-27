@@ -11,6 +11,7 @@ import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge } from '@/components/ui'
+import { ROSTER, describirPlan, pctAsistencia } from '@/lib/planes'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -24,16 +25,30 @@ function Reveal({ children, delay = 0 }: { children: React.ReactNode; delay?: nu
   )
 }
 
-type Modalidad = 'todos' | 'grupal' | 'personal'
+type Modalidad = 'todos' | 'grupal' | 'personal' | 'conjunto'
 
-const ALUMNOS = [
-  { id: 'FR-0922', nombre: 'Carlos Méndez', plan: 'Pro', modalidad: 'personal', asistencia: 91, ultima: 'Ayer', estado: 'Activo' },
-  { id: 'FR-1045', nombre: 'Sofía Ruiz', plan: 'Pro', modalidad: 'grupal', asistencia: 84, ultima: 'Hoy', estado: 'Activo' },
-  { id: 'FR-0871', nombre: 'Diego Morales', plan: 'Elite', modalidad: 'grupal', asistencia: 78, ultima: 'Hace 2 días', estado: 'Activo' },
-  { id: 'FR-1198', nombre: 'Valentina Castro', plan: 'Base', modalidad: 'grupal', asistencia: 63, ultima: 'Hace 5 días', estado: 'Activo' },
-  { id: 'FR-0634', nombre: 'Andrés Rojas', plan: 'Pro', modalidad: 'personal', asistencia: 42, ultima: 'Hace 8 días', estado: 'En riesgo' },
-  { id: 'FR-1302', nombre: 'Mariana Duque', plan: 'Elite', modalidad: 'grupal', asistencia: 95, ultima: 'Hoy', estado: 'Activo' },
-] as const
+const ULTIMA: Record<string, string> = {
+  'FR-0922': 'Ayer', 'FR-1045': 'Hoy', 'FR-0871': 'Hace 2 días',
+  'FR-1198': 'Hace 5 días', 'FR-0634': 'Hace 8 días', 'FR-1302': 'Hoy',
+}
+
+// Los alumnos y sus planes salen del roster compartido: el coach ve
+// exactamente el plan que el alumno contrató en el flujo.
+const ALUMNOS = ROSTER.map((a) => {
+  const info = describirPlan(a.plan)
+  return {
+    id: a.id,
+    nombre: a.nombre,
+    plan: info.etiqueta,
+    tipoLabel: info.tipoLabel,
+    modalidad: a.plan.tipo,
+    sesionesMes: info.sesionesMes,
+    asistidas: a.asistidas,
+    asistencia: pctAsistencia(a),
+    ultima: ULTIMA[a.id] ?? '—',
+    estado: a.plan.estado === 'vencido' ? 'En riesgo' : 'Activo',
+  }
+})
 
 function ini(nombre: string) {
   return nombre.split(' ').filter(Boolean).map((p) => p[0]).slice(0, 2).join('').toUpperCase()
@@ -94,7 +109,7 @@ export default function AlumnosPage() {
           <Card padding="none" className="overflow-hidden">
             <div className="p-6 md:p-8 border-b border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white/[0.02]">
               <div className="flex p-1 bg-black/40 border border-white/10 rounded-xl w-fit" role="group" aria-label="Modalidad">
-                {([['todos', 'Todos'], ['grupal', 'Grupal'], ['personal', 'Personal']] as const).map(([key, label]) => (
+                {([['todos', 'Todos'], ['grupal', 'Grupal'], ['personal', 'Personal'], ['conjunto', 'Conjunto']] as const).map(([key, label]) => (
                   <button
                     key={key}
                     onClick={() => setModalidad(key)}
@@ -144,9 +159,11 @@ export default function AlumnosPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4"><Badge variant={a.plan === 'Elite' ? 'primary' : 'default'}>{a.plan}</Badge></td>
                       <td className="px-6 py-4">
-                        <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/70 capitalize">{a.modalidad}</span>
+                        <Badge variant={a.modalidad === 'personal' ? 'primary' : 'default'}>{a.plan}</Badge>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/70">{a.tipoLabel}</span>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
@@ -160,7 +177,9 @@ export default function AlumnosPage() {
                               style={{ width: `${a.asistencia}%` }}
                             />
                           </div>
-                          <span className="text-xs font-black text-white">{a.asistencia}%</span>
+                          <span className="text-xs font-black text-white whitespace-nowrap">
+                            {a.asistidas}<span className="text-[var(--color-on-surface-variant)]/40">/{a.sesionesMes}</span>
+                          </span>
                         </div>
                       </td>
                       <td className="px-6 py-4 text-xs text-[var(--color-on-surface-variant)]/60 whitespace-nowrap">{a.ultima}</td>

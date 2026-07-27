@@ -108,9 +108,10 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
           </h1>
         </div>
         <div className="flex items-center gap-4">
+          {/* min-h/w 44px: área táctil mínima (antes 37×18 → fallaba el toque) */}
           <button
             onClick={() => signOut()}
-            className="label-caps text-[10px] text-[var(--color-on-surface-variant)] hover:text-[var(--color-danger-crimson)] transition-colors duration-200"
+            className="label-caps text-[10px] min-h-[44px] min-w-[44px] px-3 flex items-center justify-center rounded-xl text-[var(--color-on-surface-variant)] hover:text-[var(--color-danger-crimson)] hover:bg-white/5 active:scale-[0.96] transition-[color,background-color,transform] duration-200"
           >
             Salir
           </button>

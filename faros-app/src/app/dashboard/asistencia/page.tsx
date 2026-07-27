@@ -13,6 +13,7 @@ import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button } from '@/components/ui'
+import { ROSTER, describirPlan } from '@/lib/planes'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -27,7 +28,10 @@ function Reveal({ children, delay = 0 }: { children: React.ReactNode; delay?: nu
 }
 
 // ── Datos de ejemplo (se reemplazan por Firestore) ──
-const CICLO = { asistidas: 12, total: 20 }
+// El ciclo NO es un número fijo: son las sesiones que paga tu plan.
+const YO = ROSTER[0]
+const PLAN_INFO_ALUMNO = describirPlan(YO.plan)
+const CICLO = { asistidas: YO.asistidas, total: PLAN_INFO_ALUMNO.sesionesMes }
 
 const ULTIMA_SESION = {
   fecha: 'Ayer · 06:00 AM',
@@ -51,16 +55,23 @@ const HISTORIAL = [
   { fecha: '07 JUL', clase: 'Resistencia Aeróbica', tipo: 'Grupal', distancia: '2,000 m', mejor: '0:36.1', estado: 'asistio' as const },
 ]
 
-const PROXIMAS_INICIALES = [
-  {
-    id: 'c1', dia: 'MAR 18', hora: '06:00 AM', clase: 'Endurance Squad', piscina: 'Piscina A',
-    companeros: ['Carlos M.', 'Sofía R.', 'Diego M.', 'Andrea R.', 'Luis T.'], cancelada: false,
-  },
-  {
-    id: 'c2', dia: 'JUE 20', hora: '05:30 PM', clase: 'Sprint Técnico', piscina: 'Piscina B',
-    companeros: ['Valentina C.', 'Andrés R.', 'Mariana D.'], cancelada: false,
-  },
-]
+// Próximas sesiones = los horarios reales del grupo que contrataste.
+const COMPANEROS_GRUPO = ROSTER
+  .filter((a) => a.id !== YO.id && a.plan.tipo === YO.plan.tipo && a.plan.grupoId === YO.plan.grupoId)
+  .map((a) => a.nombre)
+
+const PROXIMAS_INICIALES = PLAN_INFO_ALUMNO.horarios.slice(0, 2).map((h, i) => {
+  const [dia, hora] = h.split(' · ')
+  return {
+    id: `c${i + 1}`,
+    dia: dia.toUpperCase(),
+    hora,
+    clase: PLAN_INFO_ALUMNO.titulo,
+    piscina: 'Piscina A',
+    companeros: COMPANEROS_GRUPO,
+    cancelada: false,
+  }
+})
 
 function ini(nombre: string) {
   return nombre.split(' ').filter(Boolean).map((p) => p[0]).slice(0, 2).join('').toUpperCase()
