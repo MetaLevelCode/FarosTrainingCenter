@@ -9,12 +9,24 @@
 // muted+loop+playsInline and only plays when in view.
 // ============================================================
 
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useState } from 'react'
+import Image from 'next/image'
 import { motion, useScroll, useTransform } from 'motion/react'
 
 export function ScrollVideoPanel() {
   const sectionRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
+
+  // El clip vertical pesa 3,1 MB. En celular se sustituye por su
+  // póster: el parallax y el reveal se conservan igual.
+  const [esEscritorio, setEsEscritorio] = useState(false)
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 768px)')
+    const sync = () => setEsEscritorio(mq.matches)
+    sync()
+    mq.addEventListener('change', sync)
+    return () => mq.removeEventListener('change', sync)
+  }, [])
 
   // Track scroll progress across this section
   const { scrollYProgress } = useScroll({
@@ -61,15 +73,25 @@ export function ScrollVideoPanel() {
             style={{ y: videoY, scale: videoScale }}
             className="absolute inset-0 will-change-transform"
           >
-            <video
-              ref={videoRef}
-              className="w-full h-full object-cover"
-              muted loop playsInline
-              poster="/media/logo-poster.jpg"
-              preload="metadata"
-            >
-              <source src="/media/logo-vertical.mp4" type="video/mp4" />
-            </video>
+            {esEscritorio ? (
+              <video
+                ref={videoRef}
+                className="w-full h-full object-cover"
+                muted loop playsInline
+                poster="/media/logo-poster.jpg"
+                preload="metadata"
+              >
+                <source src="/media/logo-vertical.mp4" type="video/mp4" />
+              </video>
+            ) : (
+              <Image
+                src="/media/logo-poster.jpg"
+                alt=""
+                fill
+                sizes="100vw"
+                className="object-cover"
+              />
+            )}
           </motion.div>
 
           {/* Scroll-reactive scrim */}

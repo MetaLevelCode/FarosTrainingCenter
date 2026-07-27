@@ -17,6 +17,7 @@ function Corriente({ position }: { position: number }) {
   // móvil tras hidratar: menos trazos = menos CPU y batería, sin
   // provocar un desajuste de hidratación.
   const [total, setTotal] = useState(36)
+  const [compacto, setCompacto] = useState(false)
 
   useEffect(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
@@ -24,7 +25,11 @@ function Corriente({ position }: { position: number }) {
     const onChange = () => setReduced(mq.matches)
     mq.addEventListener('change', onChange)
 
-    const ajustar = () => setTotal(window.innerWidth < 768 ? 18 : 36)
+    const ajustar = () => {
+      const movil = window.innerWidth < 768
+      setTotal(movil ? 18 : 36)
+      setCompacto(movil)
+    }
     ajustar()
     window.addEventListener('resize', ajustar, { passive: true })
 
@@ -54,9 +59,13 @@ function Corriente({ position }: { position: number }) {
 
   return (
     <div className="absolute inset-0 pointer-events-none">
+      {/* En móvil el lienzo es vertical: con el encuadre de escritorio
+          el SVG se escala ~2,6× y sólo se ve el 21% del ancho, justo
+          donde las curvas ya cayeron fuera por abajo. Un encuadre más
+          alto y alejado las sube y deja ver muchas más. */}
       <svg
         className="w-full h-full"
-        viewBox="0 0 696 316"
+        viewBox={compacto ? '0 90 696 680' : '0 0 696 316'}
         fill="none"
         preserveAspectRatio="xMidYMid slice"
         aria-hidden="true"

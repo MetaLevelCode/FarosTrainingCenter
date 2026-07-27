@@ -50,8 +50,12 @@ void main() {
   gl_FragColor = vec4(color, 1.0);
 }`
 
+// En móvil se renderiza a menor resolución y menos fps: el shader
+// es decorativo y así deja CPU/GPU (y batería) para el contenido.
 const MAX_RENDER_WIDTH = 1280
+const MAX_RENDER_WIDTH_MOVIL = 720
 const TARGET_FPS = 30
+const TARGET_FPS_MOVIL = 20
 
 export function WaterBackground() {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -80,10 +84,13 @@ export function WaterBackground() {
     let destroyed = false
     let raf = 0
 
+    const esMovil = window.matchMedia('(max-width: 768px)').matches
+
     function syncSize() {
       const cw = canvas!.clientWidth || 1280
       const ch = canvas!.clientHeight || 720
-      const scale = Math.min(1, MAX_RENDER_WIDTH / cw)
+      const maxW = esMovil ? MAX_RENDER_WIDTH_MOVIL : MAX_RENDER_WIDTH
+      const scale = Math.min(1, maxW / cw)
       const w = Math.round(cw * scale)
       const h = Math.round(ch * scale)
       if (canvas!.width !== w || canvas!.height !== h) {
@@ -149,7 +156,7 @@ export function WaterBackground() {
     canvas.addEventListener('webglcontextlost', onLost)
     canvas.addEventListener('webglcontextrestored', onRestored)
 
-    const frameInterval = 1000 / TARGET_FPS
+    const frameInterval = 1000 / (esMovil ? TARGET_FPS_MOVIL : TARGET_FPS)
     let lastFrame = 0
     let running = true
 

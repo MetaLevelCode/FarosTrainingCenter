@@ -147,7 +147,6 @@ h1, h2, h3, h4, h5, h6 {
     border-color 350ms var(--ease-out),
     box-shadow 350ms var(--ease-out),
     transform 300ms var(--ease-out);
-  will-change: transform;
 }
 
 /* Water shimmer — slow iridescent sweep */
@@ -175,12 +174,30 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 @media (hover: hover) and (pointer: fine) {
+  /* La promoción a capa sólo vale la pena donde hay hover: en móvil
+     creaba una capa de composición por tarjeta sin usarse nunca. */
+  .liquid-glass { will-change: transform; }
+
   .liquid-glass:hover {
     border-color: rgba(230, 255, 0, 0.28);
     box-shadow:
       0 14px 44px 0 rgba(0, 0, 0, 0.45),
       inset 0 1px 0 rgba(255, 255, 255, 0.04);
     transform: translateY(-2px);
+  }
+}
+
+/* ── Ahorro en móvil ──
+   El brillo iridiscente es un repintado continuo por tarjeta (9 en el
+   dashboard) y a 375px es prácticamente imperceptible. El desenfoque
+   de fondo se reduce: 10 capas de blur son el mayor coste de GPU en
+   gama media. El vidrio se mantiene con el mismo tinte y borde. */
+@media (max-width: 768px) {
+  .liquid-glass::before { animation: none; opacity: 0; }
+  .liquid-glass {
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    background: rgba(255, 255, 255, 0.045);
   }
 }
 
