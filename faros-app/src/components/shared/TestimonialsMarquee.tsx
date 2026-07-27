@@ -39,6 +39,13 @@ const OPINIONES: Opinion[] = [
   { nombre: 'Laura Betancur', usuario: '@lau', texto: 'Armé el plan desde el celular en dos minutos y me confirmaron el cupo el mismo día.', ciudad: 'Cartago' },
 ]
 
+// Dos degradados cruzados: uno vertical y otro horizontal. Combinados
+// con `intersect` recortan suavemente los cuatro bordes a la vez.
+const MASCARA = [
+  'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.4) 10%, #000 30%, #000 70%, rgba(0,0,0,0.4) 90%, transparent 100%)',
+  'linear-gradient(to right, transparent 0%, rgba(0,0,0,0.5) 8%, #000 22%, #000 78%, rgba(0,0,0,0.5) 92%, transparent 100%)',
+].join(', ')
+
 function iniciales(nombre: string) {
   return nombre.split(' ').filter(Boolean).map((p) => p[0]).slice(0, 2).join('').toUpperCase()
 }
@@ -85,6 +92,7 @@ function Columna({ reverse, duracion, repeticiones }: {
 export function TestimonialsMarquee() {
   const [columnas, setColumnas] = useState(4)
   const [repeticiones, setRepeticiones] = useState(3)
+  const [pausado, setPausado] = useState(false)
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 768px)')
@@ -109,7 +117,26 @@ export function TestimonialsMarquee() {
         </h2>
       </div>
 
-      <div className="marquee-group relative flex h-[420px] md:h-[520px] w-full items-center justify-center overflow-hidden [perspective:320px]">
+      {/* Máscara en degradado: difumina el propio contenido en los
+          cuatro bordes, así no se ve dónde empieza ni dónde termina.
+          Es más limpio que superponer franjas opacas. */}
+      <div
+        role="button"
+        tabIndex={0}
+        aria-pressed={pausado}
+        aria-label={pausado ? 'Reanudar opiniones' : 'Pausar opiniones'}
+        onClick={() => setPausado((p) => !p)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPausado((p) => !p) }
+        }}
+        className={`marquee-group relative flex h-[420px] md:h-[520px] w-full items-center justify-center overflow-hidden cursor-pointer [perspective:320px] ${pausado ? 'is-paused' : ''}`}
+        style={{
+          maskImage: MASCARA,
+          WebkitMaskImage: MASCARA,
+          maskComposite: 'intersect',
+          WebkitMaskComposite: 'source-in',
+        }}
+      >
         <div
           className="flex flex-row gap-4"
           style={{
@@ -126,13 +153,11 @@ export function TestimonialsMarquee() {
             />
           ))}
         </div>
-
-        {/* Desvanecidos hacia el fondo para que no se corte en seco */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-1/4 bg-gradient-to-b from-[#050505] to-transparent" />
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/4 bg-gradient-to-t from-[#050505] to-transparent" />
-        <div className="pointer-events-none absolute inset-y-0 left-0 w-1/5 bg-gradient-to-r from-[#050505] to-transparent" />
-        <div className="pointer-events-none absolute inset-y-0 right-0 w-1/5 bg-gradient-to-l from-[#050505] to-transparent" />
       </div>
+
+      <p className="text-center label-caps text-[9px] text-[var(--color-on-surface-variant)]/40 mt-6">
+        {pausado ? 'Toca para reanudar' : 'Toca para pausar'}
+      </p>
     </section>
   )
 }

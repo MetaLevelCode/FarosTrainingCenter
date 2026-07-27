@@ -264,7 +264,9 @@ body {
 }
 .marquee-col.is-reverse { animation-direction: reverse; }
 
-.marquee-group:hover .marquee-col { animation-play-state: paused; }
+/* Se pausa al hacer clic/tocar, NO al pasar el cursor: en celular no
+   existe el hover y un roce del ratón no debería detenerlo. */
+.marquee-group.is-paused .marquee-col { animation-play-state: paused; }
 
 @keyframes marqueeVertical {
   from { transform: translateY(0); }
