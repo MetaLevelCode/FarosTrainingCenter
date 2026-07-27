@@ -10,18 +10,9 @@
 import {
   createContext, useContext, useEffect, useState, useCallback, ReactNode,
 } from 'react'
-import {
-  onAuthStateChanged, signInWithEmailAndPassword,
-  createUserWithEmailAndPassword, signOut as fbSignOut,
-  updateProfile as fbUpdateProfile,
-} from 'firebase/auth'
-import { doc, getDoc, setDoc } from 'firebase/firestore'
-import { auth, db } from '@/lib/firebase'
+import { HAS_FIREBASE, getFirebase } from '@/lib/firebase'
 import { ROSTER } from '@/lib/planes'
 import type { FarosUser, UserRole } from '@/lib/types'
-
-// Detect if Firebase is actually configured
-const HAS_FIREBASE = Boolean(process.env.NEXT_PUBLIC_FIREBASE_API_KEY)
 
 // Mock users for local development (no Firebase needed)
 const MOCK_USERS: Record<string, FarosUser & { password: string }> = {
@@ -81,7 +72,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    const unsub = onAuthStateChanged(auth, async (fbUser) => {
+    // Firebase se descarga aquí, no en el bundle inicial.
+    let unsub: (() => void) | undefined
+    let cancelado = false
+
+    ;(async () => {
+      const [{ auth, db }, { onAuthStateChanged }, { doc, getDoc }] = await Promise.all([
+        getFirebase(),
+        import('firebase/auth'),
+        import('firebase/firestore'),
+      ])
+      if (cancelado) return
+
+      unsub = onAuthStateChanged(auth, async (fbUser) => {
       if (fbUser) {
         // Look up role from Firestore
         try {
@@ -118,8 +121,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null)
       }
       setLoading(false)
-    })
-    return () => unsub()
+      })
+    })().catch(() => setLoading(false))
+
+    return () => { cancelado = true; unsub?.() }
   }, [])
 
   // ── Sign in ──
@@ -138,6 +143,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     try {
+      const [{ auth, db }, { signInWithEmailAndPassword }, { doc, getDoc }] = await Promise.all([
+        getFirebase(), import('firebase/auth'), import('firebase/firestore'),
+      ])
       const cred = await signInWithEmailAndPassword(auth, email, password)
       const snap = await getDoc(doc(db, 'users', cred.user.uid))
       const role = (snap.data()?.role as UserRole) ?? 'alumno'
@@ -161,8 +169,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { ok: true }
     }
     try {
-      const cred = await createUserWithEmailAndPassword(auth, email, password)
-      await fbUpdateProfile(cred.user, { displayName })
+      const [{ auth, db }, fbAuth, { doc, setDoc }] = await Promise.all([
+        getFirebase(), import('firebase/auth'), import('firebase/firestore'),
+      ])
+      const cred = await fbAuth.createUserWithEmailAndPassword(auth, email, password)
+      await fbAuth.updateProfile(cred.user, { displayName })
       await setDoc(doc(db, 'users', cred.user.uid), {
         displayName, email, role, active: true, createdAt: Date.now(),
       })
@@ -183,6 +194,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try { localStorage.removeItem('faros-mock-user') } catch {}
       return
     }
+    const [{ auth }, { signOut: fbSignOut }] = await Promise.all([
+      getFirebase(), import('firebase/auth'),
+    ])
     await fbSignOut(auth)
   }, [])
 

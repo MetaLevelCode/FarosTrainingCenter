@@ -1,11 +1,18 @@
 // ============================================================
-// FAROS — Firebase Initialization
-// Config comes from environment variables (see .env.local.example)
+// FAROS — Firebase (carga diferida)
+// Config desde variables de entorno (ver .env.local.example).
+//
+// El SDK NO se importa de forma estática: aunque el guard en
+// tiempo de ejecución evitaba usarlo sin API key, el bundler
+// igual metía Auth + Firestore (~180 kB) en TODAS las páginas.
+// Ahora se descarga sólo cuando hay credenciales y sólo al
+// momento de necesitarlo, así el shell de la app pinta antes.
 // ============================================================
 
-import { initializeApp, getApps, getApp } from 'firebase/app'
-import { getAuth } from 'firebase/auth'
-import { getFirestore } from 'firebase/firestore'
+import type { Auth } from 'firebase/auth'
+import type { Firestore } from 'firebase/firestore'
+
+export const HAS_FIREBASE = Boolean(process.env.NEXT_PUBLIC_FIREBASE_API_KEY)
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -16,14 +23,21 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 }
 
-// Only initialize when a real API key is present.
-// In mock mode (no key), export null — AuthContext never touches these.
-const HAS_KEY = Boolean(firebaseConfig.apiKey)
+let cache: Promise<{ auth: Auth; db: Firestore }> | null = null
 
-const app = HAS_KEY
-  ? (getApps().length ? getApp() : initializeApp(firebaseConfig))
-  : null
-
-export const auth = app ? getAuth(app) : (null as any)
-export const db = app ? getFirestore(app) : (null as any)
-export default app
+/** Inicializa Firebase la primera vez y reutiliza la instancia. */
+export function getFirebase() {
+  if (!cache) {
+    cache = (async () => {
+      const [{ initializeApp, getApps, getApp }, { getAuth }, { getFirestore }] =
+        await Promise.all([
+          import('firebase/app'),
+          import('firebase/auth'),
+          import('firebase/firestore'),
+        ])
+      const app = getApps().length ? getApp() : initializeApp(firebaseConfig)
+      return { auth: getAuth(app), db: getFirestore(app) }
+    })()
+  }
+  return cache
+}
