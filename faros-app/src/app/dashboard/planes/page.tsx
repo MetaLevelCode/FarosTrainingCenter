@@ -240,7 +240,7 @@ export default function PlanesFlowPage() {
       </header>
 
       {/* ── Progreso ── */}
-      <div className="relative z-10 px-5 md:px-10 pt-2 pb-6 shrink-0">
+      <div className="relative z-10 px-5 md:px-10 pt-2 pb-2 shrink-0">
         <div className="max-w-xl mx-auto">
           <div className="flex items-center justify-between mb-2.5">
             <span className="label-caps text-[10px] text-[var(--color-primary-fixed)]">Paso {stepIdx + 1} de {totalSteps}</span>
@@ -258,14 +258,14 @@ export default function PlanesFlowPage() {
 
       {/* ── Contenido del paso (centrado verticalmente) ── */}
       <main className="relative z-10 flex-1 overflow-y-auto flex flex-col px-5 md:px-10">
-        <div className="w-full max-w-xl mx-auto my-auto py-10">
+        <div className="w-full max-w-xl mx-auto my-auto pt-4 pb-10">
           <motion.div
             key={stepKey}
             initial={{ opacity: 0, x: dir * 36 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.35, ease: EASE }}
           >
-            <h1 className="font-display text-[clamp(1.75rem,5vw,2.5rem)] font-black text-white uppercase tracking-tighter leading-tight mb-10">
+            <h1 className="font-display text-[clamp(1.75rem,5vw,2.5rem)] font-black text-white uppercase tracking-tighter leading-tight mb-14">
               {STEP_TITULO[stepKey]}
             </h1>
 

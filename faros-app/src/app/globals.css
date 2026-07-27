@@ -98,12 +98,17 @@ body {
   padding-bottom: env(safe-area-inset-bottom, 0);
 }
 
-h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-display);
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
-  margin: 0;
+/* En @layer base: sin capa, este reset gana a las utilidades de
+   Tailwind (el CSS sin capa siempre vence al CSS en capas) y hacía
+   que `mb-*`/`mt-*` no tuvieran efecto en NINGÚN encabezado. */
+@layer base {
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    margin: 0;
+  }
 }
 
 ::selection {
@@ -249,6 +254,25 @@ h1, h2, h3, h4, h5, h6 {
 @keyframes pathFade {
   0%, 100% { opacity: 0; }
   50% { opacity: 1; }
+}
+
+/* ── Marquee vertical de opiniones ──
+   Anima sólo `transform`, así corre en el compositor. La duración se
+   inyecta por columna con la variable --duration. */
+.marquee-col {
+  animation: marqueeVertical var(--duration, 40s) linear infinite;
+}
+.marquee-col.is-reverse { animation-direction: reverse; }
+
+.marquee-group:hover .marquee-col { animation-play-state: paused; }
+
+@keyframes marqueeVertical {
+  from { transform: translateY(0); }
+  to { transform: translateY(-100%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee-col { animation: none; }
 }
 
 /* ── Onda de agua — CTA "a nadar" (ripple concéntrico al hacer clic) ── */

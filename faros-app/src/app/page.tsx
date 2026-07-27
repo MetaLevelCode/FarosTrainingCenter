@@ -19,6 +19,7 @@ import { WaterBackground } from '@/components/shared/WaterBackground'
 import { FloatingPaths } from '@/components/shared/FloatingPaths'
 import { NadarCTA } from '@/components/shared/NadarCTA'
 import { AnimatedFooter } from '@/components/shared/AnimatedFooter'
+import { TestimonialsMarquee } from '@/components/shared/TestimonialsMarquee'
 
 const EASE = [0.23, 1, 0.32, 1] as const
 
@@ -47,7 +48,7 @@ function Reveal({ children, delay = 0, className = '' }: {
 
 
 // ── Section anchors for nav highlighting ──
-const SECTIONS = ['hero', 'info', 'planes', 'media', 'auth'] as const
+const SECTIONS = ['hero', 'info', 'planes', 'media', 'opiniones'] as const
 type SectionId = (typeof SECTIONS)[number]
 
 function useActiveSection(): SectionId {
@@ -70,17 +71,11 @@ function useActiveSection(): SectionId {
   return active
 }
 
-const ROLES = [
-  { icon: 'directions_run', label: 'Atleta' },
-  { icon: 'sports', label: 'Entrenador' },
-  { icon: 'admin_panel_settings', label: 'Administrativo' },
-]
-
 const DOCK = [
   { id: 'hero' as SectionId, icon: 'home', label: 'Inicio' },
   { id: 'info' as SectionId, icon: 'info', label: 'Info' },
   { id: 'planes' as SectionId, icon: 'fitness_center', label: 'Planes' },
-  { id: 'auth' as SectionId, icon: 'login', label: 'Acceso' },
+  { id: 'opiniones' as SectionId, icon: 'reviews', label: 'Opiniones' },
 ]
 
 export default function LandingPage() {
@@ -171,7 +166,7 @@ export default function LandingPage() {
         style={{ marginBottom: 'env(safe-area-inset-bottom, 0)' }}
       >
         {DOCK.map((item) => {
-          const isActive = active === item.id || (item.id === 'auth' && active === 'media')
+          const isActive = active === item.id
           return (
             <a
               key={item.id}
@@ -368,41 +363,8 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* ══ AUTH — acceso por rol ══ */}
-        <section id="auth" className="py-24 px-5 md:px-10 max-w-4xl mx-auto relative">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(600px,90vw)] h-[min(600px,90vw)] bg-[rgba(230,255,0,0.05)] organic-curve blur-[120px] pointer-events-none" aria-hidden="true" />
-          <Reveal>
-            <div className="liquid-glass rounded-[2.5rem] p-8 md:p-16 relative z-10 text-center">
-              <div className="relative z-10">
-                <h2 className="font-display text-headline-lg font-black text-white uppercase mb-3 tracking-tight">
-                  Acceso a la{' '}
-                  <span className="text-[var(--color-primary-fixed)] drop-shadow-[0_0_15px_rgba(230,255,0,0.3)]">
-                    Plataforma
-                  </span>
-                </h2>
-                <p className="text-[var(--color-secondary)] mb-12">
-                  Selecciona tu perfil para iniciar sesión o registrarte.
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                  {ROLES.map((role) => (
-                    <Link
-                      key={role.label}
-                      href="/login"
-                      className="group bg-[rgba(30,30,30,0.4)] backdrop-blur-md border border-[var(--color-surface-stroke)] hover:border-[rgba(230,255,0,0.5)] p-8 rounded-[2rem] flex flex-col items-center gap-5 hover:-translate-y-1.5 active:scale-[0.98] transition-[border-color,transform,box-shadow] duration-300 hover:shadow-[0_15px_30px_rgba(0,0,0,0.4)]"
-                    >
-                      <span className="w-20 h-20 rounded-full bg-black/60 flex items-center justify-center group-hover:bg-[var(--color-primary-fixed)] transition-colors duration-300 shadow-inner">
-                        <span className="material-symbols-outlined text-[var(--color-secondary)] group-hover:text-black text-4xl transition-colors duration-300">
-                          {role.icon}
-                        </span>
-                      </span>
-                      <span className="label-caps text-white">{role.label}</span>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </Reveal>
-        </section>
+        {/* ══ OPINIONES — prueba social antes del cierre ══ */}
+        <TestimonialsMarquee />
       </main>
 
       {/* ══ FOOTER ══ */}
