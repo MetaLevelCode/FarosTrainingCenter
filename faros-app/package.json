@@ -18,6 +18,7 @@
     "zustand": "5.0.3"
   },
   "devDependencies": {
+    "@apphosting/adapter-nextjs": "^14.0.21",
     "@tailwindcss/postcss": "^4.3.2",
     "@types/node": "22.10.7",
     "@types/react": "19.0.7",
