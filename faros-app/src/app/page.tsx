@@ -368,19 +368,7 @@ export default function LandingPage() {
       </main>
 
       {/* ══ FOOTER ══ */}
-      {/* Pie con oleaje: cierra la página como la superficie del agua */}
-      <AnimatedFooter
-        leftLinks={[
-          { href: '/login', label: 'Acceso' },
-          { href: '#planes', label: 'Planes' },
-        ]}
-        rightLinks={[
-          { href: '#info', label: 'Información' },
-          { href: '#media', label: 'Publicaciones' },
-          { href: 'mailto:contacto@farostraining.com', label: 'Contacto' },
-        ]}
-        copyrightText={`Faros Training ${new Date().getFullYear()}. Todos los derechos reservados.`}
-      />
+      <AnimatedFooter />
     </div>
   )
 }

@@ -1,196 +1,141 @@
 'use client'
 
 // ============================================================
-// FAROS — Pie de página con oleaje
-// Barras que ondulan como la superficie de la piscina.
-//
-// Ajustes de rendimiento sobre el patrón original:
-//  · Sin `transition` en las barras: pelea con el rAF (una
-//    interpolación por frame que se descarta al frame siguiente).
-//  · Sin `will-change` permanente: 23 barras = 23 capas de
-//    composición vivas aunque el pie esté fuera de pantalla.
-//  · Bucle limitado a 30 fps en móvil (el oleaje es lento, no se
-//    nota) y menos barras en pantallas pequeñas.
-//  · Se detiene fuera de viewport Y con la pestaña oculta.
-//  · Respeta prefers-reduced-motion: queda una onda estática.
+// FAROS — Pie de página
+// Columnas de enlaces con entrada difuminada al entrar en vista.
+// Sustituye al oleaje anterior: mismo cierre visual, sin bucle de
+// requestAnimationFrame ni 23 barras mutando transform por frame.
+// Iconos de redes en SVG inline (sin dependencias nuevas).
 // ============================================================
 
-import { useEffect, useRef, useState } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 import Link from 'next/link'
+import { motion, useReducedMotion } from 'motion/react'
 import { FarosLogo } from '@/components/ui'
 
-interface LinkItem { href: string; label: string }
+type IconoProps = { className?: string }
 
-interface Props {
-  leftLinks: LinkItem[]
-  rightLinks: LinkItem[]
-  copyrightText: string
-}
+const Instagram = ({ className }: IconoProps) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+    <rect x="2" y="2" width="20" height="20" rx="5" />
+    <circle cx="12" cy="12" r="4" />
+    <circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none" />
+  </svg>
+)
 
-export function AnimatedFooter({ leftLinks, rightLinks, copyrightText }: Props) {
-  const barsRef = useRef<(HTMLDivElement | null)[]>([])
-  const footerRef = useRef<HTMLElement | null>(null)
-  const rafRef = useRef<number | null>(null)
+const Facebook = ({ className }: IconoProps) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M14 9h3V6h-3c-2.2 0-4 1.8-4 4v2H8v3h2v7h3v-7h3l1-3h-4v-2c0-.6.4-1 1-1z" />
+  </svg>
+)
 
-  const [visible, setVisible] = useState(false)
-  const [barCount, setBarCount] = useState(23)
-  const [reduced, setReduced] = useState(false)
+const WhatsApp = ({ className }: IconoProps) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M12 2a10 10 0 0 0-8.6 15L2 22l5.2-1.4A10 10 0 1 0 12 2zm5.3 14.1c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .1-1.7-.1a12 12 0 0 1-5.8-5c-.4-.7-.7-1.5-.7-2.2 0-.8.4-1.4.7-1.7.2-.2.4-.3.6-.3h.5c.2 0 .4 0 .6.4l.8 1.9c.1.2 0 .4-.1.5l-.4.5c-.1.2-.3.3-.1.6a8 8 0 0 0 3.4 3c.3.1.5.1.6-.1l.7-.8c.2-.2.4-.2.6-.1l1.8.9c.2.1.4.2.4.3v.5c0 .2 0 .4-.1.6z" />
+  </svg>
+)
 
-  // Menos barras en móvil + respeto a reduced-motion
-  useEffect(() => {
-    const mqMovil = window.matchMedia('(max-width: 768px)')
-    const mqReduce = window.matchMedia('(prefers-reduced-motion: reduce)')
-    const sync = () => {
-      setBarCount(mqMovil.matches ? 14 : 23)
-      setReduced(mqReduce.matches)
-    }
-    sync()
-    mqMovil.addEventListener('change', sync)
-    mqReduce.addEventListener('change', sync)
-    return () => {
-      mqMovil.removeEventListener('change', sync)
-      mqReduce.removeEventListener('change', sync)
-    }
-  }, [])
+interface Enlace { titulo: string; href: string; icono?: React.ComponentType<IconoProps> }
+interface Seccion { titulo: string; enlaces: Enlace[] }
 
-  // Sólo anima cuando el pie está a la vista
-  useEffect(() => {
-    const el = footerRef.current
-    if (!el) return
-    const io = new IntersectionObserver(
-      ([entry]) => setVisible(entry.isIntersecting),
-      { threshold: 0.1 },
-    )
-    io.observe(el)
-    return () => io.disconnect()
-  }, [])
+const SECCIONES: Seccion[] = [
+  {
+    titulo: 'Plataforma',
+    enlaces: [
+      { titulo: 'Arma tu plan', href: '/dashboard/planes' },
+      { titulo: 'Iniciar sesión', href: '/login' },
+      { titulo: 'Opiniones', href: '#opiniones' },
+    ],
+  },
+  {
+    titulo: 'El club',
+    enlaces: [
+      { titulo: 'Información', href: '#info' },
+      { titulo: 'Publicaciones', href: '#media' },
+      { titulo: 'Sedes y horarios', href: '#planes' },
+    ],
+  },
+  {
+    titulo: 'Contacto',
+    enlaces: [
+      { titulo: 'contacto@farostraining.com', href: 'mailto:contacto@farostraining.com' },
+      { titulo: 'Pereira, Risaralda', href: '#info' },
+    ],
+  },
+  {
+    titulo: 'Síguenos',
+    enlaces: [
+      { titulo: 'Instagram', href: '#', icono: Instagram },
+      { titulo: 'Facebook', href: '#', icono: Facebook },
+      { titulo: 'WhatsApp', href: '#', icono: WhatsApp },
+    ],
+  },
+]
 
-  // Bucle del oleaje
-  useEffect(() => {
-    const barras = barsRef.current
-
-    // Reduced motion: una sola pasada estática, sin bucle.
-    if (reduced) {
-      let offset = 0
-      barras.forEach((b, i) => {
-        if (!b) return
-        offset += Math.max(0, 20 * Math.sin(i * 0.3))
-        b.style.transform = `translateY(${i + offset}px)`
-      })
-      return
-    }
-
-    if (!visible) return
-
-    const movil = window.matchMedia('(max-width: 768px)').matches
-    const intervalo = 1000 / (movil ? 30 : 60)
-    let t = 0
-    let ultimo = 0
-
-    const loop = (ahora: number) => {
-      rafRef.current = requestAnimationFrame(loop)
-      if (ahora - ultimo < intervalo) return
-      ultimo = ahora
-
-      let offset = 0
-      for (let i = 0; i < barras.length; i++) {
-        const b = barras[i]
-        if (!b) continue
-        offset += Math.max(0, 20 * Math.sin((t + i) * 0.3))
-        b.style.transform = `translateY(${i + offset}px)`
-      }
-      t += 0.1
-    }
-
-    rafRef.current = requestAnimationFrame(loop)
-
-    // Pausa también con la pestaña en segundo plano
-    const onVis = () => {
-      if (document.hidden && rafRef.current) {
-        cancelAnimationFrame(rafRef.current)
-        rafRef.current = null
-      } else if (!document.hidden && rafRef.current === null) {
-        ultimo = 0
-        rafRef.current = requestAnimationFrame(loop)
-      }
-    }
-    document.addEventListener('visibilitychange', onVis)
-
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current)
-      rafRef.current = null
-      document.removeEventListener('visibilitychange', onVis)
-    }
-  }, [visible, reduced, barCount])
-
+export function AnimatedFooter() {
   return (
-    <footer
-      ref={footerRef}
-      className="relative z-10 w-full flex flex-col justify-between select-none overflow-hidden bg-[#050505] border-t border-[var(--color-surface-stroke)]"
-    >
-      <div className="max-w-[1400px] mx-auto flex flex-col md:flex-row justify-between w-full gap-8 pt-14 pb-20 px-5 md:px-10">
-        {/* Izquierda: legales + marca */}
-        <div className="space-y-4">
-          <ul className="flex flex-wrap gap-5">
-            {leftLinks.map((l) => (
-              <li key={l.href}>
-                <Link
-                  href={l.href}
-                  className="text-sm text-[var(--color-on-surface-variant)] hover:text-[var(--color-primary-fixed)] transition-colors duration-200 inline-flex items-center justify-center min-h-[44px] min-w-[44px] px-2 -mx-2"
-                >
-                  {l.label}
-                </Link>
-              </li>
-            ))}
-          </ul>
-          <p className="text-sm text-[var(--color-on-surface-variant)]/70 flex items-center gap-2">
-            <FarosLogo size={14} />
-            {copyrightText}
+    <footer className="relative z-10 w-full mx-auto max-w-[1400px] flex flex-col items-center rounded-t-[2.5rem] border-t border-[var(--color-surface-stroke)] bg-[radial-gradient(38%_128px_at_50%_0%,rgba(230,255,0,0.07),transparent)] px-5 md:px-10 py-14 lg:py-16">
+      {/* Filo luminoso superior */}
+      <div className="absolute top-0 left-1/2 h-px w-1/3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--color-primary-fixed)]/40 blur-[1px]" />
+
+      <div className="grid w-full gap-10 xl:grid-cols-3 xl:gap-8">
+        <Entrada className="space-y-5">
+          <FarosLogo size={34} />
+          <p className="text-sm text-[var(--color-on-surface-variant)]/70 max-w-xs leading-relaxed">
+            Entrenamiento acuático de alto rendimiento en Risaralda.
+            Planes a la medida, datos reales, progreso medible.
           </p>
-        </div>
+          <p className="text-sm text-[var(--color-on-surface-variant)]/50">
+            © {new Date().getFullYear()} Faros Training. Todos los derechos reservados.
+          </p>
+        </Entrada>
 
-        {/* Derecha: navegación + volver arriba */}
-        <div className="space-y-4 md:text-right">
-          <ul className="flex flex-wrap gap-5 md:justify-end">
-            {rightLinks.map((l) => (
-              <li key={l.href}>
-                <Link
-                  href={l.href}
-                  className="text-sm text-[var(--color-on-surface-variant)] hover:text-[var(--color-primary-fixed)] transition-colors duration-200 inline-flex items-center justify-center min-h-[44px] min-w-[44px] px-2 -mx-2"
-                >
-                  {l.label}
-                </Link>
-              </li>
-            ))}
-          </ul>
-          <div className="md:text-right">
-            <button
-              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-              className="label-caps text-[10px] text-[var(--color-on-surface-variant)] hover:text-[var(--color-primary-fixed)] transition-colors duration-200 inline-flex items-center gap-2 min-h-[44px] px-3 -mx-3 rounded-xl"
-            >
-              Volver arriba
-              <span className="material-symbols-outlined text-[16px]">arrow_upward</span>
-            </button>
-          </div>
+        <div className="grid grid-cols-2 gap-8 md:grid-cols-4 xl:col-span-2">
+          {SECCIONES.map((sec, i) => (
+            <Entrada key={sec.titulo} delay={0.1 + i * 0.1}>
+              <h3 className="label-caps text-[10px] text-[var(--color-primary-fixed)]">{sec.titulo}</h3>
+              <ul className="mt-4 space-y-1">
+                {sec.enlaces.map((e) => (
+                  <li key={e.titulo}>
+                    <Link
+                      href={e.href}
+                      className="inline-flex items-center gap-2 min-h-[44px] text-sm text-[var(--color-on-surface-variant)]/75 hover:text-[var(--color-primary-fixed)] transition-colors duration-300"
+                    >
+                      {e.icono && <e.icono className="size-4 shrink-0" />}
+                      {e.titulo}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </Entrada>
+          ))}
         </div>
-      </div>
-
-      {/* Oleaje */}
-      <div aria-hidden="true" className="overflow-hidden h-[160px] md:h-[200px]">
-        {Array.from({ length: barCount }).map((_, i) => {
-          // Del blanco tenue de la espuma al amarillo de marca:
-          // da sensación de profundidad al acercarse al borde.
-          const p = i / Math.max(1, barCount - 1)
-          const color = `color-mix(in srgb, var(--color-primary-fixed) ${Math.round(p * 100)}%, rgba(255,255,255,0.10))`
-          return (
-            <div
-              key={i}
-              ref={(el) => { barsRef.current[i] = el }}
-              style={{ height: `${i + 1}px`, backgroundColor: color, marginTop: '-2px' }}
-            />
-          )
-        })}
       </div>
     </footer>
+  )
+}
+
+type EntradaProps = {
+  delay?: number
+  className?: ComponentProps<typeof motion.div>['className']
+  children: ReactNode
+}
+
+/** Aparece con un desenfoque leve al entrar en vista (una sola vez). */
+function Entrada({ className, delay = 0.1, children }: EntradaProps) {
+  const reducir = useReducedMotion()
+
+  if (reducir) return <div className={className}>{children}</div>
+
+  return (
+    <motion.div
+      initial={{ filter: 'blur(4px)', translateY: -8, opacity: 0 }}
+      whileInView={{ filter: 'blur(0px)', translateY: 0, opacity: 1 }}
+      viewport={{ once: true }}
+      transition={{ delay, duration: 0.8 }}
+      className={className}
+    >
+      {children}
+    </motion.div>
   )
 }
