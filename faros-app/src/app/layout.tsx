@@ -59,12 +59,15 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    // Inline styles: guaranteed dark background even if CSS vars
-    // fail to resolve or the WebGL canvas never paints.
+    // El <body> lleva el fondo oscuro inline: garantizado aunque las CSS
+    // vars no resuelvan o el canvas WebGL no pinte nunca.
+    // El <html> va en amarillo de marca a propósito: es lo que asoma al
+    // scrollear más allá de los límites de la página (rubber band), donde
+    // antes se veía una franja blanca.
     <html
       lang="es"
       className={`dark ${montserrat.variable} ${hanken.variable}`}
-      style={{ backgroundColor: '#050505' }}
+      style={{ backgroundColor: '#e6ff00' }}
     >
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />

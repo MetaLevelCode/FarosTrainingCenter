@@ -13,6 +13,7 @@ import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button } from '@/components/ui'
 import { ROSTER, describirPlan, pctAsistencia, fmtCOP } from '@/lib/planes'
+import { planActivable, faltantes, type Verificaciones } from '@/lib/matricula'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -102,7 +103,16 @@ export default function AdminPage() {
   const { authorized, loading } = useRoleGuard(['admin'])
   const [rango, setRango] = useState<'7D' | '30D'>('30D')
   const [filtro, setFiltro] = useState<Filtro>('todos')
-  const [aprobaciones, setAprobaciones] = useState(SOLICITUDES_INICIALES)
+  // Cada solicitud arrastra sus dos verificaciones (horario y pago).
+  const [aprobaciones, setAprobaciones] = useState(
+    SOLICITUDES_INICIALES.map((s) => ({ ...s, verif: { horario: false, pago: false } as Verificaciones })),
+  )
+
+  function alternarVerif(id: number, campo: keyof Verificaciones) {
+    setAprobaciones((prev) =>
+      prev.map((a) => (a.id === id ? { ...a, verif: { ...a.verif, [campo]: !a.verif[campo] } } : a)),
+    )
+  }
 
   const stream = rango === '30D' ? STREAM_30D : STREAM_7D
   const usuariosVisibles = useMemo(
@@ -238,7 +248,12 @@ export default function AdminPage() {
             <Reveal delay={0.2}>
               <Card padding="none" className="overflow-hidden h-full flex flex-col">
                 <div className="p-6 md:p-8 border-b border-white/5 flex justify-between items-center bg-white/[0.01]">
-                  <h3 className="label-caps text-xs text-white">Solicitudes de plan</h3>
+                  <div>
+                    <h3 className="label-caps text-xs text-white">Solicitudes de plan</h3>
+                    <p className="text-[9px] text-[var(--color-on-surface-variant)]/50 mt-1">
+                      Verifica horario y pago para activar
+                    </p>
+                  </div>
                   <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase ${
                     aprobaciones.length > 0
                       ? 'bg-[var(--color-danger-crimson)] text-white shadow-[0_0_20px_rgba(239,68,68,0.3)]'
@@ -279,21 +294,50 @@ export default function AdminPage() {
                             {info.precioTexto}
                           </span>
                         </div>
-                        <div className="flex gap-3 justify-end">
-                          <button
-                            onClick={() => resolver(a.id)}
-                            aria-label={`Rechazar solicitud de ${a.solicitante}`}
-                            className="w-11 h-11 flex items-center justify-center text-[var(--color-on-surface-variant)]/60 hover:text-[var(--color-danger-crimson)] hover:bg-[rgba(239,68,68,0.1)] rounded-xl transition-colors duration-200 active:scale-[0.94]"
-                          >
-                            <span className="material-symbols-outlined text-[20px]">close</span>
-                          </button>
-                          <button
-                            onClick={() => resolver(a.id)}
-                            aria-label={`Aprobar solicitud de ${a.solicitante}`}
-                            className="w-11 h-11 flex items-center justify-center text-[var(--color-primary-fixed)] bg-[rgba(230,255,0,0.05)] border border-[rgba(230,255,0,0.2)] hover:bg-[var(--color-primary-fixed)] hover:text-black rounded-xl transition-colors duration-200 active:scale-[0.94]"
-                          >
-                            <span className="material-symbols-outlined text-[20px]">check</span>
-                          </button>
+                        {/* ── Doble verificación ── */}
+                        <div className="space-y-2 mb-4">
+                          <Verificacion
+                            icon="event_available"
+                            label="Horario con el profesor"
+                            detalle="Confirmado que el día y la hora son posibles"
+                            hecho={a.verif.horario}
+                            onToggle={() => alternarVerif(a.id, 'horario')}
+                          />
+                          <Verificacion
+                            icon="payments"
+                            label="Pago recibido"
+                            detalle={`Pagó ${info.precioTexto}`}
+                            hecho={a.verif.pago}
+                            onToggle={() => alternarVerif(a.id, 'pago')}
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3">
+                          <span className={`label-caps text-[9px] ${
+                            planActivable(a.verif)
+                              ? 'text-[var(--color-success-emerald)]'
+                              : 'text-[var(--color-on-surface-variant)]/50'
+                          }`}>
+                            {faltantes(a.verif)}
+                          </span>
+                          <div className="flex gap-2 shrink-0">
+                            <button
+                              onClick={() => resolver(a.id)}
+                              aria-label={`Rechazar solicitud de ${a.solicitante}`}
+                              className="w-11 h-11 flex items-center justify-center text-[var(--color-on-surface-variant)]/60 hover:text-[var(--color-danger-crimson)] hover:bg-[rgba(239,68,68,0.1)] rounded-xl transition-colors duration-200 active:scale-[0.94]"
+                            >
+                              <span className="material-symbols-outlined text-[20px]">close</span>
+                            </button>
+                            <button
+                              onClick={() => resolver(a.id)}
+                              disabled={!planActivable(a.verif)}
+                              aria-label={`Activar plan de ${a.solicitante}`}
+                              className="h-11 px-4 flex items-center gap-2 label-caps text-[9px] rounded-xl transition-colors duration-200 active:scale-[0.94] disabled:opacity-30 disabled:cursor-not-allowed text-[var(--color-primary-fixed)] bg-[rgba(230,255,0,0.05)] border border-[rgba(230,255,0,0.2)] enabled:hover:bg-[var(--color-primary-fixed)] enabled:hover:text-black"
+                            >
+                              <span className="material-symbols-outlined text-[18px]">check</span>
+                              Activar
+                            </button>
+                          </div>
                         </div>
                       </div>
                     )
@@ -415,5 +459,42 @@ export default function AdminPage() {
         </Reveal>
       </div>
     </GuardedShell>
+  )
+}
+
+// ── Una casilla de verificación de la solicitud ──
+function Verificacion({
+  icon, label, detalle, hecho, onToggle,
+}: {
+  icon: string; label: string; detalle: string; hecho: boolean; onToggle: () => void
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      role="switch"
+      aria-checked={hecho}
+      className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-colors duration-200 ${
+        hecho
+          ? 'border-[rgba(16,185,129,0.3)] bg-[rgba(16,185,129,0.06)]'
+          : 'border-white/5 bg-white/[0.02] hover:border-white/15'
+      }`}
+    >
+      <span className={`material-symbols-outlined text-[18px] shrink-0 ${
+        hecho ? 'text-[var(--color-success-emerald)]' : 'text-[var(--color-on-surface-variant)]/40'
+      }`}>
+        {icon}
+      </span>
+      <span className="flex-1 min-w-0">
+        <span className={`block text-[11px] font-black truncate ${hecho ? 'text-white' : 'text-[var(--color-on-surface-variant)]/70'}`}>
+          {label}
+        </span>
+        <span className="block text-[9px] text-[var(--color-on-surface-variant)]/40 truncate">{detalle}</span>
+      </span>
+      <span className={`material-symbols-outlined text-[20px] shrink-0 ${
+        hecho ? 'text-[var(--color-success-emerald)]' : 'text-white/20'
+      }`}>
+        {hecho ? 'check_circle' : 'radio_button_unchecked'}
+      </span>
+    </button>
   )
 }

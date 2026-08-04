@@ -12,7 +12,24 @@
 import type { Auth } from 'firebase/auth'
 import type { Firestore } from 'firebase/firestore'
 
-export const HAS_FIREBASE = Boolean(process.env.NEXT_PUBLIC_FIREBASE_API_KEY)
+const HAS_KEY = Boolean(process.env.NEXT_PUBLIC_FIREBASE_API_KEY)
+const ES_DEV = process.env.NODE_ENV !== 'production'
+
+export const HAS_FIREBASE = HAS_KEY
+
+/**
+ * Modo demo (usuarios de prueba con contraseña fija). SOLO existe en
+ * desarrollo: antes bastaba desplegar sin credenciales para que la app
+ * cayera aquí sola y publicara un admin abierto con contraseña conocida.
+ * En producción nunca se activa.
+ */
+export const MOCK_MODE = !HAS_KEY && ES_DEV
+
+/**
+ * Producción sin credenciales = despliegue mal configurado. No se
+ * degrada a demo: se bloquea el acceso y se avisa, que es lo seguro.
+ */
+export const MAL_CONFIGURADO = !HAS_KEY && !ES_DEV
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,

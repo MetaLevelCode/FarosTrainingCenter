@@ -16,7 +16,10 @@ import { Card, Badge, Button } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { ScrollVideoPanel } from '@/components/shared/ScrollVideoPanel'
 import { BrandImageStrip } from '@/components/shared/BrandImageStrip'
-import { ROSTER, describirPlan, pctAsistencia } from '@/lib/planes'
+import { Semanario } from '@/components/dashboard/Semanario'
+import { MensajesAlumno } from '@/components/dashboard/MensajesAlumno'
+import { ROSTER, describirPlan, pctAsistencia, ESTADO_LABEL } from '@/lib/planes'
+import { esAlumnoCompleto, type Fase } from '@/lib/matricula'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -40,10 +43,8 @@ const VELOCIDAD = [
 
 export default function DashboardPage() {
   const { authorized, loading } = useRoleGuard(['alumno'])
-  const { user } = useAuth()
+  const { user, isMockMode } = useAuth()
   const firstName = user?.displayName?.split(' ')[0] ?? 'Atleta'
-  const [mensaje, setMensaje] = useState('')
-  const [transmitido, setTransmitido] = useState(false)
 
   // ── Todo se deriva del plan contratado ──
   const yo = useMemo(
@@ -52,6 +53,13 @@ export default function DashboardPage() {
   )
   const plan = user?.planActivo ?? yo.plan
   const info = useMemo(() => describirPlan(plan), [plan])
+
+  // ── Fase del alumno en el ciclo de matrícula ──
+  // Fuente real: plan.estado. En modo demo se puede previsualizar cada
+  // fase con el conmutador de abajo (se elimina al conectar Firestore).
+  const [fase, setFase] = useState<Fase>(plan.estado)
+  const alumnoCompleto = esAlumnoCompleto(fase)
+
   const asistidas = yo.asistidas
   const restantes = Math.max(0, info.sesionesMes - asistidas)
   const pctSesiones = info.sesionesMes ? Math.round((asistidas / info.sesionesMes) * 100) : 0
@@ -66,28 +74,59 @@ export default function DashboardPage() {
       .map((a, i) => ({ ...a, pos: i + 1, pct: pctAsistencia(a) }))
   }, [plan, yo.entrenador])
 
-  function enviarFeedback(e: React.FormEvent) {
-    e.preventDefault()
-    if (!mensaje.trim()) return
-    setTransmitido(true)
-    setMensaje('')
-    setTimeout(() => setTransmitido(false), 3500)
-  }
 
   return (
     <GuardedShell authorized={authorized} loading={loading} title="Dashboard">
       <div className="space-y-8">
 
-        {/* Hero status */}
+        {/* ── Saludo breve ── */}
         <Reveal>
+          <div>
+            <p className="label-caps text-[var(--color-primary-fixed)] mb-2 tracking-[0.2em]">
+              {info.subtitulo}
+            </p>
+            <h2 className="font-display text-display-md text-white leading-none tracking-tighter uppercase">
+              Hola, {firstName}
+            </h2>
+          </div>
+        </Reveal>
+
+        {/* ── Conmutador de fase (solo demo — se elimina con Firestore) ── */}
+        {isMockMode && (
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-dashed border-white/15 bg-white/[0.02] px-4 py-3">
+            <span className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50 mr-1">
+              Demo · previsualizar fase
+            </span>
+            {(['pendiente', 'por_pagar', 'activo', 'vencido'] as Fase[]).map((f) => (
+              <button
+                key={f}
+                onClick={() => setFase(f)}
+                className={`px-3 py-1.5 rounded-full label-caps text-[9px] transition-colors ${
+                  fase === f
+                    ? 'bg-[var(--color-primary-fixed)] text-black'
+                    : 'bg-white/5 text-[var(--color-on-surface-variant)]/60 hover:text-white'
+                }`}
+              >
+                {ESTADO_LABEL[f]}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* ── Semanario — acción principal del alumno ── */}
+        <Reveal delay={0.05}>
+          <Semanario
+            plan={plan}
+            fase={fase}
+            onPagar={() => setFase('activo')}
+            onSolicitar={() => setFase('pendiente')}
+          />
+        </Reveal>
+
+        {/* Estado del plan */}
+        <Reveal delay={0.1}>
           <section className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
             <div className="lg:col-span-7">
-              <p className="label-caps text-[var(--color-primary-fixed)] mb-4 tracking-[0.2em]">
-                {info.subtitulo}
-              </p>
-              <h2 className="font-display text-display-lg text-white mb-6 leading-none tracking-tighter uppercase">
-                Hola,<br />{firstName}
-              </h2>
               <div className="flex flex-wrap gap-8">
                 <div className="flex flex-col">
                   <span className="label-caps text-[var(--color-on-surface-variant)]/60 mb-1">Tu plan</span>
@@ -105,9 +144,19 @@ export default function DashboardPage() {
                 <div className="w-px h-10 bg-white/10 hidden sm:block" />
                 <div className="flex flex-col">
                   <span className="label-caps text-[var(--color-on-surface-variant)]/60 mb-1">Estado</span>
-                  <span className="flex items-center gap-2 text-[var(--color-success-emerald)] font-display font-extrabold">
-                    <span className="w-2.5 h-2.5 rounded-full bg-[var(--color-success-emerald)] shadow-[0_0_10px_#10B981]" />
-                    {plan.estado === 'activo' ? 'Activo' : plan.estado === 'pendiente' ? 'Pendiente' : 'Vencido'}
+                  <span className={`flex items-center gap-2 font-display font-extrabold ${
+                    fase === 'activo' ? 'text-[var(--color-success-emerald)]'
+                    : fase === 'por_pagar' ? 'text-[var(--color-primary-fixed)]'
+                    : fase === 'pendiente' ? 'text-amber-400'
+                    : 'text-[var(--color-danger-crimson)]'
+                  }`}>
+                    <span className={`w-2.5 h-2.5 rounded-full ${
+                      fase === 'activo' ? 'bg-[var(--color-success-emerald)] shadow-[0_0_10px_#10B981]'
+                      : fase === 'por_pagar' ? 'bg-[var(--color-primary-fixed)] shadow-[0_0_10px_#e6ff00]'
+                      : fase === 'pendiente' ? 'bg-amber-400 shadow-[0_0_10px_#fbbf24]'
+                      : 'bg-[var(--color-danger-crimson)] shadow-[0_0_10px_#ef4444]'
+                    }`} />
+                    {ESTADO_LABEL[fase]}
                   </span>
                 </div>
               </div>
@@ -115,6 +164,9 @@ export default function DashboardPage() {
           </section>
         </Reveal>
 
+        {/* ── El rendimiento solo se abre para el alumno completo (activo) ── */}
+        {alumnoCompleto ? (
+        <>
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Training plan */}
           <div className="lg:col-span-8 space-y-6">
@@ -325,32 +377,14 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ── Línea directa con el coach ── */}
+        {/* ── Mensajes: muro de la clase + privado con el coach ── */}
         <Reveal delay={0.15}>
-          <Card padding="lg" className="!rounded-[2.5rem]">
-            <div className="flex flex-col md:flex-row gap-10 items-center">
-              <div className="md:flex-1">
-                <h3 className="font-display text-3xl font-extrabold text-white mb-3 uppercase tracking-tighter">
-                  Línea directa con tu coach
-                </h3>
-                <p className="text-[var(--color-on-surface-variant)]/60 max-w-md">
-                  Canal inmediato para ajustes técnicos o solicitudes de equipamiento.
-                </p>
-              </div>
-              <form onSubmit={enviarFeedback} className="w-full md:w-1/2 flex flex-col sm:flex-row gap-3">
-                <input
-                  value={mensaje}
-                  onChange={(e) => setMensaje(e.target.value)}
-                  placeholder="Escribe tu solicitud..."
-                  aria-label="Mensaje para tu coach"
-                  className="flex-1 bg-white/5 border border-white/5 rounded-2xl px-6 py-4 text-[var(--color-on-surface)] placeholder:text-[var(--color-on-surface-variant)]/30 focus:border-[rgba(230,255,0,0.5)] focus:outline-none transition-colors duration-300"
-                />
-                <Button type="submit" size="md" disabled={transmitido}>
-                  {transmitido ? 'Enviado ✓' : 'Enviar'}
-                </Button>
-              </form>
-            </div>
-          </Card>
+          <MensajesAlumno
+            alumnoId={yo.id}
+            alumnoNombre={yo.nombre}
+            claseId={plan.grupoId ?? 'knowill'}
+            claseNombre={info.titulo}
+          />
         </Reveal>
 
         {/* ── Scroll-driven brand video reveal ── */}
@@ -365,7 +399,57 @@ export default function DashboardPage() {
             <BrandImageStrip />
           </div>
         </Reveal>
+        </>
+        ) : (
+          <Reveal delay={0.15}>
+            <BloqueoEstadisticas fase={fase} onPagar={() => setFase('activo')} />
+          </Reveal>
+        )}
       </div>
     </GuardedShell>
+  )
+}
+
+// ── Panel bloqueado: lo que se abre al activar el plan ──
+function BloqueoEstadisticas({ fase, onPagar }: { fase: Fase; onPagar: () => void }) {
+  const bloqueadas = [
+    { icon: 'pool', label: 'Clase del día' },
+    { icon: 'timer', label: 'Tiempos y lapsos' },
+    { icon: 'trending_up', label: 'Tendencia de velocidad' },
+    { icon: 'leaderboard', label: 'Ranking de tu grupo' },
+  ]
+  return (
+    <Card padding="lg" className="!rounded-[2.5rem] text-center">
+      <span className="material-symbols-outlined text-[var(--color-on-surface-variant)]/40 text-5xl mb-4">lock</span>
+      <h3 className="font-display text-headline-lg font-black text-white uppercase tracking-tighter mb-3">
+        Tus estadísticas están en espera
+      </h3>
+      <p className="text-[var(--color-on-surface-variant)]/70 max-w-lg mx-auto mb-8">
+        {fase === 'pendiente'
+          ? 'Cuando el club confirme tu solicitud y actives tu plan con el pago, se abrirán tus estadísticas, tiempos y ranking.'
+          : fase === 'por_pagar'
+            ? 'Tu plan ya fue confirmado. Actívalo con el pago para desbloquear todo tu panel de rendimiento.'
+            : 'Renueva tu plan para volver a ver tu rendimiento, tiempos y ranking.'}
+      </p>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-xl mx-auto mb-8">
+        {bloqueadas.map((b) => (
+          <div key={b.label} className="flex flex-col items-center gap-2 p-4 rounded-2xl border border-white/5 bg-white/[0.02] opacity-60">
+            <span className="material-symbols-outlined text-[var(--color-on-surface-variant)]/50 text-[26px]">{b.icon}</span>
+            <span className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">{b.label}</span>
+          </div>
+        ))}
+      </div>
+
+      {fase === 'por_pagar' ? (
+        <Button size="lg" onClick={onPagar}>Pagar y activar plan</Button>
+      ) : fase === 'vencido' ? (
+        <Link href="/dashboard/planes"><Button size="lg">Renovar plan</Button></Link>
+      ) : (
+        <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/40">
+          Te avisaremos cuando tu solicitud esté lista
+        </p>
+      )}
+    </Card>
   )
 }

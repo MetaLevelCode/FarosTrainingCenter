@@ -62,11 +62,15 @@ export default function LoginPage() {
     if (res.ok && res.role) router.replace(getNext() ?? ROLE_HOME[res.role] ?? '/dashboard')
   }
 
-  const demos = [
+  // Atajos de la demo. Con el literal de NODE_ENV el bundler elimina
+  // este bloque en producción, así ni los correos ni la contraseña de
+  // prueba llegan al navegador del usuario final.
+  const DEMO_UI = process.env.NODE_ENV !== 'production'
+  const demos = DEMO_UI ? [
     { label: 'Alumno', email: 'alumno@faros.com' },
     { label: 'Entrenador', email: 'entrenador@faros.com' },
     { label: 'Admin', email: 'admin@faros.com' },
-  ]
+  ] : []
 
   return (
     <div className="min-h-dvh lg:grid lg:grid-cols-2 relative">
@@ -191,7 +195,7 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          {isMockMode && (
+          {DEMO_UI && isMockMode && (
             <div className="mt-8">
               <div className="flex items-center gap-3 mb-4">
                 <div className="flex-1 h-px bg-white/10" />

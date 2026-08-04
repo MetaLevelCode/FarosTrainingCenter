@@ -2,20 +2,31 @@
 
 // ============================================================
 // FAROS — Auth Context
-// Wraps Firebase Auth + Firestore role lookup.
-// Falls back to MOCK MODE when Firebase keys are absent, so the
-// app runs locally before Firebase is configured.
+// Envuelve Firebase Auth + la búsqueda de rol en Firestore.
+//
+// SEGURIDAD: el modo demo (usuarios con contraseña fija) solo existe
+// en desarrollo. En producción sin credenciales la app NO se degrada
+// a demo — se bloquea, para no publicar nunca un admin abierto.
+// Recuerda que esto es solo la capa de UX: la autorización real vive
+// en las reglas de Firestore, no aquí.
 // ============================================================
 
 import {
   createContext, useContext, useEffect, useState, useCallback, ReactNode,
 } from 'react'
-import { HAS_FIREBASE, getFirebase } from '@/lib/firebase'
+import { MOCK_MODE, MAL_CONFIGURADO, getFirebase } from '@/lib/firebase'
 import { ROSTER } from '@/lib/planes'
 import type { FarosUser, UserRole } from '@/lib/types'
 
-// Mock users for local development (no Firebase needed)
-const MOCK_USERS: Record<string, FarosUser & { password: string }> = {
+// Usuarios de prueba SOLO para desarrollo.
+//
+// El guard va con `process.env.NODE_ENV` literal, no con MOCK_MODE: el
+// bundler sustituye esa expresión en tiempo de compilación y elimina la
+// rama muerta, así estas credenciales NO acaban dentro del JavaScript
+// que se descarga el navegador. Con una constante importada de otro
+// módulo no puede probarlo, y el objeto entero terminaba en el bundle.
+const MOCK_USERS: Record<string, FarosUser & { password: string }> =
+  process.env.NODE_ENV !== 'production' ? {
   'alumno@faros.com': {
     uid: 'mock-1', email: 'alumno@faros.com', displayName: 'Carlos Méndez',
     role: 'alumno', active: true, password: '123456',
@@ -40,7 +51,11 @@ const MOCK_USERS: Record<string, FarosUser & { password: string }> = {
     uid: 'mock-3', email: 'admin@faros.com', displayName: 'Luis Faros',
     role: 'admin', active: true, password: '123456',
   },
-}
+} : {}
+
+// Producción sin credenciales: no hay a quién autenticar. Se corta ahí
+// en vez de caer al modo demo (que sería publicar un admin abierto).
+const ERROR_CONFIG = 'La app no está configurada. Avísale al administrador.'
 
 interface AuthContextValue {
   user: FarosUser | null
@@ -62,7 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // ── Restore session ──
   useEffect(() => {
-    if (!HAS_FIREBASE) {
+    if (MOCK_MODE) {
       // Mock mode: restore from localStorage
       try {
         const saved = localStorage.getItem('faros-mock-user')
@@ -130,7 +145,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ── Sign in ──
   const signIn = useCallback(async (email: string, password: string) => {
     setError(null)
-    if (!HAS_FIREBASE) {
+    if (MAL_CONFIGURADO) {
+      setError(ERROR_CONFIG)
+      return { ok: false, error: ERROR_CONFIG }
+    }
+    if (MOCK_MODE) {
       const mock = MOCK_USERS[email]
       if (!mock || mock.password !== password) {
         setError('Credenciales incorrectas')
@@ -164,7 +183,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     email: string, password: string, displayName: string, role: UserRole,
   ) => {
     setError(null)
-    if (!HAS_FIREBASE) {
+    if (MAL_CONFIGURADO) {
+      setError(ERROR_CONFIG)
+      return { ok: false, error: ERROR_CONFIG }
+    }
+    if (MOCK_MODE) {
       // Mock: just succeed
       return { ok: true }
     }
@@ -189,7 +212,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // ── Sign out ──
   const signOut = useCallback(async () => {
-    if (!HAS_FIREBASE) {
+    if (MOCK_MODE) {
       setUser(null)
       try { localStorage.removeItem('faros-mock-user') } catch {}
       return
@@ -204,7 +227,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider value={{
-      user, loading, error, isMockMode: !HAS_FIREBASE,
+      user, loading, error, isMockMode: MOCK_MODE,
       signIn, signUp, signOut, clearError,
     }}>
       {children}

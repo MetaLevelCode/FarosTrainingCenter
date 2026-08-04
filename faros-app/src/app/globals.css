@@ -83,7 +83,10 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  background: #050505;
+  /* El fondo del <html> es el que pinta el "rubber band" al scrollear
+     más allá de los límites de la página (y la franja del navegador en
+     modo app). En amarillo de marca en vez de la línea blanca. */
+  background: var(--color-primary-fixed);
 }
 
 body {

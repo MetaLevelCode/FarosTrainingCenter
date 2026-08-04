@@ -11,8 +11,11 @@
 // mayor. Un menor requiere acudiente, por eso el contacto de
 // emergencia deja de ser opcional en ese caso.
 //
-// Los códigos viven en memoria mientras no haya Firestore; la
-// interfaz ya puede construirse contra estas funciones.
+// SEGURIDAD: estas validaciones son de CLIENTE — sirven para guiar al
+// usuario, no para autorizar. Cualquiera puede saltárselas con las
+// herramientas del navegador. Las mismas reglas (mayoría de edad del
+// entrenador, acudiente del menor, código de un solo uso) tienen que
+// repetirse en el servidor, que es donde de verdad se hacen cumplir.
 // ============================================================
 
 import type { TipoDocumento } from './types'
@@ -28,18 +31,35 @@ export interface CodigoInvitacion {
   usadoEn?: string
 }
 
-// Semilla de demostración (se reemplaza por Firestore).
-const CODIGOS: CodigoInvitacion[] = [
+const ES_DEV = process.env.NODE_ENV !== 'production'
+
+/** Forma de un código válido. Sirve para dar respuesta inmediata sin
+ *  conocer los códigos reales. */
+const FORMATO_CODIGO = /^FAROS-COACH-[A-Z0-9]{4}$/
+
+// Semilla de demostración: SOLO en desarrollo.
+//
+// SEGURIDAD: todo lo que vive en src/ se compila dentro del JavaScript
+// que se envía al navegador. Si los códigos reales estuvieran aquí,
+// cualquiera podría abrir el bundle, leerlos y registrarse como
+// entrenador. En producción esta lista queda vacía y la comprobación
+// de verdad la hace el servidor (ver verificarCodigoEnServidor).
+const CODIGOS: CodigoInvitacion[] = ES_DEV ? [
   { codigo: 'FAROS-COACH-7K2M', creadoPor: 'Luis Faros', creadoEn: '20 Jul 2026' },
   { codigo: 'FAROS-COACH-4RQ9', creadoPor: 'Luis Faros', creadoEn: '22 Jul 2026' },
   { codigo: 'FAROS-COACH-8XT1', creadoPor: 'Luis Faros', creadoEn: '10 Jul 2026', usadoPor: 'entrenador@faros.com', usadoEn: '11 Jul 2026' },
-]
+] : []
 
 export function listarCodigos(): CodigoInvitacion[] {
   return [...CODIGOS]
 }
 
-/** Genera un código nuevo. Sólo debería invocarse desde el panel admin. */
+/**
+ * Genera un código para la DEMO. En producción debe generarlo el
+ * servidor: Math.random no es criptográficamente seguro (su secuencia
+ * es predecible) y un código emitido solo en el navegador no existiría
+ * para nadie más.
+ */
 export function generarCodigo(creadoPor: string): CodigoInvitacion {
   const alfabeto = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // sin I/O/0/1: se confunden al dictarlos
   let sufijo = ''
@@ -59,17 +79,54 @@ export type ResultadoCodigo =
   | { valido: true }
   | { valido: false; motivo: 'vacio' | 'inexistente' | 'usado' }
 
+/**
+ * Comprobación de CLIENTE: sirve para dar retroalimentación inmediata
+ * en el formulario, NO para autorizar.
+ *
+ * En producción solo valida el formato, porque el navegador no puede
+ * (ni debe) saber qué códigos existen. Que aquí dé `valido` no significa
+ * que el registro vaya a proceder: la palabra final es del servidor,
+ * que verifica y consume el código en una sola operación atómica.
+ */
 export function validarCodigo(codigo: string): ResultadoCodigo {
   const limpio = codigo.trim().toUpperCase()
   if (!limpio) return { valido: false, motivo: 'vacio' }
+  if (!FORMATO_CODIGO.test(limpio)) return { valido: false, motivo: 'inexistente' }
+
+  // Producción: sin la lista real, solo se pudo validar el formato.
+  if (!ES_DEV) return { valido: true }
+
+  // Demo local: se contrasta contra la semilla en memoria.
   const encontrado = CODIGOS.find((c) => c.codigo === limpio)
   if (!encontrado) return { valido: false, motivo: 'inexistente' }
   if (encontrado.usadoPor) return { valido: false, motivo: 'usado' }
   return { valido: true }
 }
 
-/** Marca el código como consumido. Un código no se reutiliza jamás. */
+/**
+ * Verificación REAL del código: debe resolverse en el servidor, donde
+ * comprobar-y-consumir ocurre de forma atómica (si no, dos personas
+ * podrían usar el mismo código a la vez).
+ *
+ * Pendiente de conectar: Cloud Function o transacción de Firestore con
+ * reglas que impidan leer la colección de códigos desde el cliente.
+ */
+export async function verificarCodigoEnServidor(
+  _codigo: string, _correo: string,
+): Promise<ResultadoCodigo> {
+  throw new Error(
+    'verificarCodigoEnServidor: pendiente de conectar al backend. ' +
+    'El registro de entrenadores no debe habilitarse en producción hasta entonces.',
+  )
+}
+
+/**
+ * Marca el código como consumido EN LA DEMO local. En producción esto
+ * lo hace el servidor: si se dejara al cliente, bastaría con no llamarlo
+ * para reutilizar un código infinitas veces.
+ */
 export function consumirCodigo(codigo: string, correo: string): boolean {
+  if (!ES_DEV) return false
   const limpio = codigo.trim().toUpperCase()
   const encontrado = CODIGOS.find((c) => c.codigo === limpio && !c.usadoPor)
   if (!encontrado) return false

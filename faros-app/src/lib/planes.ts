@@ -246,12 +246,30 @@ export function resumenPlan(sel: SeleccionPlan): { titulo: string; subtitulo: st
 // mismo plan con las mismas cifras.
 // ============================================================
 
-export type EstadoPlan = 'activo' | 'pendiente' | 'vencido'
+// Ciclo de vida real del plan del alumno:
+//  pendiente  → solicitud enviada, el admin coordina con el profesor
+//  por_pagar  → confirmado que se puede; el alumno ya puede pagar
+//  activo     → pagado; es "alumno completo" con acceso total
+//  vencido    → expiró; debe renovar
+export type EstadoPlan = 'pendiente' | 'por_pagar' | 'activo' | 'vencido'
+
+export const ESTADO_LABEL: Record<EstadoPlan, string> = {
+  pendiente: 'En revisión',
+  por_pagar: 'Por pagar',
+  activo: 'Activo',
+  vencido: 'Vencido',
+}
+
+export interface DiaReservado {
+  dow: number   // 1 = lunes … 6 = sábado
+  hora: string  // '6:00 PM'
+}
 
 export interface PlanAsignado extends SeleccionPlan {
   estado: EstadoPlan
-  desde: string        // fecha de inicio (texto legible)
-  proximoPago: string  // próximo corte
+  desde: string             // fecha de inicio (texto legible)
+  proximoPago: string       // próximo corte
+  dias?: DiaReservado[]     // días de la semana reservados (semanario)
 }
 
 export interface PlanDescrito {
@@ -325,7 +343,7 @@ export const ROSTER: AtletaRoster[] = [
   {
     id: 'FR-0922', nombre: 'Carlos Méndez', entrenador: 'Ana Torres', asistidas: 6,
     documento: 'C.C. 1.088.301.457', estadoCuenta: 'Activo',
-    plan: { tipo: 'grupal', grupoId: 'knowill', personalId: null, conjuntoId: null, week: 2, personas: 1, ninos: 0, estado: 'activo', desde: HOY_DESDE, proximoPago: PROX_PAGO },
+    plan: { tipo: 'grupal', grupoId: 'knowill', personalId: null, conjuntoId: null, week: 2, personas: 1, ninos: 0, estado: 'activo', desde: HOY_DESDE, proximoPago: PROX_PAGO, dias: [{ dow: 2, hora: '6:00 PM' }, { dow: 4, hora: '6:00 PM' }] },
   },
   {
     id: 'FR-1045', nombre: 'Sofía Ruiz', entrenador: 'Ana Torres', asistidas: 11,
