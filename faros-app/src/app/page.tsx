@@ -204,17 +204,16 @@ export default function LandingPage() {
             className="relative z-10 text-center max-w-3xl mx-auto flex flex-col items-center gap-8"
           >
             <p className="label-caps text-[var(--color-primary-fixed)] tracking-[0.3em]">
-              Fitness acuático multipropósito
+              Los mejores programas de entrenamiento del eje
             </p>
             <h1 className="font-display font-black uppercase text-white leading-[1.05] tracking-tighter text-[clamp(2.5rem,8vw,4.5rem)]">
-              Rendimiento{' '}
+              Entrenamiento · Ciencia ·{' '}
               <span className="text-[var(--color-primary-fixed)] drop-shadow-[0_0_15px_rgba(230,255,0,0.4)]">
-                Elite
+                Rendimiento
               </span>
             </h1>
             <p className="text-[var(--color-secondary)] text-lg max-w-xl leading-relaxed">
-              Plataforma integral para el desarrollo físico en el agua. Domina tu
-              disciplina con precisión milimétrica y datos en tiempo real.
+              Cada gran resultado comienza con una decisión. Hoy puede ser la tuya.
             </p>
             <Link
               href={homeHref}
