@@ -24,8 +24,8 @@ import { TestimonialsMarquee } from '@/components/shared/TestimonialsMarquee'
 const EASE = [0.23, 1, 0.32, 1] as const
 
 const ROLE_HOME: Record<string, string> = {
-  alumno: '/dashboard',
-  entrenador: '/portal',
+  estudiante: '/dashboard',
+  profesor: '/portal',
   admin: '/admin',
 }
 
@@ -82,7 +82,7 @@ export default function LandingPage() {
   const { user, loading } = useAuth()
   const router = useRouter()
   const active = useActiveSection()
-  const homeHref = user ? ROLE_HOME[user.role] ?? '/dashboard' : '/login'
+  const homeHref = user ? ROLE_HOME[user.rol] ?? '/dashboard' : '/login'
 
   // PWA launch: an installed, authenticated user goes straight to work.
   const redirected = useRef(false)
@@ -90,7 +90,7 @@ export default function LandingPage() {
     if (loading || !user || redirected.current) return
     if (window.matchMedia('(display-mode: standalone)').matches) {
       redirected.current = true
-      router.replace(ROLE_HOME[user.role] ?? '/dashboard')
+      router.replace(ROLE_HOME[user.rol] ?? '/dashboard')
     }
   }, [user, loading, router])
 

@@ -1,0 +1,227 @@
+rules_version = '2';
+
+// ============================================================
+// FAROS Training Center — Firestore Security Rules (prototype)
+//
+// Assumed Data Model
+// ──────────────────
+// usuarios/{uid}
+//   nombres: string, apellidos: string, cedula: string,
+//   email: string, rol: 'admin'|'profesor'|'estudiante',
+//   activo: bool (optional), estadisticas: map (optional),
+//   suscripcionActiva: map|null (optional)
+//
+// catalogo/{codigo}  — read: any auth; write: admin only
+//
+// planes/{planId}    — read: any auth; write: admin only
+//
+// suscripciones/{id}
+//   usuarioId: string, planId: string, estado: string ...
+//
+// transacciones/{id}
+//   usuarioId: string, planId: string, estado: string, monto: number ...
+//
+// clases/{id}
+//   instructor_id: string, estudiantes_inscritos: [uid], ...
+//
+// asistencias/{id}
+//   claseId: string, usuarioId: string, registradoPor: string, asistio: bool
+//
+// movimientos/{id}   — write: admin only (or via approved transaction)
+//
+// categorias/{id}    — read: any auth; write: admin only
+//
+// sugerencias/{id}   — write: owner; read: admin only
+// ============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ─────────────────────────────────────────────
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    function getUsuario() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data;
+    }
+
+    function miRol() {
+      return isAuthenticated() ? getUsuario().rol : '';
+    }
+
+    function isAdmin() {
+      return miRol() == 'admin';
+    }
+
+    function isProfesor() {
+      return miRol() == 'profesor';
+    }
+
+    function isEstudiante() {
+      return miRol() == 'estudiante';
+    }
+
+    function isAdminOrProfesor() {
+      return isAdmin() || isProfesor();
+    }
+
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function validString(field, maxLen) {
+      return request.resource.data[field] is string
+        && request.resource.data[field].size() <= maxLen;
+    }
+
+    // ── usuarios ────────────────────────────────────────────
+
+    match /usuarios/{uid} {
+      // Cada usuario puede leer su propio documento; admin lee todos.
+      allow read: if isOwner(uid) || isAdmin() || isProfesor();
+
+      // Crear: sólo el propio usuario puede crear su perfil (al registrarse).
+      // Se fuerza el rol a 'estudiante' para nuevos registros.
+      allow create: if isOwner(uid)
+        && request.resource.data.rol == 'estudiante'
+        && validString('nombres', 100)
+        && validString('apellidos', 100)
+        && validString('email', 200);
+
+      // Actualizar datos personales: el propio usuario puede actualizar sus
+      // campos NO sensibles. Solo admin puede cambiar rol o activo.
+      allow update: if isAdmin()
+        || (isOwner(uid)
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['rol', 'activo', 'suscripcionActiva']));
+
+      allow delete: if isAdmin();
+    }
+
+    // ── catalogo ────────────────────────────────────────────
+
+    match /catalogo/{codigo} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // ── planes ──────────────────────────────────────────────
+
+    match /planes/{planId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // ── suscripciones ────────────────────────────────────────
+
+    match /suscripciones/{suscId} {
+      // El estudiante dueño puede leer su suscripción; admin y profesor leen todas.
+      allow read: if isAdmin() || isProfesor()
+        || (isAuthenticated() && resource.data.usuarioId == request.auth.uid);
+
+      // Solo admin (vía transaction approval) puede crear/actualizar.
+      allow write: if isAdmin();
+    }
+
+    // ── transacciones ────────────────────────────────────────
+
+    match /transacciones/{txId} {
+      // El estudiante puede leer sus propias transacciones; admin lee todas.
+      allow read: if isAdmin()
+        || (isAuthenticated() && resource.data.usuarioId == request.auth.uid);
+
+      // Estudiante crea la solicitud de pago.
+      allow create: if isAuthenticated()
+        && request.resource.data.usuarioId == request.auth.uid
+        && request.resource.data.estado == 'pendiente'
+        && request.resource.data.monto is number
+        && request.resource.data.monto > 0
+        && request.resource.data.monto <= 5000000
+        && validString('planId', 100)
+        && request.resource.data.keys().hasOnly([
+            'usuarioId', 'planId', 'monto', 'estado',
+            'fecha_solicitud', 'creadoEn', 'nombre_usuario',
+            'nombre_plan', 'comprobante_url',
+          ]);
+
+      // Solo admin puede aprobar/rechazar.
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ── clases ───────────────────────────────────────────────
+
+    match /clases/{claseId} {
+      // Todos los autenticados pueden leer.
+      allow read: if isAuthenticated();
+
+      // Admin crea/elimina clases.
+      allow create, delete: if isAdmin();
+
+      // Admin o el propio instructor puede actualizar.
+      allow update: if isAdmin()
+        || (isProfesor() && resource.data.instructor_id == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['observaciones_profesor', 'estado', 'actualizadoEn']));
+    }
+
+    // ── asistencias ──────────────────────────────────────────
+
+    match /asistencias/{asistId} {
+      // Profesor y admin pueden leer cualquier asistencia; estudiante solo la suya.
+      allow read: if isAdmin() || isProfesor()
+        || (isAuthenticated() && resource.data.usuarioId == request.auth.uid);
+
+      // Solo profesores y admin pueden crear/actualizar asistencias.
+      allow create: if isAdminOrProfesor()
+        && request.resource.data.keys().hasOnly([
+            'asistenciaId', 'claseId', 'usuarioId', 'asistio',
+            'fecha_registro', 'registradoPor', 'creadoEn',
+          ])
+        && request.resource.data.asistio is bool
+        && request.resource.data.registradoPor == request.auth.uid;
+
+      allow update: if isAdminOrProfesor()
+        && request.resource.data.diff(resource.data).affectedKeys()
+           .hasOnly(['asistio', 'fecha_registro']);
+
+      allow delete: if isAdmin();
+    }
+
+    // ── movimientos ──────────────────────────────────────────
+
+    match /movimientos/{movId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // ── categorias ───────────────────────────────────────────
+
+    match /categorias/{catId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // ── sugerencias ──────────────────────────────────────────
+
+    match /sugerencias/{sugId} {
+      // Solo admin puede leer sugerencias.
+      allow read: if isAdmin();
+
+      // Estudiantes pueden crear la suya.
+      allow create: if isAuthenticated()
+        && request.resource.data.uid == request.auth.uid
+        && validString('mensaje', 2000)
+        && request.resource.data.leida == false
+        && request.resource.data.keys().hasOnly(['uid', 'displayName', 'mensaje', 'createdAt', 'leida']);
+
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+  }
+}

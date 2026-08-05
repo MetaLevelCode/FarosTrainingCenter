@@ -1,19 +1,21 @@
 'use client'
 
 // ============================================================
-// FAROS — Entrenador · Mis Clases
-// Requisitos (notas ③ Entrenadores):
-//  - Sus clases; al abrir una, alterna entre "Plan de clase" y
-//    "Observaciones de clases"
-//  - Ver asistencia según sea grupal o personalizada
-//  - Acumulado de clases dictadas (se reporta al admin)
+// FAROS — Profesor · Mis Clases
+// Lee colección `clases` filtradas por instructor_id == uid.
+// Permite marcar asistencia y escribir observaciones.
 // ============================================================
 
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button } from '@/components/ui'
+import {
+  getClasesProfesor, getAsistenciasClase,
+  registrarAsistencia, updateObservacionesClase,
+} from '@/lib/firestore'
+import type { Clase, Asistencia } from '@/lib/types'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -27,253 +29,293 @@ function Reveal({ children, delay = 0 }: { children: React.ReactNode; delay?: nu
   )
 }
 
-// ── Datos de ejemplo (se reemplazan por Firestore) ──
-type Clase = {
-  id: string
-  hora: string
-  titulo: string
-  tipo: 'Grupal' | 'Personal'
-  piscina: string
-  estado: 'completado' | 'en-curso' | 'pendiente'
-  plan: string[]
-  observaciones: string
-  asistentes: { nombre: string; presente: boolean }[]
+const ESTADO_COLOR: Record<Clase['estado'], string> = {
+  programada: 'default',
+  en_curso: 'primary',
+  finalizada: 'success',
+  cancelada: 'danger',
 }
 
-const CLASES: Clase[] = [
-  {
-    id: 'c1', hora: '06:00 PM', titulo: 'Knowill UTP · Técnica', tipo: 'Grupal', piscina: 'Piscina A',
-    estado: 'completado',
-    plan: [
-      'Calentamiento: 400 m libre progresivo',
-      'Técnica: 6 × 50 m mariposa con tabla',
-      'Series: 4 × 100 m ritmo controlado',
-      'Vuelta a la calma: 200 m suave',
-    ],
-    observaciones: 'Grupo con buena coordinación de brazada. Insistir en la patada de delfín desde cadera. Sofía R. mejoró el timing respiratorio.',
-    asistentes: [
-      { nombre: 'Carlos Méndez', presente: true },
-      { nombre: 'Sofía Ruiz', presente: true },
-      { nombre: 'Diego Morales', presente: true },
-      { nombre: 'Valentina Castro', presente: false },
-      { nombre: 'Andrés Rojas', presente: true },
-    ],
-  },
-  {
-    id: 'c2', hora: '05:30 PM', titulo: 'Personalizado · Diego Morales', tipo: 'Personal', piscina: 'Piscina B',
-    estado: 'en-curso',
-    plan: [
-      'Activación: 300 m mixto',
-      'Sprints: 8 × 50 m al 90% con descanso 1:30',
-      'Salidas de poyete: 6 repeticiones',
-      'Soltar: 200 m espalda',
-    ],
-    observaciones: 'Trabajar la fase subacuática tras la salida. Objetivo < 31 s en los 50 m. Revisar entrada de mano.',
-    asistentes: [
-      { nombre: 'Diego Morales', presente: true },
-    ],
-  },
-  {
-    id: 'c3', hora: '07:00 PM', titulo: 'Aquafitness Nocturno', tipo: 'Grupal', piscina: 'Piscina C',
-    estado: 'pendiente',
-    plan: [
-      'Movilidad articular en el agua: 10 min',
-      'Circuito cardiovascular: 3 rondas',
-      'Fuerza con flotadores: 4 estaciones',
-      'Estiramiento guiado: 10 min',
-    ],
-    observaciones: '—',
-    asistentes: [
-      { nombre: 'Mariana Duque', presente: false },
-      { nombre: 'Luis Torres', presente: false },
-      { nombre: 'Andrea Ríos', presente: false },
-    ],
-  },
-]
-
-function ini(nombre: string) {
-  return nombre.split(' ').filter(Boolean).map((p) => p[0]).slice(0, 2).join('').toUpperCase()
-}
-
-const ESTADO_BADGE: Record<Clase['estado'], { label: string; variant: 'success' | 'primary' | 'default' }> = {
-  completado: { label: 'Completado', variant: 'success' },
-  'en-curso': { label: 'En curso', variant: 'primary' },
-  pendiente: { label: 'Pendiente', variant: 'default' },
+const ESTADO_LABEL: Record<Clase['estado'], string> = {
+  programada: 'Programada',
+  en_curso: 'En curso',
+  finalizada: 'Finalizada',
+  cancelada: 'Cancelada',
 }
 
 export default function ClasesPage() {
-  const { authorized, loading } = useRoleGuard(['entrenador', 'admin'])
-  const [selId, setSelId] = useState(CLASES[0].id)
-  const [tab, setTab] = useState<'plan' | 'obs'>('plan')
-  const [reportado, setReportado] = useState(false)
+  const { authorized, loading, user } = useRoleGuard(['profesor', 'admin'])
+  const [clases, setClases] = useState<Clase[]>([])
+  const [cargando, setCargando] = useState(true)
+  const [claseAbierta, setClaseAbierta] = useState<string | null>(null)
+  const [tabActiva, setTabActiva] = useState<'plan' | 'asistencia' | 'observaciones'>('plan')
+  const [asistencias, setAsistencias] = useState<Record<string, Asistencia[]>>({})
+  const [observaciones, setObservaciones] = useState<Record<string, string>>({})
+  const [guardando, setGuardando] = useState<string | null>(null)
 
-  const sel = useMemo(() => CLASES.find((c) => c.id === selId)!, [selId])
-  const dictadas = CLASES.filter((c) => c.estado === 'completado').length
-  const presentes = sel.asistentes.filter((a) => a.presente).length
+  useEffect(() => {
+    if (!user) return
+    getClasesProfesor(user.uid)
+      .then((cs) => {
+        setClases(cs)
+        // Inicializar observaciones desde Firestore
+        const obs: Record<string, string> = {}
+        cs.forEach((c) => { obs[c.id] = c.observaciones_profesor ?? '' })
+        setObservaciones(obs)
+      })
+      .catch(console.error)
+      .finally(() => setCargando(false))
+  }, [user])
+
+  async function abrirClase(claseId: string) {
+    if (claseAbierta === claseId) {
+      setClaseAbierta(null)
+      return
+    }
+    setClaseAbierta(claseId)
+    setTabActiva('plan')
+    if (!asistencias[claseId]) {
+      try {
+        const as = await getAsistenciasClase(claseId)
+        setAsistencias((prev) => ({ ...prev, [claseId]: as }))
+      } catch {}
+    }
+  }
+
+  async function toggleAsistencia(claseId: string, usuarioId: string, nombreUsuario: string) {
+    if (!user) return
+    const lista = asistencias[claseId] ?? []
+    const existente = lista.find((a) => a.usuarioId === usuarioId)
+    const nuevoValor = !(existente?.asistio ?? false)
+
+    // Optimistic update
+    setAsistencias((prev) => {
+      const copia = [...(prev[claseId] ?? [])]
+      const idx = copia.findIndex((a) => a.usuarioId === usuarioId)
+      if (idx >= 0) {
+        copia[idx] = { ...copia[idx], asistio: nuevoValor }
+      } else {
+        copia.push({
+          id: `temp-${usuarioId}`,
+          asistenciaId: '',
+          claseId, usuarioId,
+          asistio: nuevoValor,
+          fecha_registro: Date.now(),
+          registradoPor: user.uid,
+          creadoEn: Date.now(),
+        })
+      }
+      return { ...prev, [claseId]: copia }
+    })
+
+    try {
+      await registrarAsistencia(claseId, usuarioId, nuevoValor, user.uid)
+    } catch (err) {
+      console.error(err)
+      // Revertir
+      setAsistencias((prev) => {
+        const copia = [...(prev[claseId] ?? [])]
+        const idx = copia.findIndex((a) => a.usuarioId === usuarioId)
+        if (idx >= 0) copia[idx] = { ...copia[idx], asistio: !nuevoValor }
+        return { ...prev, [claseId]: copia }
+      })
+    }
+  }
+
+  async function guardarObservaciones(claseId: string) {
+    setGuardando(claseId)
+    try {
+      await updateObservacionesClase(claseId, observaciones[claseId] ?? '')
+      setClases((prev) => prev.map((c) =>
+        c.id === claseId ? { ...c, estado: 'finalizada', observaciones_profesor: observaciones[claseId] } : c,
+      ))
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setGuardando(null)
+    }
+  }
+
+  const totalClases = clases.length
+  const finalizadas = clases.filter((c) => c.estado === 'finalizada').length
+  const pendientes = clases.filter((c) => c.estado === 'programada').length
 
   return (
     <GuardedShell authorized={authorized} loading={loading} title="Mis Clases">
       <div className="space-y-8">
 
-        {/* ── Header ── */}
         <Reveal>
           <div>
-            <p className="label-caps text-[var(--color-primary-fixed)] mb-3 tracking-[0.3em]">Sesiones de hoy</p>
+            <p className="label-caps text-[var(--color-primary-fixed)] mb-3 tracking-[0.3em]">Tus sesiones</p>
             <h2 className="font-display text-display-lg text-white leading-none tracking-tighter uppercase">
               Mis Clases
             </h2>
           </div>
         </Reveal>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* ── Lista de clases ── */}
-          <div className="lg:col-span-5 space-y-4">
-            {CLASES.map((c, i) => {
-              const activa = c.id === selId
+        <div className="grid grid-cols-3 gap-4">
+          {[
+            { label: 'Total', value: String(totalClases), tone: 'white' },
+            { label: 'Finalizadas', value: String(finalizadas), tone: 'primary' },
+            { label: 'Programadas', value: String(pendientes), tone: 'white' },
+          ].map((s, i) => (
+            <Reveal key={s.label} delay={0.05 * i}>
+              <Card className="text-center">
+                <p className={`font-display text-3xl font-black leading-none ${
+                  s.tone === 'primary' ? 'text-[var(--color-primary-fixed)]' : 'text-white'
+                }`}>{s.value}</p>
+                <p className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50 mt-2">{s.label}</p>
+              </Card>
+            </Reveal>
+          ))}
+        </div>
+
+        {cargando ? (
+          <Reveal delay={0.1}>
+            <Card><p className="text-sm text-[var(--color-on-surface-variant)]/40 text-center py-8">Cargando clases…</p></Card>
+          </Reveal>
+        ) : clases.length === 0 ? (
+          <Reveal delay={0.1}>
+            <Card>
+              <p className="text-sm text-[var(--color-on-surface-variant)]/60 text-center py-8">
+                No tienes clases asignadas aún. El administrador las creará y te asignará como instructor.
+              </p>
+            </Card>
+          </Reveal>
+        ) : (
+          <div className="space-y-4">
+            {clases.map((c, idx) => {
+              const abierta = claseAbierta === c.id
+              const inicio = new Date(c.fecha_hora_inicio)
+              const fin = new Date(c.fecha_hora_fin)
+              const listaAsistencia = asistencias[c.id] ?? []
+
               return (
-                <Reveal key={c.id} delay={0.06 * i}>
-                  <button
-                    onClick={() => { setSelId(c.id); setTab('plan') }}
-                    className={`w-full text-left rounded-2xl p-5 border transition-[border-color,background-color,transform] duration-300 active:scale-[0.99] ${
-                      activa
-                        ? 'border-[rgba(230,255,0,0.4)] bg-[rgba(230,255,0,0.05)]'
-                        : 'border-white/5 bg-white/[0.03] hover:border-white/15'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className={`font-display font-black ${activa ? 'text-[var(--color-primary-fixed)]' : 'text-white'}`}>
-                        {c.hora}
-                      </span>
-                      <Badge variant={ESTADO_BADGE[c.estado].variant}>{ESTADO_BADGE[c.estado].label}</Badge>
-                    </div>
-                    <p className="font-display text-sm font-extrabold text-white uppercase tracking-tight">{c.titulo}</p>
-                    <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mt-1">
-                      {c.tipo} · {c.piscina} · {c.asistentes.length} {c.asistentes.length === 1 ? 'atleta' : 'atletas'}
-                    </p>
-                  </button>
+                <Reveal key={c.id} delay={0.1 + idx * 0.04}>
+                  <Card padding="none" className="overflow-hidden">
+                    {/* Cabecera clickeable */}
+                    <button
+                      className="w-full p-6 flex items-center justify-between gap-4 hover:bg-white/[0.02] transition-colors duration-200"
+                      onClick={() => abrirClase(c.id)}
+                    >
+                      <div className="flex items-center gap-4 min-w-0">
+                        <div className="shrink-0 text-left">
+                          <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50">
+                            {inicio.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }).toUpperCase()}
+                          </p>
+                          <p className="font-display text-xl font-black text-white">
+                            {inicio.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-display font-black text-white text-sm uppercase tracking-tight truncate">{c.nombre_clase}</p>
+                          <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mt-0.5">
+                            {c.sede} · {c.estudiantes_inscritos.length} inscritos
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <Badge variant={ESTADO_COLOR[c.estado] as any}>{ESTADO_LABEL[c.estado]}</Badge>
+                        <span className="material-symbols-outlined text-white/40 text-[20px] transition-transform duration-300" style={{ transform: abierta ? 'rotate(180deg)' : 'none' }}>
+                          expand_more
+                        </span>
+                      </div>
+                    </button>
+
+                    {/* Detalle expandido */}
+                    {abierta && (
+                      <div className="border-t border-white/10">
+                        {/* Tabs */}
+                        <div className="flex border-b border-white/10">
+                          {(['plan', 'asistencia', 'observaciones'] as const).map((tab) => (
+                            <button
+                              key={tab}
+                              onClick={() => setTabActiva(tab)}
+                              className={`px-5 py-3 text-[10px] font-black uppercase tracking-widest transition-colors duration-200 ${
+                                tabActiva === tab
+                                  ? 'text-[var(--color-primary-fixed)] border-b-2 border-[var(--color-primary-fixed)]'
+                                  : 'text-white/40 hover:text-white'
+                              }`}
+                            >
+                              {tab === 'plan' ? 'Plan de clase' : tab === 'asistencia' ? 'Asistencia' : 'Observaciones'}
+                            </button>
+                          ))}
+                        </div>
+
+                        <div className="p-6">
+                          {tabActiva === 'plan' && (
+                            <ul className="space-y-3">
+                              {(c.plan ?? []).length === 0 ? (
+                                <li className="text-sm text-[var(--color-on-surface-variant)]/50">Sin plan de clase definido.</li>
+                              ) : (c.plan ?? []).map((item, i) => (
+                                <li key={i} className="flex items-start gap-3 text-sm text-[var(--color-on-surface-variant)]/85">
+                                  <span className="material-symbols-outlined text-[var(--color-primary-fixed)] text-[17px] mt-0.5 shrink-0">check_circle</span>
+                                  {item}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+
+                          {tabActiva === 'asistencia' && (
+                            <div className="space-y-3">
+                              {c.estudiantes_inscritos.length === 0 ? (
+                                <p className="text-sm text-[var(--color-on-surface-variant)]/50">No hay estudiantes inscritos.</p>
+                              ) : c.estudiantes_inscritos.map((uid) => {
+                                const reg = listaAsistencia.find((a) => a.usuarioId === uid)
+                                const presente = reg?.asistio ?? false
+                                return (
+                                  <div key={uid} className="flex items-center justify-between p-4 rounded-2xl border border-white/5 bg-white/[0.02]">
+                                    <div className="flex items-center gap-3">
+                                      <span className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-[11px] font-black text-white">
+                                        {uid.substring(0, 2).toUpperCase()}
+                                      </span>
+                                      <span className="text-sm text-white">{uid}</span>
+                                    </div>
+                                    <button
+                                      onClick={() => toggleAsistencia(c.id, uid, uid)}
+                                      className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-200 ${
+                                        presente
+                                          ? 'bg-[var(--color-success-emerald)]/20 text-[var(--color-success-emerald)] border border-[var(--color-success-emerald)]/30'
+                                          : 'bg-white/5 text-white/40 border border-white/10 hover:border-white/30'
+                                      }`}
+                                    >
+                                      {presente ? 'Asistió ✓' : 'Marcar'}
+                                    </button>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
+
+                          {tabActiva === 'observaciones' && (
+                            <div className="space-y-4">
+                              <textarea
+                                value={observaciones[c.id] ?? ''}
+                                onChange={(e) => setObservaciones((prev) => ({ ...prev, [c.id]: e.target.value }))}
+                                placeholder="Escribe tus observaciones de la clase..."
+                                rows={5}
+                                className="w-full bg-white/5 border border-white/5 rounded-2xl px-5 py-4 text-[var(--color-on-surface)] placeholder:text-[var(--color-on-surface-variant)]/30 focus:border-[rgba(230,255,0,0.5)] focus:outline-none transition-colors duration-300 resize-none"
+                              />
+                              <div className="flex justify-end">
+                                <Button
+                                  size="md"
+                                  loading={guardando === c.id}
+                                  onClick={() => guardarObservaciones(c.id)}
+                                >
+                                  {guardando === c.id ? 'Guardando…' : 'Guardar y finalizar clase'}
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </Card>
                 </Reveal>
               )
             })}
-
-            {/* Acumulado → reporte al admin */}
-            <Reveal delay={0.24}>
-              <div className="bg-[var(--color-primary-fixed)] p-6 rounded-2xl text-black flex flex-col gap-5 shadow-[0_20px_50px_-12px_rgba(230,255,0,0.3)]">
-                <div>
-                  <p className="label-caps text-[10px] opacity-50 mb-1">Acumulado del mes</p>
-                  <div className="flex items-baseline gap-2">
-                    <span className="font-display text-4xl font-black">{dictadas}</span>
-                    <span className="label-caps text-[10px] opacity-70">clases dictadas</span>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setReportado(true)}
-                  disabled={reportado}
-                  className="bg-black text-[var(--color-primary-fixed)] px-6 py-3.5 rounded-2xl label-caps text-[10px] flex items-center justify-center gap-2 active:scale-[0.97] transition-transform duration-150 disabled:opacity-70"
-                >
-                  {reportado ? 'Reportado a admin ✓' : 'Reportar a administración'}
-                  {!reportado && <span className="material-symbols-outlined text-sm">send</span>}
-                </button>
-              </div>
-            </Reveal>
           </div>
-
-          {/* ── Detalle ── */}
-          <div className="lg:col-span-7">
-            <Reveal delay={0.12}>
-              <Card padding="none" className="overflow-hidden">
-                {/* Cabecera del detalle */}
-                <div className="p-6 md:p-8 border-b border-white/10 bg-white/[0.02]">
-                  <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                    <h3 className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight">
-                      {sel.titulo}
-                    </h3>
-                    <Badge variant={sel.tipo === 'Personal' ? 'primary' : 'default'}>{sel.tipo}</Badge>
-                  </div>
-                  {/* Tabs Plan / Observaciones */}
-                  <div className="flex p-1 bg-black/40 border border-white/10 rounded-xl w-fit" role="tablist">
-                    {([['plan', 'Plan de clase'], ['obs', 'Observaciones']] as const).map(([key, label]) => (
-                      <button
-                        key={key}
-                        role="tab"
-                        aria-selected={tab === key}
-                        onClick={() => setTab(key)}
-                        className={`relative px-5 py-2 text-[10px] font-black rounded-lg uppercase tracking-widest transition-colors duration-200 ${
-                          tab === key ? 'text-black' : 'text-white/40 hover:text-white'
-                        }`}
-                      >
-                        {tab === key && (
-                          <motion.span
-                            layoutId="clase-tab"
-                            className="absolute inset-0 rounded-lg bg-[var(--color-primary-fixed)]"
-                            transition={{ duration: 0.3, ease: EASE }}
-                          />
-                        )}
-                        <span className="relative z-10">{label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Contenido de la pestaña — re-monta con key para animar
-                    la entrada sin depender de una salida (más fiable que
-                    AnimatePresence mode="wait" para contenido siempre visible). */}
-                <div className="p-6 md:p-8">
-                  <motion.div
-                    key={`${selId}-${tab}`}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.22, ease: EASE }}
-                  >
-                    {tab === 'plan' ? (
-                      <ul className="space-y-4">
-                        {sel.plan.map((paso, i) => (
-                          <li key={i} className="flex items-baseline gap-4">
-                            <span className="text-[12px] font-black text-[rgba(230,255,0,0.6)] shrink-0">0{i + 1}</span>
-                            <span className="text-[var(--color-on-surface)]/85">{paso}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <div className="bg-white/5 border border-white/5 rounded-2xl p-6">
-                        <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mb-3">Notas de la sesión</p>
-                        <p className="text-[var(--color-on-surface)]/90 italic leading-relaxed">
-                          {sel.observaciones === '—' ? 'Sin observaciones registradas todavía.' : `“${sel.observaciones}”`}
-                        </p>
-                      </div>
-                    )}
-                  </motion.div>
-
-                  {/* Asistencia (grupal o personalizada) */}
-                  <div className="mt-8 pt-8 border-t border-white/5">
-                    <div className="flex items-center justify-between mb-5">
-                      <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50">
-                        Asistencia {sel.tipo === 'Personal' ? 'personalizada' : 'grupal'}
-                      </p>
-                      <span className="label-caps text-[10px] text-[var(--color-primary-fixed)]">
-                        {presentes} / {sel.asistentes.length}
-                      </span>
-                    </div>
-                    <div className="space-y-2">
-                      {sel.asistentes.map((a) => (
-                        <div key={a.nombre} className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/5">
-                          <span className={`w-9 h-9 rounded-full flex items-center justify-center text-[11px] font-black shrink-0 ${
-                            a.presente ? 'bg-[var(--color-primary-fixed)] text-black' : 'bg-white/10 text-white/50 border border-white/10'
-                          }`}>
-                            {ini(a.nombre)}
-                          </span>
-                          <span className="flex-1 text-sm text-white">{a.nombre}</span>
-                          {a.presente
-                            ? <Badge variant="success">Asistió</Badge>
-                            : <Badge variant="default">Sin registro</Badge>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            </Reveal>
-          </div>
-        </div>
+        )}
       </div>
     </GuardedShell>
   )

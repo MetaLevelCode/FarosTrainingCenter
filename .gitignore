@@ -4,6 +4,14 @@ __pycache__/
 # Grafo de conocimiento: artefacto derivado del código.
 # Se regenera con `graphify . --code-only --no-label`
 graphify-out/
+node_modules
 
-# macOS
+# Credenciales y secretos — NUNCA en el repo
+serviceAccountKey.json
+*.key.json
+faros-app/.env.local
+faros-app/.env*.local
+
+# Artefactos locales
 .DS_Store
+dist/

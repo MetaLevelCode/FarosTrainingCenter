@@ -1,83 +1,184 @@
 // ============================================================
-// FAROS — Domain Types
+// FAROS — Domain Types (Firestore schema)
 // ============================================================
 
-import type { PlanAsignado } from './planes'
+export type UserRole = 'admin' | 'profesor' | 'estudiante'
 
-export type UserRole = 'alumno' | 'entrenador' | 'admin'
+// ── usuarios/{uid} ──────────────────────────────────────────
 
-export type TipoDocumento = 'CC' | 'TI' | 'CE'
-
-export interface ContactoEmergencia {
-  nombre: string
-  parentesco: string
-  telefono: string
+export interface SuscripcionActiva {
+  suscripcionId: string
+  planId: string
+  nombrePlan: string
+  sesionesRestantes: number
+  fechaVencimiento: number
+  estado: 'activa' | 'vencida'
 }
 
-export interface FarosUser {
+export interface Estadisticas {
+  clasesReservadas: number
+  clasesAsistidas: number
+  tasaAsistencia: number
+}
+
+export interface Usuario {
   uid: string
+  nombres: string
+  apellidos: string
+  cedula: string
   email: string
-  displayName: string
-  role: UserRole
-  photoURL?: string
-  createdAt?: number
-  // Alumno-specific — el plan contratado real (ver lib/planes.ts).
-  // Reemplaza los antiguos `plan: 'basico'|'pro'|'elite'` y `tier`,
-  // que no correspondían al sistema de planes del club.
-  planActivo?: PlanAsignado
-  active?: boolean
-  // Datos personales — estándar Colombia
-  tipoDocumento?: TipoDocumento
-  documento?: string
-  fechaNacimiento?: string
-  genero?: string
+  rol: UserRole
   telefono?: string
-  ciudad?: string
-  departamento?: string
-  // Salud y seguridad
+  telefonoEmergencia?: string
   eps?: string
-  rh?: string
-  contactoEmergencia?: ContactoEmergencia
+  foto_perfil?: string
+  sede?: string
+  // Profesores
+  clasesDadas?: number
+  // Estudiantes
+  nivel?: string
+  dificultades?: string[]
+  fecha_registro?: number
+  estadisticas?: Estadisticas
+  suscripcionActiva?: SuscripcionActiva | null
 }
 
-export interface TrainingPlan {
+// Helper computado (no se guarda en Firestore)
+export function displayName(u: Pick<Usuario, 'nombres' | 'apellidos'>): string {
+  return `${u.nombres} ${u.apellidos}`.trim()
+}
+
+// ── catalogo/{codigo} ────────────────────────────────────────
+
+export interface Catalogo {
   id: string
-  title: string
-  type: 'grupal' | 'personal'
-  coachId: string
-  coachName: string
-  day: string
-  time: string
-  capacity: number
-  enrolled: number
-  active: boolean
-  description?: string
+  codigo: string
+  nombre: string
+  modalidad: string
+  descripcion: string
+  estado: boolean
+  creadoEn: number
+  actualizadoEn: number
 }
 
-export interface Attendance {
+// ── planes/{planId} ──────────────────────────────────────────
+
+export interface Plan {
   id: string
-  userId: string
-  classId: string
-  date: number
-  status: 'present' | 'absent' | 'cancelled' | 'pending'
+  planId: string
+  nombre: string
+  descripcion: string
+  catalogo_codigo: string
+  sesiones_incluidas: number
+  duracion_dias: number
+  precio_total: number
+  sede: string
+  estado: boolean
+  creadoEn: number
 }
 
-export interface RankingEntry {
-  userId: string
-  displayName: string
-  attendances: number
-  rating: number
-  points: number
-  position: number
-}
+// ── suscripciones/{suscripcionId} ────────────────────────────
 
-export interface Transaction {
+export interface Suscripcion {
   id: string
-  userId: string
-  userName: string
-  plan: string
-  amount: number
-  type: 'income' | 'expense'
-  status: 'pending' | 'approved'
-  date: number
+  suscripcionId: string
+  usuarioId: string
+  planId: string
+  nombre_plan: string
+  sesiones_compradas: number
+  sesiones_restantes: number
+  fecha_compra: number
+  fecha_vencimiento: number
+  estado: 'activa' | 'vencida' | 'cancelada'
+  creadoEn: number
+}
+
+// ── transacciones/{transaccionId} ────────────────────────────
+
+export interface SuscripcionCreada {
+  suscripcionId: string
+  fechaActivacion: number
+}
+
+export interface Transaccion {
+  id: string
+  transaccionId: string
+  usuarioId: string
+  planId: string
+  monto: number
+  comprobante_url?: string
+  estado: 'pendiente' | 'aprobada' | 'rechazada'
+  fecha_solicitud: number
+  fecha_revision?: number | null
+  adminQueAprobo?: string
+  motivo_rechazo?: string | null
+  suscripcionCreada?: SuscripcionCreada | null
+  creadoEn: number
+  // Desnormalizado para mostrar sin join
+  nombre_usuario?: string
+  nombre_plan?: string
+}
+
+// ── clases/{claseId} ─────────────────────────────────────────
+
+export interface Clase {
+  id: string
+  claseId: string
+  catalogo_codigo: string
+  nombre_clase: string
+  instructor_id: string
+  sede: string
+  fecha_hora_inicio: number
+  fecha_hora_fin: number
+  nivel_requerimiento?: string
+  cupo_maximo: number
+  estudiantes_inscritos: string[]
+  estado: 'programada' | 'en_curso' | 'finalizada' | 'cancelada'
+  plan?: string[]
+  observaciones_profesor?: string | null
+  creadoEn: number
+  actualizadoEn: number
+  // Desnormalizado
+  nombre_instructor?: string
+}
+
+// ── asistencias/{asistenciaId} ───────────────────────────────
+
+export interface Asistencia {
+  id: string
+  asistenciaId: string
+  claseId: string
+  usuarioId: string
+  asistio: boolean
+  fecha_registro: number
+  registradoPor: string
+  creadoEn: number
+}
+
+// ── movimientos/{movimientoId} ───────────────────────────────
+
+export type OrigenMovimiento = 'transaccion_aprobada' | 'manual'
+
+export interface Movimiento {
+  id: string
+  movimientoId: string
+  tipo: 'ingreso' | 'egreso'
+  monto: number
+  categoriaId: string
+  categoriaNombre: string
+  descripcion: string
+  fecha: number
+  origen: OrigenMovimiento
+  transaccionId?: string | null
+  creadoEn: number
+}
+
+// ── categorias/{categoriaId} ─────────────────────────────────
+
+export interface Categoria {
+  id: string
+  categoriaId: string
+  nombre: string
+  tipo: 'ingreso' | 'egreso'
+  color: string
 }

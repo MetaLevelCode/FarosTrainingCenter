@@ -27,9 +27,9 @@ function Reveal({ children, delay = 0 }: { children: React.ReactNode; delay?: nu
 }
 
 export default function PortalPage() {
-  const { authorized, loading } = useRoleGuard(['entrenador', 'admin'])
+  const { authorized, loading } = useRoleGuard(['profesor', 'admin'])
   const { user } = useAuth()
-  const firstName = user?.displayName?.split(' ')[0] ?? 'Coach'
+  const firstName = user?.nombres ?? 'Coach'
 
   return (
     <GuardedShell authorized={authorized} loading={loading} title="Portal Entrenador">

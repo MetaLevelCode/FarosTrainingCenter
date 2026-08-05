@@ -18,7 +18,7 @@ import { Button, Input, FarosWordmark } from '@/components/ui'
 import { WaterBackground } from '@/components/shared/WaterBackground'
 
 const ROLE_HOME: Record<string, string> = {
-  alumno: '/dashboard', entrenador: '/portal', admin: '/admin',
+  estudiante: '/dashboard', profesor: '/portal', admin: '/admin',
 }
 
 // Lee ?next= y sólo acepta rutas internas (evita open-redirect).
@@ -49,7 +49,7 @@ export default function LoginPage() {
   // Con sesión activa el login no aporta nada: directo al destino/panel.
   useEffect(() => {
     if (!authLoading && user) {
-      router.replace(getNext() ?? ROLE_HOME[user.role] ?? '/dashboard')
+      router.replace(getNext() ?? ROLE_HOME[user.rol] ?? '/dashboard')
     }
   }, [user, authLoading, router])
 

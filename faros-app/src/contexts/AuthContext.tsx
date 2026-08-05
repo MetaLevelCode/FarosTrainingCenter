@@ -2,68 +2,52 @@
 
 // ============================================================
 // FAROS — Auth Context
-// Envuelve Firebase Auth + la búsqueda de rol en Firestore.
-//
-// SEGURIDAD: el modo demo (usuarios con contraseña fija) solo existe
-// en desarrollo. En producción sin credenciales la app NO se degrada
-// a demo — se bloquea, para no publicar nunca un admin abierto.
-// Recuerda que esto es solo la capa de UX: la autorización real vive
-// en las reglas de Firestore, no aquí.
+// Colección Firestore: usuarios/{uid}
+// Rol: 'admin' | 'profesor' | 'estudiante'
+// Mock mode activo cuando no hay NEXT_PUBLIC_FIREBASE_API_KEY.
 // ============================================================
 
 import {
   createContext, useContext, useEffect, useState, useCallback, ReactNode,
 } from 'react'
-import { MOCK_MODE, MAL_CONFIGURADO, getFirebase } from '@/lib/firebase'
-import { ROSTER } from '@/lib/planes'
-import type { FarosUser, UserRole } from '@/lib/types'
+import { HAS_FIREBASE, getFirebase } from '@/lib/firebase'
+import type { Usuario, UserRole } from '@/lib/types'
 
-// Usuarios de prueba SOLO para desarrollo.
-//
-// El guard va con `process.env.NODE_ENV` literal, no con MOCK_MODE: el
-// bundler sustituye esa expresión en tiempo de compilación y elimina la
-// rama muerta, así estas credenciales NO acaban dentro del JavaScript
-// que se descarga el navegador. Con una constante importada de otro
-// módulo no puede probarlo, y el objeto entero terminaba en el bundle.
-const MOCK_USERS: Record<string, FarosUser & { password: string }> =
-  process.env.NODE_ENV !== 'production' ? {
-  'alumno@faros.com': {
-    uid: 'mock-1', email: 'alumno@faros.com', displayName: 'Carlos Méndez',
-    role: 'alumno', active: true, password: '123456',
-    // Mismo plan que figura en ROSTER (lib/planes.ts): Grupal Knowill 2x/sem.
-    planActivo: ROSTER[0].plan,
-    tipoDocumento: 'CC', documento: '1.088.301.457',
-    fechaNacimiento: '14 de marzo de 1998', genero: 'Masculino',
-    telefono: '+57 310 842 5567', ciudad: 'Pereira', departamento: 'Risaralda',
-    eps: 'Nueva EPS', rh: 'O+',
-    contactoEmergencia: { nombre: 'María Méndez', parentesco: 'Madre', telefono: '+57 312 559 0148' },
+// ── Mock users ──────────────────────────────────────────────
+const MOCK_USERS: Record<string, Usuario & { password: string }> = {
+  'estudiante@faros.com': {
+    uid: 'mock-1', email: 'estudiante@faros.com',
+    nombres: 'Carlos', apellidos: 'Méndez',
+    cedula: '1088301457', rol: 'estudiante',
+    telefono: '+57 310 842 5567', telefonoEmergencia: '+57 312 559 0148',
+    eps: 'Nueva EPS', sede: 'UTP', nivel: 'Tiburones',
+    estadisticas: { clasesReservadas: 8, clasesAsistidas: 7, tasaAsistencia: 87 },
+    suscripcionActiva: null,
+    password: '123456',
   },
-  'entrenador@faros.com': {
-    uid: 'mock-2', email: 'entrenador@faros.com', displayName: 'Ana Torres',
-    role: 'entrenador', active: true, password: '123456',
-    tipoDocumento: 'CC', documento: '1.093.774.210',
-    fechaNacimiento: '02 de septiembre de 1991', genero: 'Femenino',
-    telefono: '+57 315 226 7841', ciudad: 'Pereira', departamento: 'Risaralda',
-    eps: 'Sura EPS', rh: 'A+',
-    contactoEmergencia: { nombre: 'Jorge Torres', parentesco: 'Esposo', telefono: '+57 300 771 3320' },
+  'profesor@faros.com': {
+    uid: 'mock-2', email: 'profesor@faros.com',
+    nombres: 'Ana', apellidos: 'Torres',
+    cedula: '1093774210', rol: 'profesor',
+    telefono: '+57 315 226 7841', sede: 'UTP',
+    clasesDadas: 42,
+    password: '123456',
   },
   'admin@faros.com': {
-    uid: 'mock-3', email: 'admin@faros.com', displayName: 'Luis Faros',
-    role: 'admin', active: true, password: '123456',
+    uid: 'mock-3', email: 'admin@faros.com',
+    nombres: 'Luis', apellidos: 'Faros',
+    cedula: '1001234567', rol: 'admin',
+    password: '123456',
   },
-} : {}
-
-// Producción sin credenciales: no hay a quién autenticar. Se corta ahí
-// en vez de caer al modo demo (que sería publicar un admin abierto).
-const ERROR_CONFIG = 'La app no está configurada. Avísale al administrador.'
+}
 
 interface AuthContextValue {
-  user: FarosUser | null
+  user: Usuario | null
   loading: boolean
   error: string | null
   isMockMode: boolean
   signIn: (email: string, password: string) => Promise<{ ok: boolean; role?: UserRole; error?: string }>
-  signUp: (email: string, password: string, displayName: string, role: UserRole) => Promise<{ ok: boolean; error?: string }>
+  signUp: (email: string, password: string, nombres: string, apellidos: string, cedula: string, rol: UserRole) => Promise<{ ok: boolean; error?: string }>
   signOut: () => Promise<void>
   clearError: () => void
 }
@@ -71,14 +55,13 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<FarosUser | null>(null)
+  const [user, setUser] = useState<Usuario | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // ── Restore session ──
+  // ── Restore session ─────────────────────────────────────
   useEffect(() => {
-    if (MOCK_MODE) {
-      // Mock mode: restore from localStorage
+    if (!HAS_FIREBASE) {
       try {
         const saved = localStorage.getItem('faros-mock-user')
         if (saved) setUser(JSON.parse(saved))
@@ -87,7 +70,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    // Firebase se descarga aquí, no en el bundle inicial.
     let unsub: (() => void) | undefined
     let cancelado = false
 
@@ -100,56 +82,65 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (cancelado) return
 
       unsub = onAuthStateChanged(auth, async (fbUser) => {
-      if (fbUser) {
-        // Look up role from Firestore
-        try {
-          const snap = await getDoc(doc(db, 'users', fbUser.uid))
-          const data = snap.data()
-          setUser({
-            uid: fbUser.uid,
-            email: fbUser.email ?? '',
-            displayName: fbUser.displayName ?? data?.displayName ?? 'Atleta',
-            role: (data?.role as UserRole) ?? 'alumno',
-            photoURL: fbUser.photoURL ?? undefined,
-            planActivo: data?.planActivo,
-            active: data?.active ?? true,
-            tipoDocumento: data?.tipoDocumento,
-            documento: data?.documento,
-            fechaNacimiento: data?.fechaNacimiento,
-            genero: data?.genero,
-            telefono: data?.telefono,
-            ciudad: data?.ciudad,
-            departamento: data?.departamento,
-            eps: data?.eps,
-            rh: data?.rh,
-            contactoEmergencia: data?.contactoEmergencia,
-          })
-        } catch {
-          setUser({
-            uid: fbUser.uid,
-            email: fbUser.email ?? '',
-            displayName: fbUser.displayName ?? 'Atleta',
-            role: 'alumno',
-          })
+        if (fbUser) {
+          try {
+            const snap = await getDoc(doc(db, 'usuarios', fbUser.uid))
+            const data = snap.data()
+            if (data) {
+              setUser({
+                uid: fbUser.uid,
+                nombres: data.nombres ?? '',
+                apellidos: data.apellidos ?? '',
+                cedula: data.cedula ?? '',
+                email: fbUser.email ?? data.email ?? '',
+                rol: (data.rol as UserRole) ?? 'estudiante',
+                telefono: data.telefono,
+                telefonoEmergencia: data.telefonoEmergencia,
+                eps: data.eps,
+                foto_perfil: data.foto_perfil,
+                sede: data.sede,
+                clasesDadas: data.clasesDadas,
+                nivel: data.nivel,
+                dificultades: data.dificultades,
+                fecha_registro: data.fecha_registro,
+                estadisticas: data.estadisticas,
+                suscripcionActiva: data.suscripcionActiva ?? null,
+              })
+            } else {
+              // Documento aún no existe (usuario recién creado)
+              setUser({
+                uid: fbUser.uid,
+                nombres: fbUser.displayName?.split(' ')[0] ?? '',
+                apellidos: fbUser.displayName?.split(' ').slice(1).join(' ') ?? '',
+                cedula: '',
+                email: fbUser.email ?? '',
+                rol: 'estudiante',
+              })
+            }
+          } catch {
+            setUser({
+              uid: fbUser.uid,
+              nombres: fbUser.displayName?.split(' ')[0] ?? '',
+              apellidos: fbUser.displayName?.split(' ').slice(1).join(' ') ?? '',
+              cedula: '',
+              email: fbUser.email ?? '',
+              rol: 'estudiante',
+            })
+          }
+        } else {
+          setUser(null)
         }
-      } else {
-        setUser(null)
-      }
-      setLoading(false)
+        setLoading(false)
       })
     })().catch(() => setLoading(false))
 
     return () => { cancelado = true; unsub?.() }
   }, [])
 
-  // ── Sign in ──
+  // ── Sign in ─────────────────────────────────────────────
   const signIn = useCallback(async (email: string, password: string) => {
     setError(null)
-    if (MAL_CONFIGURADO) {
-      setError(ERROR_CONFIG)
-      return { ok: false, error: ERROR_CONFIG }
-    }
-    if (MOCK_MODE) {
+    if (!HAS_FIREBASE) {
       const mock = MOCK_USERS[email]
       if (!mock || mock.password !== password) {
         setError('Credenciales incorrectas')
@@ -158,7 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { password: _pw, ...userData } = mock
       setUser(userData)
       try { localStorage.setItem('faros-mock-user', JSON.stringify(userData)) } catch {}
-      return { ok: true, role: userData.role }
+      return { ok: true, role: userData.rol }
     }
 
     try {
@@ -166,9 +157,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         getFirebase(), import('firebase/auth'), import('firebase/firestore'),
       ])
       const cred = await signInWithEmailAndPassword(auth, email, password)
-      const snap = await getDoc(doc(db, 'users', cred.user.uid))
-      const role = (snap.data()?.role as UserRole) ?? 'alumno'
-      return { ok: true, role }
+      const snap = await getDoc(doc(db, 'usuarios', cred.user.uid))
+      const rol = (snap.data()?.rol as UserRole) ?? 'estudiante'
+      return { ok: true, role: rol }
     } catch (e: any) {
       const msg = e?.code === 'auth/invalid-credential'
         ? 'Credenciales incorrectas'
@@ -178,27 +169,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // ── Sign up ──
+  // ── Sign up ─────────────────────────────────────────────
   const signUp = useCallback(async (
-    email: string, password: string, displayName: string, role: UserRole,
+    email: string, password: string,
+    nombres: string, apellidos: string, cedula: string, rol: UserRole,
   ) => {
     setError(null)
-    if (MAL_CONFIGURADO) {
-      setError(ERROR_CONFIG)
-      return { ok: false, error: ERROR_CONFIG }
-    }
-    if (MOCK_MODE) {
-      // Mock: just succeed
-      return { ok: true }
-    }
+    if (!HAS_FIREBASE) return { ok: true }
+
     try {
       const [{ auth, db }, fbAuth, { doc, setDoc }] = await Promise.all([
         getFirebase(), import('firebase/auth'), import('firebase/firestore'),
       ])
       const cred = await fbAuth.createUserWithEmailAndPassword(auth, email, password)
-      await fbAuth.updateProfile(cred.user, { displayName })
-      await setDoc(doc(db, 'users', cred.user.uid), {
-        displayName, email, role, active: true, createdAt: Date.now(),
+      await fbAuth.updateProfile(cred.user, { displayName: `${nombres} ${apellidos}` })
+      await setDoc(doc(db, 'usuarios', cred.user.uid), {
+        nombres, apellidos, cedula, email, rol,
+        fecha_registro: Date.now(),
+        estadisticas: { clasesReservadas: 0, clasesAsistidas: 0, tasaAsistencia: 0 },
+        suscripcionActiva: null,
+        clasesDadas: rol === 'profesor' ? 0 : undefined,
       })
       return { ok: true }
     } catch (e: any) {
@@ -210,9 +200,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // ── Sign out ──
+  // ── Sign out ─────────────────────────────────────────────
   const signOut = useCallback(async () => {
-    if (MOCK_MODE) {
+    if (!HAS_FIREBASE) {
       setUser(null)
       try { localStorage.removeItem('faros-mock-user') } catch {}
       return
@@ -221,13 +211,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       getFirebase(), import('firebase/auth'),
     ])
     await fbSignOut(auth)
+    setUser(null)
   }, [])
 
   const clearError = useCallback(() => setError(null), [])
 
   return (
     <AuthContext.Provider value={{
-      user, loading, error, isMockMode: MOCK_MODE,
+      user, loading, error, isMockMode: !HAS_FIREBASE,
       signIn, signUp, signOut, clearError,
     }}>
       {children}

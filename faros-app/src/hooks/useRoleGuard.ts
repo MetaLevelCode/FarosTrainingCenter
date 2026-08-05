@@ -12,8 +12,8 @@ import { useAuth } from '@/contexts/AuthContext'
 import type { UserRole } from '@/lib/types'
 
 const ROLE_HOME: Record<UserRole, string> = {
-  alumno: '/dashboard',
-  entrenador: '/portal',
+  estudiante: '/dashboard',
+  profesor: '/portal',
   admin: '/admin',
 }
 
@@ -21,17 +21,14 @@ export function useRoleGuard(allowed: UserRole[]) {
   const { user, loading } = useAuth()
   const router = useRouter()
 
-  // Serialize the array so the effect only re-runs when the
-  // actual allowed roles change — not on every render (which
-  // caused an infinite redirect loop).
   const allowedKey = allowed.join(',')
 
   useEffect(() => {
     if (loading) return
     if (!user) {
       router.replace('/login')
-    } else if (!allowedKey.split(',').includes(user.role)) {
-      router.replace(ROLE_HOME[user.role])
+    } else if (!allowedKey.split(',').includes(user.rol)) {
+      router.replace(ROLE_HOME[user.rol])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, loading, allowedKey, router])
@@ -39,6 +36,6 @@ export function useRoleGuard(allowed: UserRole[]) {
   return {
     user,
     loading,
-    authorized: !!user && allowedKey.split(',').includes(user.role),
+    authorized: !!user && allowedKey.split(',').includes(user.rol),
   }
 }

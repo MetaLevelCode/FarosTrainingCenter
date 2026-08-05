@@ -17,18 +17,17 @@ import type { UserRole } from '@/lib/types'
 interface NavItem { label: string; href: string; icon: string }
 
 const NAV: Record<UserRole, NavItem[]> = {
-  alumno: [
+  estudiante: [
     { label: 'Dashboard', href: '/dashboard', icon: 'dashboard' },
     { label: 'Planes', href: '/dashboard/planes', icon: 'fitness_center' },
     { label: 'Asistencia', href: '/dashboard/asistencia', icon: 'calendar_today' },
     { label: 'Ranking', href: '/dashboard/ranking', icon: 'leaderboard' },
     { label: 'Perfil', href: '/dashboard/perfil', icon: 'account_circle' },
   ],
-  entrenador: [
-    // Sin "Mis Clases": el calendario del portal ya cubre las clases,
-    // su plan y la asistencia de cada día.
+  profesor: [
     { label: 'Portal', href: '/portal', icon: 'dashboard' },
-    { label: 'Alumnos', href: '/portal/alumnos', icon: 'groups' },
+    { label: 'Mis Clases', href: '/portal/clases', icon: 'pool' },
+    { label: 'Estudiantes', href: '/portal/alumnos', icon: 'groups' },
     { label: 'Perfil', href: '/portal/perfil', icon: 'account_circle' },
   ],
   admin: [
@@ -46,7 +45,7 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
   const [fabOpen, setFabOpen] = useState(false)
   const fabRef = useRef<HTMLDivElement>(null)
 
-  const navItems = user ? NAV[user.role] : []
+  const navItems = user ? NAV[user.rol] : []
 
   // Magnetic hover for FAB — rAF-throttled, rect cached, fine pointers only.
   // (The old version called getBoundingClientRect on EVERY mousemove,
@@ -118,7 +117,7 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
           </button>
           <div className="w-9 h-9 rounded-full bg-[rgba(230,255,0,0.1)] border border-[rgba(230,255,0,0.25)] flex items-center justify-center">
             <span className="font-display text-xs font-black text-[var(--color-primary-fixed)]">
-              {user?.displayName?.charAt(0) ?? 'A'}
+              {user?.nombres?.charAt(0) ?? 'A'}
             </span>
           </div>
         </div>
