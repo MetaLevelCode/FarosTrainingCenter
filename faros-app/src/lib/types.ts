@@ -4,6 +4,8 @@
 
 export type UserRole = 'admin' | 'profesor' | 'estudiante'
 
+export type TipoDocumento = 'CC' | 'TI' | 'CE'
+
 // ── usuarios/{uid} ──────────────────────────────────────────
 
 export interface SuscripcionActiva {
