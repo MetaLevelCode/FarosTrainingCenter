@@ -91,15 +91,21 @@ usa Firebase App Hosting: el backend ya es un servidor Node.js y no necesita des
   - Enlace directo a la página de upload
 - [x] `firestore.rules`: estudiante puede actualizar SOLO `comprobante_url` en su tx pendiente
 
-### Fase 3 — Inscripción a clase con control de cupo (2 días)
+### Fase 3 — Inscripción a clase con control de cupo ✅ COMPLETADA
 
-- [ ] Function `inscribirEnClase` (callable):
-  - Input: `{ claseId }`
-  - En transacción: valida suscripción activa + sesiones > 0 + cupo disponible
-  - Añade `uid` a `estudiantes_inscritos`, incrementa `estadisticas.clasesReservadas`
-- [ ] Function `cancelarInscripcion` (callable) con ventana de tiempo
-- [ ] UI en `/dashboard` (o `Semanario.tsx`) para ver clases disponibles y reservar
-- [ ] Añadir índice compuesto `clases` por `fecha_hora + estado`
+- [x] `POST /api/clases/[claseId]/inscribir` — transacción atómica:
+  - Valida suscripción activa + sesionesRestantes > 0 + cupo disponible + clase programada
+  - arrayUnion uid en estudiantes_inscritos; incrementa estadisticas.clasesReservadas
+- [x] `POST /api/clases/[claseId]/cancelar` — cancelación con ventana de 2 horas:
+  - Valida que uid esté inscrito + clase programada + >2h antes del inicio
+  - arrayRemove uid; decrementa clasesReservadas
+- [x] `dashboard/asistencia/page.tsx` — refactoring completo:
+  - Sección "Clases disponibles": query estado='programada' + fecha futura, filtro client-side
+  - Botón "Inscribirse" llama API, actualización optimista de estado local
+  - Botón "Cancelar" llama API (ya no es mock local), muestra "< 2h" cuando no se puede
+  - Banner de aviso si suscripción vencida o sin sesiones
+  - Error display dismissible para errores de acción
+- [x] `firestore.indexes.json`: índice compuesto clases [estado + fecha_hora_inicio] + transacciones [usuarioId + creadoEn]
 
 ### Fase 4 — Admin CRUD (2-3 días)
 

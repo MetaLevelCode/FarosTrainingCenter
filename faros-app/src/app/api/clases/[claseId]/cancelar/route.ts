@@ -1,0 +1,83 @@
+// ============================================================
+// POST /api/clases/[claseId]/cancelar
+// Cancela la inscripción del estudiante en una clase.
+// Solo se puede cancelar hasta 2 horas antes del inicio.
+// ============================================================
+
+import { NextRequest, NextResponse } from 'next/server'
+import { FieldValue } from 'firebase-admin/firestore'
+import { getAdminAuth, getAdminDb } from '@/lib/admin'
+
+export const runtime = 'nodejs'
+
+const VENTANA_MS = 2 * 60 * 60 * 1000 // 2 horas antes del inicio
+
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ claseId: string }> },
+) {
+  try {
+    const token = req.headers.get('authorization')?.replace('Bearer ', '')
+    if (!token) return NextResponse.json({ error: 'Sin autorización' }, { status: 401 })
+
+    const decoded = await getAdminAuth().verifyIdToken(token)
+    const uid = decoded.uid
+    const { claseId } = await params
+
+    const db = getAdminDb()
+
+    const resultado = await db.runTransaction(async (tx) => {
+      const [claseSnap, usuSnap] = await Promise.all([
+        tx.get(db.collection('clases').doc(claseId)),
+        tx.get(db.collection('usuarios').doc(uid)),
+      ])
+
+      if (!claseSnap.exists) return { error: 'Clase no encontrada', status: 404 }
+      if (!usuSnap.exists) return { error: 'Usuario no encontrado', status: 404 }
+
+      const clase = claseSnap.data()!
+      const usu = usuSnap.data()!
+
+      if (usu.activo === false) return { error: 'Tu cuenta está suspendida', status: 403 }
+
+      const inscritos: string[] = clase.estudiantes_inscritos ?? []
+      if (!inscritos.includes(uid)) {
+        return { error: 'No estás inscrito en esta clase', status: 409 }
+      }
+
+      if (clase.estado !== 'programada') {
+        return { error: 'No se puede cancelar una clase que ya inició o finalizó', status: 409 }
+      }
+
+      const tiempoRestante = clase.fecha_hora_inicio - Date.now()
+      if (tiempoRestante < VENTANA_MS) {
+        return { error: 'Solo puedes cancelar hasta 2 horas antes del inicio de la clase', status: 409 }
+      }
+
+      tx.update(claseSnap.ref, {
+        estudiantes_inscritos: FieldValue.arrayRemove(uid),
+        actualizadoEn: Date.now(),
+      })
+
+      const clasesReservadas: number = usu.estadisticas?.clasesReservadas ?? 0
+      if (clasesReservadas > 0) {
+        tx.update(usuSnap.ref, {
+          'estadisticas.clasesReservadas': FieldValue.increment(-1),
+        })
+      }
+
+      return { ok: true }
+    })
+
+    if ('error' in resultado) {
+      return NextResponse.json({ error: resultado.error }, { status: resultado.status as number })
+    }
+    return NextResponse.json({ ok: true })
+  } catch (err: any) {
+    if ((err?.code ?? '').startsWith('auth/')) {
+      return NextResponse.json({ error: 'Token inválido o expirado' }, { status: 401 })
+    }
+    console.error('[POST /api/clases/cancelar]', err)
+    return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
+  }
+}
