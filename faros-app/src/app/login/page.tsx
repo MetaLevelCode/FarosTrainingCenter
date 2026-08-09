@@ -66,9 +66,11 @@ export default function LoginPage() {
   // este bloque en producción, así ni los correos ni la contraseña de
   // prueba llegan al navegador del usuario final.
   const DEMO_UI = process.env.NODE_ENV !== 'production'
+  // Los correos coinciden con MOCK_USERS del AuthContext: si se
+  // desalinean, los atajos dejan de iniciar sesión.
   const demos = DEMO_UI ? [
-    { label: 'Alumno', email: 'alumno@faros.com' },
-    { label: 'Entrenador', email: 'entrenador@faros.com' },
+    { label: 'Estudiante', email: 'estudiante@faros.com' },
+    { label: 'Profesor', email: 'profesor@faros.com' },
     { label: 'Admin', email: 'admin@faros.com' },
   ] : []
 

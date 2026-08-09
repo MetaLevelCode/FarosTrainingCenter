@@ -16,10 +16,45 @@
 // lib/registro.ts y lib/planes.ts).
 // ============================================================
 
-import type { PlanAsignado, EstadoPlan } from './planes'
+import type { PlanAsignado } from './planes'
+import type { SuscripcionActiva, Transaccion } from './types'
 
-// La fase del alumno coincide con el estado de su plan.
-export type Fase = EstadoPlan
+/**
+ * Fase del estudiante en el ciclo de matrícula. Se define aquí y no se
+ * hereda de planes.ts para que el semanario no dependa del catálogo
+ * local: el estado real sale de Firestore (suscripción + transacción).
+ */
+export type Fase = 'pendiente' | 'por_pagar' | 'activo' | 'vencido'
+
+export const FASE_LABEL: Record<Fase, string> = {
+  pendiente: 'En revisión',
+  por_pagar: 'Por pagar',
+  activo: 'Activo',
+  vencido: 'Vencido',
+}
+
+/**
+ * Traduce el estado guardado en Firestore a la fase que ve el alumno.
+ *
+ * La suscripción solo existe una vez aprobado el pago, así que mientras
+ * haya una transacción sin resolver el alumno está esperando: pendiente
+ * si el club aún revisa, por_pagar si ya le aprobaron y falta pagar.
+ */
+export function faseDeSuscripcion(
+  susc: SuscripcionActiva | null | undefined,
+  transaccion?: Pick<Transaccion, 'estado'> | null,
+): Fase {
+  if (susc && susc.estado === 'activa') return 'activo'
+  if (susc && susc.estado === 'vencida') return 'vencido'
+  if (transaccion?.estado === 'aprobada') return 'por_pagar'
+  if (transaccion?.estado === 'pendiente') return 'pendiente'
+  return 'vencido'
+}
+
+/** Sesiones que le quedan al estudiante para reservar. */
+export function cuposDisponibles(susc: SuscripcionActiva | null | undefined): number {
+  return Math.max(0, susc?.sesionesRestantes ?? 0)
+}
 
 /** Solo el alumno con plan activo (confirmado y pagado) tiene acceso total. */
 export function esAlumnoCompleto(fase: Fase): boolean {

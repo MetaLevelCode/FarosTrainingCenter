@@ -10,11 +10,21 @@
 import {
   createContext, useContext, useEffect, useState, useCallback, ReactNode,
 } from 'react'
-import { HAS_FIREBASE, getFirebase } from '@/lib/firebase'
+import { MOCK_MODE, MAL_CONFIGURADO, getFirebase } from '@/lib/firebase'
 import type { Usuario, UserRole } from '@/lib/types'
 
-// ── Mock users ──────────────────────────────────────────────
-const MOCK_USERS: Record<string, Usuario & { password: string }> = {
+// Producción sin credenciales: no hay a quién autenticar. Se corta ahí
+// en vez de caer al modo demo (que sería publicar un admin abierto).
+const ERROR_CONFIG = 'La app no está configurada. Avísale al administrador.'
+
+// ── Mock users (SOLO desarrollo) ────────────────────────────
+//
+// SEGURIDAD: el guard usa el literal `process.env.NODE_ENV` y no una
+// constante importada, porque el bundler solo sabe plegar la rama
+// muerta con el literal. Con una constante externa el objeto entero
+// —contraseñas incluidas— terminaba dentro del JavaScript servido.
+const MOCK_USERS: Record<string, Usuario & { password: string }> =
+  process.env.NODE_ENV !== 'production' ? {
   'estudiante@faros.com': {
     uid: 'mock-1', email: 'estudiante@faros.com',
     nombres: 'Carlos', apellidos: 'Méndez',
@@ -39,7 +49,7 @@ const MOCK_USERS: Record<string, Usuario & { password: string }> = {
     cedula: '1001234567', rol: 'admin',
     password: '123456',
   },
-}
+} : {}
 
 interface AuthContextValue {
   user: Usuario | null
@@ -61,7 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // ── Restore session ─────────────────────────────────────
   useEffect(() => {
-    if (!HAS_FIREBASE) {
+    if (MOCK_MODE) {
       try {
         const saved = localStorage.getItem('faros-mock-user')
         if (saved) setUser(JSON.parse(saved))
@@ -140,7 +150,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // ── Sign in ─────────────────────────────────────────────
   const signIn = useCallback(async (email: string, password: string) => {
     setError(null)
-    if (!HAS_FIREBASE) {
+    if (MAL_CONFIGURADO) {
+      setError(ERROR_CONFIG)
+      return { ok: false, error: ERROR_CONFIG }
+    }
+    if (MOCK_MODE) {
       const mock = MOCK_USERS[email]
       if (!mock || mock.password !== password) {
         setError('Credenciales incorrectas')
@@ -175,7 +189,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     nombres: string, apellidos: string, cedula: string, rol: UserRole,
   ) => {
     setError(null)
-    if (!HAS_FIREBASE) return { ok: true }
+    if (MAL_CONFIGURADO) {
+      setError(ERROR_CONFIG)
+      return { ok: false, error: ERROR_CONFIG }
+    }
+    if (MOCK_MODE) return { ok: true }
 
     try {
       const [{ auth, db }, fbAuth, { doc, setDoc }] = await Promise.all([
@@ -202,7 +220,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // ── Sign out ─────────────────────────────────────────────
   const signOut = useCallback(async () => {
-    if (!HAS_FIREBASE) {
+    if (MOCK_MODE) {
       setUser(null)
       try { localStorage.removeItem('faros-mock-user') } catch {}
       return
@@ -218,7 +236,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider value={{
-      user, loading, error, isMockMode: !HAS_FIREBASE,
+      user, loading, error, isMockMode: MOCK_MODE,
       signIn, signUp, signOut, clearError,
     }}>
       {children}
