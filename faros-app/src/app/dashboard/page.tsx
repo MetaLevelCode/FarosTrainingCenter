@@ -14,8 +14,10 @@ import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { getFirebase } from '@/lib/firebase'
+import { getTransaccionesUsuario } from '@/lib/firestore'
 import { ScrollVideoPanel } from '@/components/shared/ScrollVideoPanel'
 import { BrandImageStrip } from '@/components/shared/BrandImageStrip'
+import type { Transaccion } from '@/lib/types'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -45,10 +47,21 @@ export default function DashboardPage() {
   const [companeros, setCompaneros] = useState<Companero[]>([])
   const [mensaje, setMensaje] = useState('')
   const [transmitido, setTransmitido] = useState(false)
+  const [txPendiente, setTxPendiente] = useState<Transaccion | null>(null)
 
   const susc = user?.suscripcionActiva
   const tasa = user?.estadisticas?.tasaAsistencia ?? 0
   const asistidas = user?.estadisticas?.clasesAsistidas ?? 0
+
+  useEffect(() => {
+    if (!user?.uid) return
+    getTransaccionesUsuario(user.uid)
+      .then((txs) => {
+        const pendiente = txs.find((t) => t.estado === 'pendiente')
+        if (pendiente) setTxPendiente(pendiente)
+      })
+      .catch(() => {})
+  }, [user?.uid])
 
   useEffect(() => {
     if (!user?.sede) return
@@ -134,6 +147,44 @@ export default function DashboardPage() {
             </div>
           </section>
         </Reveal>
+
+        {/* Banner de transacción pendiente */}
+        {txPendiente && (
+          <Reveal delay={0.05}>
+            <Link
+              href="/dashboard/planes"
+              className={`block rounded-2xl border p-5 transition-colors duration-200 ${
+                txPendiente.comprobante_url
+                  ? 'border-white/15 bg-white/[0.03] hover:border-white/25'
+                  : 'border-[rgba(230,255,0,0.3)] bg-[rgba(230,255,0,0.05)] hover:bg-[rgba(230,255,0,0.08)]'
+              }`}
+            >
+              <div className="flex items-center gap-4">
+                <span className={`material-symbols-outlined text-[24px] ${
+                  txPendiente.comprobante_url
+                    ? 'text-[var(--color-on-surface-variant)]/50'
+                    : 'text-[var(--color-primary-fixed)]'
+                }`}>
+                  {txPendiente.comprobante_url ? 'pending_actions' : 'upload_file'}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="font-display font-black text-white text-sm">
+                    {txPendiente.comprobante_url ? 'Pago en revisión' : 'Falta el comprobante de pago'}
+                  </p>
+                  <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/60 mt-0.5 truncate">
+                    {txPendiente.nombre_plan ?? 'Plan solicitado'} ·{' '}
+                    {txPendiente.comprobante_url
+                      ? 'Administración lo está revisando.'
+                      : 'Súbelo para que activen tu plan.'}
+                  </p>
+                </div>
+                <span className="material-symbols-outlined text-[var(--color-on-surface-variant)]/40 text-[20px] shrink-0">
+                  chevron_right
+                </span>
+              </div>
+            </Link>
+          </Reveal>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Plan de clase del día */}

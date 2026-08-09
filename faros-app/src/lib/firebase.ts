@@ -11,6 +11,7 @@
 
 import type { Auth } from 'firebase/auth'
 import type { Firestore } from 'firebase/firestore'
+import type { FirebaseStorage } from 'firebase/storage'
 
 const HAS_KEY = Boolean(process.env.NEXT_PUBLIC_FIREBASE_API_KEY)
 const ES_DEV = process.env.NODE_ENV !== 'production'
@@ -40,20 +41,21 @@ const firebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 }
 
-let cache: Promise<{ auth: Auth; db: Firestore }> | null = null
+let cache: Promise<{ auth: Auth; db: Firestore; storage: FirebaseStorage }> | null = null
 
 /** Inicializa Firebase la primera vez y reutiliza la instancia. */
 export function getFirebase() {
   if (!cache) {
     cache = (async () => {
-      const [{ initializeApp, getApps, getApp }, { getAuth }, { getFirestore }] =
+      const [{ initializeApp, getApps, getApp }, { getAuth }, { getFirestore }, { getStorage }] =
         await Promise.all([
           import('firebase/app'),
           import('firebase/auth'),
           import('firebase/firestore'),
+          import('firebase/storage'),
         ])
       const app = getApps().length ? getApp() : initializeApp(firebaseConfig)
-      return { auth: getAuth(app), db: getFirestore(app) }
+      return { auth: getAuth(app), db: getFirestore(app), storage: getStorage(app) }
     })()
   }
   return cache

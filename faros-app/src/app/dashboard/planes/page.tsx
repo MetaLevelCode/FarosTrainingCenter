@@ -15,6 +15,8 @@ import { motion } from 'motion/react'
 import { useAuth } from '@/contexts/AuthContext'
 import { FarosWordmark, Spinner, Button } from '@/components/ui'
 import { WaterBackground } from '@/components/shared/WaterBackground'
+import { SubirComprobante } from '@/components/dashboard/SubirComprobante'
+import { getTransaccionesUsuario } from '@/lib/firestore'
 import {
   TIPOS, GRUPOS, GRUPO_POR_SESION, PERSONALES, CONJUNTOS, FRECUENCIAS,
   SELECCION_INICIAL, calcularPrecio, resumenPlan, fmtCOP,
@@ -163,6 +165,24 @@ export default function PlanesFlowPage() {
   const [solicitando, setSolicitando] = useState(false)
   const [errorSolicitud, setErrorSolicitud] = useState<string | null>(null)
   const [necesitaCuenta, setNecesitaCuenta] = useState(false)
+  const [transaccionId, setTransaccionId] = useState<string | null>(null)
+  const [comprobanteUrl, setComprobanteUrl] = useState<string | null>(null)
+  // Chequeo inicial: si ya existe tx pendiente sin comprobante, ir directo al upload
+  const [checkingPendiente, setCheckingPendiente] = useState(true)
+  const [txPendienteId, setTxPendienteId] = useState<string | null>(null)
+
+  // Al montar: chequeamos si ya hay una tx pendiente sin comprobante.
+  // Si la hay, saltamos el wizard y vamos directo al upload.
+  useEffect(() => {
+    if (!user?.uid) { setCheckingPendiente(false); return }
+    getTransaccionesUsuario(user.uid)
+      .then((txs) => {
+        const pendiente = txs.find((t) => t.estado === 'pendiente' && !t.comprobante_url)
+        if (pendiente) setTxPendienteId(pendiente.id)
+      })
+      .catch(() => {})
+      .finally(() => setCheckingPendiente(false))
+  }, [user?.uid])
 
   // Restaura el plan que un invitado dejó a medias antes de iniciar sesión.
   useEffect(() => {
@@ -230,6 +250,7 @@ export default function PlanesFlowPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'Error al enviar la solicitud')
 
+      setTransaccionId(data.transaccionId)
       setSolicitado(true)
     } catch (err: any) {
       setErrorSolicitud(err.message ?? 'No se pudo enviar la solicitud. Intenta de nuevo.')
@@ -238,10 +259,69 @@ export default function PlanesFlowPage() {
     }
   }
 
-  if (loading) {
+  if (loading || checkingPendiente) {
     return (
       <div className="min-h-dvh flex items-center justify-center" style={{ background: '#050505' }}>
         <Spinner size="lg" />
+      </div>
+    )
+  }
+
+  // Tx pendiente sin comprobante detectada al abrir la página
+  if (txPendienteId && !comprobanteUrl) {
+    return (
+      <div className="relative min-h-dvh flex flex-col">
+        <WaterBackground />
+        <header className="relative z-10 h-20 px-5 md:px-10 flex items-center justify-between shrink-0">
+          <FarosWordmark size="sm" />
+          <Link href="/dashboard" aria-label="Volver al dashboard"
+            className="w-11 h-11 rounded-full border border-white/10 bg-white/5 flex items-center justify-center text-[var(--color-on-surface-variant)] hover:text-white hover:border-white/25 transition-colors duration-200"
+          >
+            <span className="material-symbols-outlined text-[20px]">close</span>
+          </Link>
+        </header>
+        <main className="relative z-10 flex-1 flex items-center justify-center px-5 md:px-10 pb-10">
+          <div className="w-full max-w-xl">
+            <span className="label-caps text-[10px] text-[var(--color-primary-fixed)]">Último paso</span>
+            <h1 className="font-display text-[clamp(1.75rem,5vw,2.5rem)] font-black text-white uppercase tracking-tighter leading-tight mt-2 mb-3">
+              Sube tu comprobante
+            </h1>
+            <p className="text-sm text-[var(--color-on-surface-variant)]/70 mb-8 leading-relaxed">
+              Ya tienes una solicitud de plan en revisión. Adjunta el comprobante de tu transferencia para que administración pueda aprobarla.
+            </p>
+            <SubirComprobante
+              transaccionId={txPendienteId}
+              uid={user!.uid}
+              onSubido={(url) => { setComprobanteUrl(url); setTxPendienteId(null) }}
+            />
+          </div>
+        </main>
+      </div>
+    )
+  }
+
+  // Éxito después de subir comprobante (desde tx pendiente detectada en mount)
+  if (comprobanteUrl && !solicitado) {
+    return (
+      <div className="relative min-h-dvh flex items-center justify-center" style={{ background: '#050505' }}>
+        <WaterBackground />
+        <div className="relative z-10 text-center px-6 max-w-sm">
+          <motion.span
+            initial={{ scale: 0.6, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.5, ease: [0.34, 1.4, 0.64, 1] }}
+            className="w-20 h-20 rounded-full bg-[var(--color-primary-fixed)] text-black flex items-center justify-center mx-auto mb-7"
+          >
+            <span className="material-symbols-outlined text-[40px]">check</span>
+          </motion.span>
+          <h2 className="font-display text-2xl font-black text-white uppercase tracking-tight mb-4">
+            ¡Comprobante enviado!
+          </h2>
+          <p className="text-sm text-[var(--color-on-surface-variant)]/70 mb-9 leading-relaxed">
+            Administración revisará el pago y activará tu plan pronto.
+          </p>
+          <Link href="/dashboard"><Button fullWidth size="lg">Volver al inicio</Button></Link>
+        </div>
       </div>
     )
   }
@@ -550,8 +630,29 @@ export default function PlanesFlowPage() {
               </div>
             )}
 
-            {/* PASO: CONFIRMACIÓN */}
-            {stepKey === 'resumen' && solicitado && (
+            {/* PASO: SUBIR COMPROBANTE (después de crear la transacción) */}
+            {stepKey === 'resumen' && solicitado && transaccionId && !comprobanteUrl && (
+              <div className="rounded-[2rem] liquid-glass p-8 md:p-10">
+                <div className="relative z-10">
+                  <span className="label-caps text-[10px] text-[var(--color-primary-fixed)]">Último paso</span>
+                  <h2 className="font-display text-2xl font-black text-white uppercase tracking-tight mt-2 mb-3">
+                    Sube tu comprobante
+                  </h2>
+                  <p className="text-sm text-[var(--color-on-surface-variant)]/70 mb-8 leading-relaxed">
+                    Realiza la transferencia al número de cuenta de Faros y adjunta el comprobante.
+                    Administración lo revisará y activará tu plan <span className="text-white font-bold">{resumen.titulo}</span>.
+                  </p>
+                  <SubirComprobante
+                    transaccionId={transaccionId}
+                    uid={user!.uid}
+                    onSubido={(url) => setComprobanteUrl(url)}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* PASO: ÉXITO FINAL */}
+            {stepKey === 'resumen' && solicitado && comprobanteUrl && (
               <div className="rounded-[2rem] liquid-glass p-10 md:p-12 text-center">
                 <div className="relative z-10 flex flex-col items-center">
                   <motion.span
@@ -563,11 +664,11 @@ export default function PlanesFlowPage() {
                     <span className="material-symbols-outlined text-[40px]">check</span>
                   </motion.span>
                   <h2 className="font-display text-2xl font-black text-white uppercase tracking-tight mb-4">
-                    ¡Solicitud enviada!
+                    ¡Comprobante enviado!
                   </h2>
                   <p className="text-sm text-[var(--color-on-surface-variant)]/70 max-w-sm mb-9 leading-relaxed">
-                    Tu plan <span className="text-white font-bold">{resumen.titulo}</span> quedó en revisión.
-                    Administración aprobará el pago y verás el plan activo en tu perfil.
+                    Tu plan <span className="text-white font-bold">{resumen.titulo}</span> está en revisión.
+                    Administración aprobará el pago y verás tu plan activo en el dashboard.
                   </p>
                   <Link href="/dashboard" className="w-full max-w-xs">
                     <Button fullWidth size="lg">Volver al inicio</Button>

@@ -300,6 +300,29 @@ export async function registrarAsistencia(
   })
 }
 
+export async function getTransaccionesUsuario(usuarioId: string): Promise<Transaccion[]> {
+  const [{ db }, { collection, query, where, getDocs, orderBy }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  const q = query(
+    collection(db, 'transacciones'),
+    where('usuarioId', '==', usuarioId),
+    orderBy('creadoEn', 'desc'),
+  )
+  const snap = await getDocs(q)
+  return snap.docs.map(docToId<Transaccion>)
+}
+
+export async function updateComprobanteTransaccion(
+  transaccionId: string,
+  comprobanteUrl: string,
+): Promise<void> {
+  const [{ db }, { doc, updateDoc }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  await updateDoc(doc(db, 'transacciones', transaccionId), { comprobante_url: comprobanteUrl })
+}
+
 // ── movimientos ──────────────────────────────────────────────
 
 export async function getMovimientos(limite = 50): Promise<Movimiento[]> {

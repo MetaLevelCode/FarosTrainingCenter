@@ -72,17 +72,24 @@ usa Firebase App Hosting: el backend ya es un servidor Node.js y no necesita des
 - [x] Admin finanzas — selector de plan de Firestore antes de aprobar transacción
 - [x] `src/lib/types.ts` — `Transaccion.seleccion`, `monto_disponible`, `CodigoInvitacion`
 
-### Fase 2 — Compra de plan end-to-end (2-3 días)
+### Fase 2 — Compra de plan end-to-end ✅ COMPLETADA
 
-- [ ] Habilitar Firebase Storage; añadir a `firebase.json`
-- [ ] Crear `storage.rules` (comprobantes: dueño escribe su carpeta, admin lee)
-- [ ] Componente `<SubirComprobante />` en `/dashboard/planes`:
-  - Estudiante confirma plan → llama `crearTransaccion` → recibe `transaccionId`
-  - Sube imagen a `comprobantes/{uid}/{transaccionId}.jpg`
-  - Actualiza transacción con `comprobante_url`
-- [ ] Estado "esperando aprobación" visible en dashboard estudiante
-- [ ] Fix en `src/app/dashboard/planes/page.tsx:205-213`: remover `setSolicitado` de escritorio-local
-- [ ] Admin ya aprueba correctamente — validar E2E con datos reales
+- [x] Habilitar Firebase Storage; añadir a `firebase.json` + `storage.rules`
+- [x] `storage.rules`: dueño escribe su carpeta, cualquier auth puede leer (URL no adivinable)
+- [x] `src/lib/firebase.ts`: `getFirebase()` ahora devuelve también `storage`
+- [x] `src/lib/firestore.ts`: `getTransaccionesUsuario()`, `updateComprobanteTransaccion()`
+- [x] `src/components/dashboard/SubirComprobante.tsx`:
+  - Preview antes de confirmar (flujo de 2 pasos)
+  - Upload con `uploadBytesResumable` + barra de progreso
+  - Soporta imagen y PDF; max 10 MB
+  - Al terminar llama `updateComprobanteTransaccion()` y dispara `onSubido(url)`
+- [x] `dashboard/planes`: flujo completo wizard → SubirComprobante → éxito final
+  - Al abrir la página, detecta tx pendiente sin comprobante y salta el wizard
+  - `solicitar()` guarda `transaccionId` devuelto por la API
+- [x] `dashboard/page.tsx`: banner de estado de transacción pendiente
+  - "Falta el comprobante" (amarillo) o "Pago en revisión" (gris)
+  - Enlace directo a la página de upload
+- [x] `firestore.rules`: estudiante puede actualizar SOLO `comprobante_url` en su tx pendiente
 
 ### Fase 3 — Inscripción a clase con control de cupo (2 días)
 

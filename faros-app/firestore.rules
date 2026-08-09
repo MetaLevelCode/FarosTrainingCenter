@@ -137,9 +137,16 @@ service cloud.firestore {
         || (isAuthenticated() && resource.data.usuarioId == request.auth.uid);
 
       // Creación solo vía POST /api/transacciones (Admin SDK, sin pasar por reglas).
-      // El cliente nunca escribe transacciones directamente.
       allow create: if false;
-      allow update: if isAdmin();
+
+      // Admin puede actualizar cualquier campo (aprobar / rechazar).
+      // El propio estudiante puede actualizar SOLO comprobante_url en su tx pendiente.
+      allow update: if isAdmin()
+        || (isEstudiante()
+            && resource.data.usuarioId == request.auth.uid
+            && resource.data.estado == 'pendiente'
+            && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['comprobante_url']));
       allow delete: if isAdmin();
     }
 
