@@ -1,7 +1,7 @@
 rules_version = '2';
 
 // ============================================================
-// FAROS Training Center — Firestore Security Rules (prototype)
+// FAROS Training Center — Firestore Security Rules
 //
 // Assumed Data Model
 // ──────────────────
@@ -22,7 +22,7 @@ rules_version = '2';
 //   usuarioId: string, planId: string, estado: string, monto: number ...
 //
 // clases/{id}
-//   instructor_id: string, estudiantes_inscritos: [uid], ...
+//   instructor_id: string, estudiantes_inscritos: [uid], plan: string[] ...
 //
 // asistencias/{id}
 //   claseId: string, usuarioId: string, registradoPor: string, asistio: bool
@@ -51,28 +51,30 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data;
     }
 
+    // Usuarios con activo == false quedan suspendidos y pierden todos los permisos
+    // basados en rol. isOwner() no llama activoOk() para que puedan leer su propio perfil.
+    function activoOk() {
+      return isAuthenticated() && getUsuario().get('activo', true) != false;
+    }
+
     function miRol() {
       return isAuthenticated() ? getUsuario().rol : '';
     }
 
     function isAdmin() {
-      return miRol() == 'admin';
+      return activoOk() && miRol() == 'admin';
     }
 
     function isProfesor() {
-      return miRol() == 'profesor';
+      return activoOk() && miRol() == 'profesor';
     }
 
     function isEstudiante() {
-      return miRol() == 'estudiante';
+      return activoOk() && miRol() == 'estudiante';
     }
 
     function isAdminOrProfesor() {
       return isAdmin() || isProfesor();
-    }
-
-    function hasOnlyAllowedFields(fields) {
-      return request.resource.data.keys().hasOnly(fields);
     }
 
     function validString(field, maxLen) {
@@ -83,22 +85,24 @@ service cloud.firestore {
     // ── usuarios ────────────────────────────────────────────
 
     match /usuarios/{uid} {
-      // Cada usuario puede leer su propio documento; admin lee todos.
       allow read: if isOwner(uid) || isAdmin() || isProfesor();
 
-      // Crear: sólo el propio usuario puede crear su perfil (al registrarse).
-      // Se fuerza el rol a 'estudiante' para nuevos registros.
+      // Lista blanca explícita: impide que el estudiante se auto-asigne
+      // suscripcionActiva, estadisticas u otros campos sensibles al registrarse.
       allow create: if isOwner(uid)
         && request.resource.data.rol == 'estudiante'
+        && request.resource.data.keys().hasOnly([
+             'nombres', 'apellidos', 'cedula', 'email', 'rol',
+             'telefono', 'telefonoEmergencia', 'eps', 'sede', 'fecha_registro'
+           ])
         && validString('nombres', 100)
         && validString('apellidos', 100)
         && validString('email', 200);
 
-      // Actualizar datos personales: el propio usuario puede actualizar sus
-      // campos NO sensibles. Solo admin puede cambiar rol o activo.
       allow update: if isAdmin()
         || (isOwner(uid)
-            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['rol', 'activo', 'suscripcionActiva']));
+            && !request.resource.data.diff(resource.data).affectedKeys()
+                .hasAny(['rol', 'activo', 'suscripcionActiva']));
 
       allow delete: if isAdmin();
     }
@@ -120,28 +124,28 @@ service cloud.firestore {
     // ── suscripciones ────────────────────────────────────────
 
     match /suscripciones/{suscId} {
-      // El estudiante dueño puede leer su suscripción; admin y profesor leen todas.
       allow read: if isAdmin() || isProfesor()
         || (isAuthenticated() && resource.data.usuarioId == request.auth.uid);
 
-      // Solo admin (vía transaction approval) puede crear/actualizar.
       allow write: if isAdmin();
     }
 
     // ── transacciones ────────────────────────────────────────
 
     match /transacciones/{txId} {
-      // El estudiante puede leer sus propias transacciones; admin lee todas.
       allow read: if isAdmin()
         || (isAuthenticated() && resource.data.usuarioId == request.auth.uid);
 
-      // Estudiante crea la solicitud de pago.
+      // El monto se cruza contra el precio real del plan para evitar que
+      // el cliente declare un monto arbitrario.
       allow create: if isAuthenticated()
         && request.resource.data.usuarioId == request.auth.uid
         && request.resource.data.estado == 'pendiente'
         && request.resource.data.monto is number
         && request.resource.data.monto > 0
         && request.resource.data.monto <= 5000000
+        && request.resource.data.monto ==
+             get(/databases/$(database)/documents/planes/$(request.resource.data.planId)).data.precio_total
         && validString('planId', 100)
         && request.resource.data.keys().hasOnly([
             'usuarioId', 'planId', 'monto', 'estado',
@@ -149,7 +153,6 @@ service cloud.firestore {
             'nombre_plan', 'comprobante_url',
           ]);
 
-      // Solo admin puede aprobar/rechazar.
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }
@@ -157,28 +160,31 @@ service cloud.firestore {
     // ── clases ───────────────────────────────────────────────
 
     match /clases/{claseId} {
-      // Todos los autenticados pueden leer.
       allow read: if isAuthenticated();
 
-      // Admin crea/elimina clases.
       allow create, delete: if isAdmin();
 
-      // Admin o el propio instructor puede actualizar.
+      // Se agrega 'plan' a los campos que el instructor puede modificar
+      // para que el calendario del portal pueda guardar el plan de la clase.
+      // PENDIENTE: la inscripción de estudiantes (estudiantes_inscritos) debe
+      // manejarse con una Cloud Function para garantizar atomicidad de cupos.
       allow update: if isAdmin()
         || (isProfesor() && resource.data.instructor_id == request.auth.uid
             && request.resource.data.diff(resource.data).affectedKeys()
-               .hasOnly(['observaciones_profesor', 'estado', 'actualizadoEn']));
+               .hasOnly(['observaciones_profesor', 'estado', 'actualizadoEn', 'plan']));
     }
 
     // ── asistencias ──────────────────────────────────────────
 
     match /asistencias/{asistId} {
-      // Profesor y admin pueden leer cualquier asistencia; estudiante solo la suya.
       allow read: if isAdmin() || isProfesor()
         || (isAuthenticated() && resource.data.usuarioId == request.auth.uid);
 
-      // Solo profesores y admin pueden crear/actualizar asistencias.
+      // El profesor solo puede registrar asistencia en clases donde es instructor.
       allow create: if isAdminOrProfesor()
+        && (isAdmin()
+            || get(/databases/$(database)/documents/clases/$(request.resource.data.claseId))
+                 .data.instructor_id == request.auth.uid)
         && request.resource.data.keys().hasOnly([
             'asistenciaId', 'claseId', 'usuarioId', 'asistio',
             'fecha_registro', 'registradoPor', 'creadoEn',
@@ -187,6 +193,9 @@ service cloud.firestore {
         && request.resource.data.registradoPor == request.auth.uid;
 
       allow update: if isAdminOrProfesor()
+        && (isAdmin()
+            || get(/databases/$(database)/documents/clases/$(resource.data.claseId))
+                 .data.instructor_id == request.auth.uid)
         && request.resource.data.diff(resource.data).affectedKeys()
            .hasOnly(['asistio', 'fecha_registro']);
 
@@ -210,10 +219,8 @@ service cloud.firestore {
     // ── sugerencias ──────────────────────────────────────────
 
     match /sugerencias/{sugId} {
-      // Solo admin puede leer sugerencias.
       allow read: if isAdmin();
 
-      // Estudiantes pueden crear la suya.
       allow create: if isAuthenticated()
         && request.resource.data.uid == request.auth.uid
         && validString('mensaje', 2000)
