@@ -160,6 +160,8 @@ export default function PlanesFlowPage() {
   const [stepIdx, setStepIdx] = useState(0)
   const [dir, setDir] = useState(1)
   const [solicitado, setSolicitado] = useState(false)
+  const [solicitando, setSolicitando] = useState(false)
+  const [errorSolicitud, setErrorSolicitud] = useState<string | null>(null)
   const [necesitaCuenta, setNecesitaCuenta] = useState(false)
 
   // Restaura el plan que un invitado dejó a medias antes de iniciar sesión.
@@ -202,13 +204,37 @@ export default function PlanesFlowPage() {
     setSel({ ...SELECCION_INICIAL, tipo, week: tipo === 'conjunto' ? 1 : 2 })
   }
 
-  function solicitar() {
-    if (user) {
-      setSolicitado(true) // sesión activa → va a administración
-    } else {
-      // Invitado: guarda el progreso y pide cuenta/sesión.
+  async function solicitar() {
+    if (!user) {
       try { localStorage.setItem(PENDIENTE_KEY, JSON.stringify(sel)) } catch {}
       setNecesitaCuenta(true)
+      return
+    }
+
+    setSolicitando(true)
+    setErrorSolicitud(null)
+    try {
+      // Importamos auth de Firebase para obtener el ID token del usuario actual
+      const { getAuth } = await import('firebase/auth')
+      const idToken = await getAuth().currentUser?.getIdToken()
+      if (!idToken) throw new Error('No autenticado')
+
+      const res = await fetch('/api/transacciones', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ seleccion: sel }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Error al enviar la solicitud')
+
+      setSolicitado(true)
+    } catch (err: any) {
+      setErrorSolicitud(err.message ?? 'No se pudo enviar la solicitud. Intenta de nuevo.')
+    } finally {
+      setSolicitando(false)
     }
   }
 
@@ -475,9 +501,12 @@ export default function PlanesFlowPage() {
                     </div>
                   )}
 
-                  <Button fullWidth size="lg" onClick={solicitar}>
+                  <Button fullWidth size="lg" onClick={solicitar} loading={solicitando} disabled={solicitando}>
                     {user ? 'Solicitar este plan' : 'Continuar'}
                   </Button>
+                  {errorSolicitud && (
+                    <p className="text-xs text-[var(--color-danger-crimson)] text-center mt-3">{errorSolicitud}</p>
+                  )}
                   <p className="text-[11px] text-[var(--color-on-surface-variant)]/40 text-center mt-5">
                     {user
                       ? 'Tu solicitud pasa a administración para aprobación del pago.'

@@ -12,8 +12,9 @@ import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button } from '@/components/ui'
-import { getTransacciones, getMovimientos, aprobarTransaccion, rechazarTransaccion } from '@/lib/firestore'
-import type { Transaccion, Movimiento } from '@/lib/types'
+import { getTransacciones, getMovimientos, aprobarTransaccion, rechazarTransaccion, getPlanes } from '@/lib/firestore'
+import type { Transaccion, Movimiento, Plan } from '@/lib/types'
+import { fmtCOP, resumenPlan } from '@/lib/planes'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 const COP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 })
@@ -32,14 +33,17 @@ export default function FinanzasPage() {
   const { authorized, loading, user } = useRoleGuard(['admin'])
   const [transacciones, setTransacciones] = useState<Transaccion[]>([])
   const [movimientos, setMovimientos] = useState<Movimiento[]>([])
+  const [planes, setPlanes] = useState<Plan[]>([])
   const [cargando, setCargando] = useState(true)
   const [procesando, setProcesando] = useState<string | null>(null)
   const [motivoRechazo, setMotivoRechazo] = useState<Record<string, string>>({})
   const [mostrarRechazo, setMostrarRechazo] = useState<string | null>(null)
+  // planSeleccionado[txId] = planId que el admin eligió para esa transacción
+  const [planSeleccionado, setPlanSeleccionado] = useState<Record<string, string>>({})
 
   useEffect(() => {
-    Promise.all([getTransacciones(), getMovimientos()])
-      .then(([ts, ms]) => { setTransacciones(ts); setMovimientos(ms) })
+    Promise.all([getTransacciones(), getMovimientos(), getPlanes()])
+      .then(([ts, ms, ps]) => { setTransacciones(ts); setMovimientos(ms); setPlanes(ps) })
       .catch(console.error)
       .finally(() => setCargando(false))
   }, [])
@@ -58,11 +62,15 @@ export default function FinanzasPage() {
 
   async function aprobar(t: Transaccion) {
     if (!user) return
+    const planId = planSeleccionado[t.id] ?? t.planId
+    if (!planId) {
+      alert('Selecciona el plan de Firestore antes de aprobar.')
+      return
+    }
     setProcesando(t.id)
     try {
-      await aprobarTransaccion(t.id, user.uid, t.planId, t.usuarioId)
+      await aprobarTransaccion(t.id, user.uid, planId, t.usuarioId)
       setTransacciones((prev) => prev.map((x) => x.id === t.id ? { ...x, estado: 'aprobada' } : x))
-      // Recargar movimientos para reflejar el nuevo ingreso
       getMovimientos().then(setMovimientos).catch(console.error)
     } catch (err) {
       console.error(err)
@@ -150,11 +158,18 @@ export default function FinanzasPage() {
                 {pendientes.map((t) => (
                   <div key={t.id} className="p-6 space-y-4">
                     <div className="flex flex-wrap items-start justify-between gap-4">
-                      <div>
+                      <div className="min-w-0">
                         <p className="font-display font-black text-white">{t.nombre_usuario ?? t.usuarioId}</p>
                         <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mt-1">
                           {t.nombre_plan ?? t.planId} · {new Date(t.fecha_solicitud).toLocaleDateString('es-CO')}
                         </p>
+                        {/* Resumen del plan que armó el alumno en el wizard */}
+                        {t.seleccion && (
+                          <p className="text-xs text-[var(--color-on-surface-variant)]/60 mt-1">
+                            Solicitud: {resumenPlan(t.seleccion).subtitulo}
+                            {t.monto_disponible === false && ' · Tarifa por confirmar'}
+                          </p>
+                        )}
                         {t.comprobante_url && (
                           <a
                             href={t.comprobante_url}
@@ -167,8 +182,31 @@ export default function FinanzasPage() {
                           </a>
                         )}
                       </div>
-                      <p className="font-display text-xl font-black text-[var(--color-primary-fixed)]">{COP.format(t.monto)}</p>
+                      <p className="font-display text-xl font-black text-[var(--color-primary-fixed)] shrink-0">
+                        {t.monto > 0 ? COP.format(t.monto) : 'Por confirmar'}
+                      </p>
                     </div>
+
+                    {/* Selector de plan de Firestore (obligatorio para aprobar) */}
+                    {planes.length > 0 && (
+                      <div>
+                        <label className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50 block mb-1.5">
+                          Asignar plan de Firestore *
+                        </label>
+                        <select
+                          value={planSeleccionado[t.id] ?? ''}
+                          onChange={(e) => setPlanSeleccionado((prev) => ({ ...prev, [t.id]: e.target.value }))}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:border-[rgba(230,255,0,0.5)] focus:outline-none"
+                        >
+                          <option value="" className="bg-[#0a0a0a]">Seleccionar plan…</option>
+                          {planes.map((p) => (
+                            <option key={p.id} value={p.id} className="bg-[#0a0a0a]">
+                              {p.nombre} — {fmtCOP(p.precio_total)}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
 
                     {mostrarRechazo === t.id ? (
                       <div className="space-y-3">

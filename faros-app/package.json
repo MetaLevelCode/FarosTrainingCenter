@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "firebase": "11.2.0",
+    "firebase-admin": "^14.2.0",
     "motion": "11.18.2",
     "next": "^15.3.9",
     "react": "19.0.0",
@@ -21,9 +22,9 @@
     "node": "22.x"
   },
   "devDependencies": {
+    "@apphosting/adapter-nextjs": "^14.0.21",
     "@emnapi/core": "^1.11.3",
     "@emnapi/runtime": "^1.11.3",
-    "@apphosting/adapter-nextjs": "^14.0.21",
     "@tailwindcss/postcss": "^4.3.2",
     "@types/node": "22.10.7",
     "@types/react": "19.0.7",

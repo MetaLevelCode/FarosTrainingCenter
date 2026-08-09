@@ -104,20 +104,22 @@ export function validarCodigo(codigo: string): ResultadoCodigo {
 }
 
 /**
- * Verificación REAL del código: debe resolverse en el servidor, donde
- * comprobar-y-consumir ocurre de forma atómica (si no, dos personas
- * podrían usar el mismo código a la vez).
- *
- * Pendiente de conectar: Cloud Function o transacción de Firestore con
- * reglas que impidan leer la colección de códigos desde el cliente.
+ * Verificación REAL del código vía API Route (POST /api/invitaciones).
+ * El check y el consumo ocurren en una transacción Firestore server-side,
+ * garantizando que dos personas no puedan usar el mismo código a la vez.
  */
 export async function verificarCodigoEnServidor(
-  _codigo: string, _correo: string,
+  codigo: string, correo: string,
 ): Promise<ResultadoCodigo> {
-  throw new Error(
-    'verificarCodigoEnServidor: pendiente de conectar al backend. ' +
-    'El registro de entrenadores no debe habilitarse en producción hasta entonces.',
-  )
+  const res = await fetch('/api/invitaciones', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ codigo, correo }),
+  })
+  if (!res.ok) throw new Error('Error al verificar el código en el servidor')
+  const data = await res.json() as ResultadoCodigo | { error: string }
+  if ('error' in data) throw new Error(data.error)
+  return data
 }
 
 /**

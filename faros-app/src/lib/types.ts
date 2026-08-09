@@ -108,7 +108,8 @@ export interface Transaccion {
   usuarioId: string
   planId: string
   monto: number
-  comprobante_url?: string
+  monto_disponible?: boolean  // false = "tarifa por confirmar"
+  comprobante_url?: string | null
   estado: 'pendiente' | 'aprobada' | 'rechazada'
   fecha_solicitud: number
   fecha_revision?: number | null
@@ -119,6 +120,20 @@ export interface Transaccion {
   // Desnormalizado para mostrar sin join
   nombre_usuario?: string
   nombre_plan?: string
+  // Selección del wizard guardada para que el admin sepa qué pidió el alumno
+  seleccion?: import('./planes').SeleccionPlan
+}
+
+// ── codigos_invitacion/{codigo} ──────────────────────────────
+
+export interface CodigoInvitacion {
+  codigo: string
+  creadoPor: string
+  creadoEn: number
+  rol: 'profesor'
+  activo: boolean
+  usadoPor?: string | null
+  usadoEn?: number | null
 }
 
 // ── clases/{claseId} ─────────────────────────────────────────
