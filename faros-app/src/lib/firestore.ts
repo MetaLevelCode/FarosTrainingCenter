@@ -7,7 +7,7 @@
 import { getFirebase } from './firebase'
 import type {
   Usuario, Catalogo, Plan, Suscripcion, Transaccion,
-  Clase, Asistencia, Movimiento, Categoria, UserRole,
+  Clase, Asistencia, Movimiento, Categoria, UserRole, CodigoInvitacion,
 } from './types'
 
 // ── Utilidades internas ──────────────────────────────────────
@@ -346,6 +346,78 @@ export async function addMovimiento(data: Omit<Movimiento, 'id' | 'movimientoId'
   // Escribimos el id generado en el documento
   const [, { doc, updateDoc }] = await Promise.all([Promise.resolve(), import('firebase/firestore')])
   await updateDoc(ref, { movimientoId: ref.id })
+}
+
+// ── planes CRUD ──────────────────────────────────────────────
+
+export async function crearPlan(data: Omit<Plan, 'id' | 'planId' | 'creadoEn'>): Promise<string> {
+  const [{ db }, { collection, doc, addDoc, updateDoc }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  const ref = await addDoc(collection(db, 'planes'), {
+    ...data,
+    planId: '',
+    creadoEn: Date.now(),
+  })
+  await updateDoc(ref, { planId: ref.id })
+  return ref.id
+}
+
+export async function actualizarPlan(
+  planId: string,
+  data: Partial<Omit<Plan, 'id' | 'planId' | 'creadoEn'>>,
+): Promise<void> {
+  const [{ db }, { doc, updateDoc }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  await updateDoc(doc(db, 'planes', planId), data as any)
+}
+
+export const archivarPlan = (planId: string) => actualizarPlan(planId, { estado: false })
+
+// ── usuarios rol ─────────────────────────────────────────────
+
+export async function setUsuarioRol(uid: string, rol: UserRole): Promise<void> {
+  const [{ db }, { doc, updateDoc }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  await updateDoc(doc(db, 'usuarios', uid), { rol })
+}
+
+// ── codigos_invitacion ───────────────────────────────────────
+
+const ALFABETO_CODIGO = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+export async function crearCodigoInvitacion(
+  adminUid: string,
+  adminNombre: string,
+): Promise<string> {
+  const [{ db }, { doc, setDoc }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  const bytes = new Uint8Array(4)
+  crypto.getRandomValues(bytes)
+  const sufijo = Array.from(bytes).map((b) => ALFABETO_CODIGO[b % ALFABETO_CODIGO.length]).join('')
+  const codigo = `FAROS-COACH-${sufijo}`
+  await setDoc(doc(db, 'codigos_invitacion', codigo), {
+    codigo,
+    creadoPor: adminNombre,
+    creadoPorUid: adminUid,
+    creadoEn: Date.now(),
+    rol: 'profesor',
+    activo: true,
+    usadoPor: null,
+    usadoEn: null,
+  })
+  return codigo
+}
+
+export async function getCodigosInvitacion(): Promise<CodigoInvitacion[]> {
+  const [{ db }, { collection, getDocs, orderBy, query }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  const snap = await getDocs(query(collection(db, 'codigos_invitacion'), orderBy('creadoEn', 'desc')))
+  return snap.docs.map(docToId<CodigoInvitacion>)
 }
 
 // ── categorias ───────────────────────────────────────────────

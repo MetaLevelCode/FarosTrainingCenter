@@ -107,12 +107,14 @@ usa Firebase App Hosting: el backend ya es un servidor Node.js y no necesita des
   - Error display dismissible para errores de acción
 - [x] `firestore.indexes.json`: índice compuesto clases [estado + fecha_hora_inicio] + transacciones [usuarioId + creadoEn]
 
-### Fase 4 — Admin CRUD (2-3 días)
+### Fase 4 — Admin CRUD ✅ COMPLETADA
 
-- [ ] `/admin/planes`: persistir cambios a Firestore (`crearPlan`, `actualizarPlan`, `archivarPlan`)
-- [ ] `/admin/usuarios`: lista paginada, ver detalle, suspender (`activo=false`), cambiar rol
-- [ ] `/admin/page.tsx`: reemplazar KPIs mock con agregaciones reales (contar estudiantes activos, ingresos del mes desde `movimientos`)
-- [ ] Componente para generar códigos de invitación (crea doc en `codigos_invitacion`)
+- [x] `lib/firestore.ts`: `crearPlan`, `actualizarPlan`, `archivarPlan`, `setUsuarioRol`, `crearCodigoInvitacion`, `getCodigosInvitacion`
+- [x] `admin/page.tsx`: KPIs reales desde Firestore (ingresos/egresos del mes, atletas activos, pagos pendientes); gráfico de ingresos últimos 6 meses; cola de pagos pendientes con enlace a finanzas
+- [x] `admin/planes/page.tsx`: nuevo tab "Planes activos" con CRUD completo sobre colección `planes` (crear, editar inline, archivar)
+- [x] `admin/usuarios/page.tsx`:
+  - Selector de rol (estudiante ↔ profesor) por fila con actualización optimista
+  - Sección de códigos de invitación: generar, listar, copiar al portapapeles, badge usado/disponible
 
 ### Fase 5 — Mensajería (2 días)
 

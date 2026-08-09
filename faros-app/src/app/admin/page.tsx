@@ -2,18 +2,19 @@
 
 // ============================================================
 // FAROS — Panel Admin
-// Ported from Stitch "panel_admin_refined_magnet_edition_v2":
-// KPIs financieros + performance stream + cola de aprobaciones
-// + directorio global de usuarios.
+// KPIs, gráfico de ingresos y cola de pagos pendientes.
+// Todos los datos vienen de Firestore en tiempo real.
 // ============================================================
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
-import { Card, Badge, Button } from '@/components/ui'
-import { ROSTER, describirPlan, pctAsistencia, fmtCOP } from '@/lib/planes'
-import { planActivable, faltantes, type Verificaciones } from '@/lib/matricula'
+import { Card, Badge, Button, Spinner } from '@/components/ui'
+import { getMovimientos, getTransacciones, getUsuarios } from '@/lib/firestore'
+import { fmtCOP } from '@/lib/planes'
+import type { Movimiento, Transaccion, Usuario } from '@/lib/types'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -27,108 +28,75 @@ function Reveal({ children, delay = 0 }: { children: React.ReactNode; delay?: nu
   )
 }
 
-// ── Datos de ejemplo (se reemplazan por Firestore) ──
-// Mismas cifras que /admin/finanzas (COP) para no contradecirse.
-const KPIS = [
-  {
-    label: 'Ingresos netos', value: fmtCOP(42_850_000), icon: 'trending_up', tone: 'success' as const,
-    delta: '+12.5%', deltaLabel: 'vs. mes anterior',
-  },
-  {
-    label: 'Egresos operativos', value: fmtCOP(12_400_000), icon: 'trending_down', tone: 'danger' as const,
-    delta: '−3.2%', deltaLabel: 'vs. mes anterior',
-  },
-  {
-    label: 'Atletas activos', value: String(ROSTER.filter((a) => a.estadoCuenta === 'Activo').length),
-    icon: 'shield_person', tone: 'primary' as const,
-    progress: Math.round((ROSTER.filter((a) => a.estadoCuenta === 'Activo').length / ROSTER.length) * 100),
-  },
-  {
-    label: 'Ocupación de piscinas', value: '88%', icon: 'pool', tone: 'primary' as const,
-    pulse: 'CAPACIDAD PICO',
-  },
-]
+function iniciales(u: Pick<Usuario, 'nombres' | 'apellidos'>) {
+  return `${u.nombres.charAt(0)}${u.apellidos.charAt(0)}`.toUpperCase()
+}
 
-const STREAM_30D = [
-  { mes: 'ENE', pct: 38 }, { mes: 'FEB', pct: 55 }, { mes: 'MAR', pct: 74 },
-  { mes: 'ABR', pct: 47 }, { mes: 'MAY', pct: 86 }, { mes: 'JUN', pct: 64 },
-]
-const STREAM_7D = [
-  { mes: 'LUN', pct: 52 }, { mes: 'MAR', pct: 68 }, { mes: 'MIÉ', pct: 44 },
-  { mes: 'JUE', pct: 78 }, { mes: 'VIE', pct: 91 }, { mes: 'SÁB', pct: 60 },
-]
-
-// Solicitudes de plan que llegan del flujo "Arma tu plan": el admin
-// aprueba el pago y el plan queda activo para el alumno.
-const SOLICITUDES_INICIALES = [
-  {
-    id: 1, solicitante: 'Camila Herrera', prioridad: true,
-    sel: { tipo: 'grupal' as const, grupoId: 'knowill', personalId: null, conjuntoId: null, week: 3, personas: 1, ninos: 0 },
-  },
-  {
-    id: 2, solicitante: 'Julián Ospina', prioridad: false,
-    sel: { tipo: 'personal' as const, grupoId: null, personalId: 'individual', conjuntoId: null, week: 2, personas: 1, ninos: 0 },
-  },
-  {
-    id: 3, solicitante: 'Familia Ramírez', prioridad: false,
-    sel: { tipo: 'personal' as const, grupoId: null, personalId: 'familia', conjuntoId: null, week: 2, personas: 3, ninos: 0 },
-  },
-  {
-    id: 4, solicitante: 'Rafael Solano', prioridad: true,
-    sel: { tipo: 'conjunto' as const, grupoId: null, personalId: null, conjuntoId: 'nat-acuagym', week: 2, personas: 1, ninos: 0 },
-  },
-]
-
-type Filtro = 'todos' | 'atletas' | 'staff'
-
-// Directorio derivado del roster compartido + staff.
-const USUARIOS = [
-  ...ROSTER.map((a) => ({
-    nombre: a.nombre,
-    rol: describirPlan(a.plan).etiqueta,
-    tipo: 'atletas' as const,
-    estado: a.estadoCuenta,
-    asistencia: pctAsistencia(a),
-    standing: describirPlan(a.plan).tipoLabel,
-  })),
-  { nombre: 'Ana Torres', rol: 'Entrenadora principal', tipo: 'staff' as const, estado: 'Activo', asistencia: 95, standing: 'Staff' },
-  { nombre: 'Felipe Cárdenas', rol: 'Entrenador auxiliar', tipo: 'staff' as const, estado: 'Activo', asistencia: 92, standing: 'Staff' },
-]
-
-function iniciales(nombre: string) {
-  return nombre.split(' ').filter(Boolean).map((p) => p[0]).slice(0, 2).join('').toUpperCase()
+// Agrupa movimientos por mes (últimos 6) y suma ingresos
+function buildStream(movimientos: Movimiento[]) {
+  const ahora = new Date()
+  const meses = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(ahora.getFullYear(), ahora.getMonth() - (5 - i), 1)
+    return {
+      mes: d.toLocaleDateString('es-CO', { month: 'short' }).toUpperCase().replace('.', ''),
+      year: d.getFullYear(),
+      month: d.getMonth(),
+      total: 0,
+    }
+  })
+  for (const m of movimientos) {
+    if (m.tipo !== 'ingreso') continue
+    const d = new Date(m.fecha)
+    const slot = meses.find((s) => s.year === d.getFullYear() && s.month === d.getMonth())
+    if (slot) slot.total += m.monto
+  }
+  const max = Math.max(...meses.map((s) => s.total), 1)
+  return meses.map((s) => ({ ...s, pct: Math.round((s.total / max) * 100) }))
 }
 
 export default function AdminPage() {
   const { authorized, loading } = useRoleGuard(['admin'])
-  const [rango, setRango] = useState<'7D' | '30D'>('30D')
-  const [filtro, setFiltro] = useState<Filtro>('todos')
-  // Cada solicitud arrastra sus dos verificaciones (horario y pago).
-  const [aprobaciones, setAprobaciones] = useState(
-    SOLICITUDES_INICIALES.map((s) => ({ ...s, verif: { horario: false, pago: false } as Verificaciones })),
+  const [movimientos, setMovimientos] = useState<Movimiento[]>([])
+  const [transacciones, setTransacciones] = useState<Transaccion[]>([])
+  const [usuarios, setUsuarios] = useState<Usuario[]>([])
+  const [cargando, setCargando] = useState(true)
+
+  useEffect(() => {
+    Promise.all([getMovimientos(200), getTransacciones(), getUsuarios()])
+      .then(([ms, ts, us]) => { setMovimientos(ms); setTransacciones(ts); setUsuarios(us) })
+      .catch(console.error)
+      .finally(() => setCargando(false))
+  }, [])
+
+  const ahora = new Date()
+  const inicioMes = new Date(ahora.getFullYear(), ahora.getMonth(), 1).getTime()
+
+  const ingresosMes = useMemo(
+    () => movimientos.filter((m) => m.tipo === 'ingreso' && m.fecha >= inicioMes).reduce((s, m) => s + m.monto, 0),
+    [movimientos, inicioMes],
   )
-
-  function alternarVerif(id: number, campo: keyof Verificaciones) {
-    setAprobaciones((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, verif: { ...a.verif, [campo]: !a.verif[campo] } } : a)),
-    )
-  }
-
-  const stream = rango === '30D' ? STREAM_30D : STREAM_7D
-  const usuariosVisibles = useMemo(
-    () => (filtro === 'todos' ? USUARIOS : USUARIOS.filter((u) => u.tipo === filtro)),
-    [filtro],
+  const egresosMes = useMemo(
+    () => movimientos.filter((m) => m.tipo === 'egreso' && m.fecha >= inicioMes).reduce((s, m) => s + m.monto, 0),
+    [movimientos, inicioMes],
   )
+  const atletasActivos = useMemo(
+    () => usuarios.filter((u) => u.rol === 'estudiante' && (u as any).activo !== false).length,
+    [usuarios],
+  )
+  const pendientes = useMemo(() => transacciones.filter((t) => t.estado === 'pendiente'), [transacciones])
+  const stream = useMemo(() => buildStream(movimientos), [movimientos])
 
-  function resolver(id: number) {
-    setAprobaciones((prev) => prev.filter((a) => a.id !== id))
-  }
+  const KPIS = [
+    { label: 'Ingresos del mes', value: fmtCOP(ingresosMes), icon: 'trending_up', tone: 'success' as const },
+    { label: 'Egresos del mes', value: fmtCOP(egresosMes), icon: 'trending_down', tone: 'danger' as const },
+    { label: 'Atletas activos', value: String(atletasActivos), icon: 'shield_person', tone: 'primary' as const },
+    { label: 'Pagos pendientes', value: String(pendientes.length), icon: 'pending_actions', tone: pendientes.length > 0 ? 'danger' as const : 'primary' as const },
+  ]
 
   return (
     <GuardedShell authorized={authorized} loading={loading} title="Admin Console">
       <div className="space-y-8">
 
-        {/* ── Header ── */}
         <Reveal>
           <div>
             <p className="label-caps text-[var(--color-primary-fixed)] mb-3 tracking-[0.3em]">Torre de Control</p>
@@ -139,104 +107,55 @@ export default function AdminPage() {
         </Reveal>
 
         {/* ── KPIs ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {KPIS.map((kpi, i) => (
-            <Reveal key={kpi.label} delay={0.05 * i}>
-              <Card className="h-full">
-                <div className="flex justify-between items-start mb-6">
-                  <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/70">{kpi.label}</span>
-                  <span
-                    className={`material-symbols-outlined p-2 rounded-xl text-[20px] ${
-                      kpi.tone === 'success'
-                        ? 'text-[var(--color-success-emerald)] bg-[rgba(16,185,129,0.1)]'
-                        : kpi.tone === 'danger'
-                          ? 'text-[var(--color-danger-crimson)] bg-[rgba(239,68,68,0.1)]'
-                          : 'text-[var(--color-primary-fixed)] bg-[rgba(230,255,0,0.1)]'
-                    }`}
-                  >
-                    {kpi.icon}
-                  </span>
-                </div>
-                <p className="text-[32px] font-black text-white tracking-tighter leading-none font-display">{kpi.value}</p>
-                {kpi.delta && (
-                  <div className="flex items-center gap-2 mt-3">
-                    <span
-                      className={`text-[11px] font-bold px-2 py-0.5 rounded ${
-                        kpi.tone === 'success'
-                          ? 'text-[var(--color-success-emerald)] bg-[rgba(16,185,129,0.06)]'
-                          : 'text-[var(--color-danger-crimson)] bg-[rgba(239,68,68,0.06)]'
-                      }`}
-                    >
-                      {kpi.delta}
-                    </span>
-                    <span className="text-[10px] text-[var(--color-on-surface-variant)]/60 uppercase">{kpi.deltaLabel}</span>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
+          {cargando
+            ? Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-28 rounded-2xl animate-pulse bg-white/5" />
+            ))
+            : KPIS.map((kpi, i) => (
+              <Reveal key={kpi.label} delay={0.05 * i}>
+                <Card className="h-full">
+                  <div className="flex justify-between items-start mb-4">
+                    <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/70">{kpi.label}</span>
+                    <span className={`material-symbols-outlined p-2 rounded-xl text-[20px] ${
+                      kpi.tone === 'success' ? 'text-[var(--color-success-emerald)] bg-[rgba(16,185,129,0.1)]'
+                      : kpi.tone === 'danger' ? 'text-[var(--color-danger-crimson)] bg-[rgba(239,68,68,0.1)]'
+                      : 'text-[var(--color-primary-fixed)] bg-[rgba(230,255,0,0.1)]'
+                    }`}>{kpi.icon}</span>
                   </div>
-                )}
-                {kpi.progress !== undefined && (
-                  <div className="w-full bg-white/5 h-1.5 rounded-full overflow-hidden mt-5">
-                    <div
-                      className="bg-[var(--color-primary-fixed)] h-full shadow-[0_0_12px_rgba(230,255,0,0.4)] rounded-full"
-                      style={{ width: `${kpi.progress}%` }}
-                    />
-                  </div>
-                )}
-                {kpi.pulse && (
-                  <p className="text-[11px] text-[var(--color-on-surface-variant)]/50 mt-3 tracking-widest flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--color-primary-fixed)] animate-pulse" />
-                    {kpi.pulse}
-                  </p>
-                )}
-              </Card>
-            </Reveal>
-          ))}
+                  <p className="font-display text-[28px] font-black text-white tracking-tighter leading-none">{kpi.value}</p>
+                </Card>
+              </Reveal>
+            ))}
         </div>
 
-        {/* ── Performance stream + aprobaciones ── */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+          {/* ── Gráfico de ingresos (últimos 6 meses) ── */}
           <div className="lg:col-span-8">
             <Reveal delay={0.15}>
               <Card padding="none" className="overflow-hidden h-full">
-                <div className="p-6 md:p-8 border-b border-white/5 flex flex-wrap justify-between items-center gap-4 bg-white/[0.01]">
-                  <div className="flex items-center gap-4">
-                    <span className="w-3 h-3 rounded-full bg-[var(--color-primary-fixed)] shadow-[0_0_10px_#e6ff00]" />
-                    <h3 className="label-caps text-xs text-white">Flujo de Ingresos</h3>
-                  </div>
-                  <div className="flex p-1 bg-black/40 border border-white/10 rounded-xl" role="group" aria-label="Rango de tiempo">
-                    {(['7D', '30D'] as const).map((r) => (
-                      <button
-                        key={r}
-                        onClick={() => setRango(r)}
-                        aria-pressed={rango === r}
-                        className={`px-5 py-2 text-[10px] font-black rounded-lg uppercase tracking-widest transition-colors duration-200 ${
-                          rango === r
-                            ? 'bg-[var(--color-primary-fixed)] text-black shadow-[0_0_15px_rgba(230,255,0,0.2)]'
-                            : 'text-white/40 hover:text-white'
-                        }`}
-                      >
-                        {r}
-                      </button>
-                    ))}
-                  </div>
+                <div className="p-6 md:p-8 border-b border-white/5 flex items-center gap-4 bg-white/[0.01]">
+                  <span className="w-3 h-3 rounded-full bg-[var(--color-primary-fixed)] shadow-[0_0_10px_#e6ff00]" />
+                  <h3 className="label-caps text-xs text-white">Ingresos — últimos 6 meses</h3>
                 </div>
-                <div className="p-6 md:p-10 min-h-[320px] flex items-end justify-between gap-3 md:gap-6 relative">
-                  <div className="absolute inset-x-6 md:inset-x-10 inset-y-10 flex flex-col justify-between pointer-events-none opacity-5" aria-hidden="true">
+                <div className="p-6 md:p-10 min-h-[280px] flex items-end justify-between gap-3 md:gap-6 relative">
+                  <div className="absolute inset-x-6 md:inset-x-10 inset-y-10 flex flex-col justify-between pointer-events-none opacity-5">
                     {[0, 1, 2, 3].map((n) => <div key={n} className="w-full border-t border-white" />)}
                   </div>
                   {stream.map((bar, i) => (
                     <div key={bar.mes} className="flex-1 flex flex-col items-center group relative z-10">
                       <motion.div
                         initial={{ height: 0 }}
-                        animate={{ height: `${bar.pct * 2.6}px` }}
+                        animate={{ height: `${Math.max(bar.pct * 2, 4)}px` }}
                         transition={{ duration: 0.7, delay: 0.05 * i, ease: EASE }}
                         className="w-full max-w-[54px] rounded-xl group-hover:brightness-125 transition-[filter] duration-200"
-                        style={{
-                          background: 'linear-gradient(to top, rgba(230,255,0,0.1), #e6ff00)',
-                          boxShadow: '0 0 15px rgba(230,255,0,0.2)',
-                        }}
+                        style={{ background: 'linear-gradient(to top, rgba(230,255,0,0.1), #e6ff00)', boxShadow: '0 0 15px rgba(230,255,0,0.2)' }}
                       />
-                      <span className="mt-5 text-[10px] font-black uppercase text-[var(--color-on-surface-variant)]/60 tracking-[0.2em]">
-                        {bar.mes}
-                      </span>
+                      <p className="mt-4 text-[10px] font-black uppercase text-[var(--color-on-surface-variant)]/60 tracking-[0.2em]">{bar.mes}</p>
+                      {bar.total > 0 && (
+                        <p className="text-[9px] text-[var(--color-primary-fixed)]/60 mt-1">{fmtCOP(bar.total)}</p>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -244,257 +163,89 @@ export default function AdminPage() {
             </Reveal>
           </div>
 
+          {/* ── Cola de pagos pendientes ── */}
           <div className="lg:col-span-4">
             <Reveal delay={0.2}>
               <Card padding="none" className="overflow-hidden h-full flex flex-col">
-                <div className="p-6 md:p-8 border-b border-white/5 flex justify-between items-center bg-white/[0.01]">
+                <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/[0.01]">
                   <div>
-                    <h3 className="label-caps text-xs text-white">Solicitudes de plan</h3>
+                    <h3 className="label-caps text-xs text-white">Pagos pendientes</h3>
                     <p className="text-[9px] text-[var(--color-on-surface-variant)]/50 mt-1">
-                      Verifica horario y pago para activar
+                      Aprueba o rechaza en Finanzas
                     </p>
                   </div>
                   <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase ${
-                    aprobaciones.length > 0
-                      ? 'bg-[var(--color-danger-crimson)] text-white shadow-[0_0_20px_rgba(239,68,68,0.3)]'
+                    pendientes.length > 0
+                      ? 'bg-[var(--color-danger-crimson)] text-white'
                       : 'bg-[rgba(16,185,129,0.15)] text-[var(--color-success-emerald)]'
                   }`}>
-                    {aprobaciones.length > 0 ? `${aprobaciones.length} en cola` : 'Al día'}
+                    {pendientes.length > 0 ? `${pendientes.length} en cola` : 'Al día'}
                   </span>
                 </div>
-                <div className="flex-1 p-5 space-y-4 overflow-y-auto max-h-[400px]">
-                  {aprobaciones.map((a) => {
-                    const info = describirPlan(a.sel)
-                    return (
-                      <div
-                        key={a.id}
-                        className="p-5 bg-white/[0.02] border border-white/5 rounded-2xl hover:border-[rgba(230,255,0,0.3)] hover:bg-white/[0.04] transition-[border-color,background-color] duration-300"
-                      >
-                        <div className="flex justify-between items-start mb-4 gap-3">
-                          <div className="min-w-0">
-                            <p className="text-[14px] font-black text-white mb-1 truncate">{info.titulo}</p>
-                            <p className="text-[9px] text-[var(--color-on-surface-variant)]/50 uppercase tracking-widest font-bold">
-                              {info.tipoLabel} · {info.frecuenciaLabel}
-                            </p>
-                          </div>
-                          {a.prioridad && (
-                            <span className="text-[9px] font-black text-[var(--color-primary-fixed)] bg-[rgba(230,255,0,0.1)] px-2 py-1 rounded border border-[rgba(230,255,0,0.2)] shrink-0">
-                              PRIORIDAD
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <span className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-[10px] font-black text-[var(--color-on-surface-variant)] border border-white/5 shrink-0">
-                              {iniciales(a.solicitante)}
-                            </span>
-                            <span className="text-xs text-[var(--color-on-surface-variant)]/80 font-bold truncate">{a.solicitante}</span>
-                          </div>
-                          <span className="font-display font-black text-[var(--color-primary-fixed)] text-sm shrink-0">
-                            {info.precioTexto}
-                          </span>
-                        </div>
-                        {/* ── Doble verificación ── */}
-                        <div className="space-y-2 mb-4">
-                          <Verificacion
-                            icon="event_available"
-                            label="Horario con el profesor"
-                            detalle="Confirmado que el día y la hora son posibles"
-                            hecho={a.verif.horario}
-                            onToggle={() => alternarVerif(a.id, 'horario')}
-                          />
-                          <Verificacion
-                            icon="payments"
-                            label="Pago recibido"
-                            detalle={`Pagó ${info.precioTexto}`}
-                            hecho={a.verif.pago}
-                            onToggle={() => alternarVerif(a.id, 'pago')}
-                          />
-                        </div>
 
-                        <div className="flex items-center justify-between gap-3">
-                          <span className={`label-caps text-[9px] ${
-                            planActivable(a.verif)
-                              ? 'text-[var(--color-success-emerald)]'
-                              : 'text-[var(--color-on-surface-variant)]/50'
-                          }`}>
-                            {faltantes(a.verif)}
-                          </span>
-                          <div className="flex gap-2 shrink-0">
-                            <button
-                              onClick={() => resolver(a.id)}
-                              aria-label={`Rechazar solicitud de ${a.solicitante}`}
-                              className="w-11 h-11 flex items-center justify-center text-[var(--color-on-surface-variant)]/60 hover:text-[var(--color-danger-crimson)] hover:bg-[rgba(239,68,68,0.1)] rounded-xl transition-colors duration-200 active:scale-[0.94]"
-                            >
-                              <span className="material-symbols-outlined text-[20px]">close</span>
-                            </button>
-                            <button
-                              onClick={() => resolver(a.id)}
-                              disabled={!planActivable(a.verif)}
-                              aria-label={`Activar plan de ${a.solicitante}`}
-                              className="h-11 px-4 flex items-center gap-2 label-caps text-[9px] rounded-xl transition-colors duration-200 active:scale-[0.94] disabled:opacity-30 disabled:cursor-not-allowed text-[var(--color-primary-fixed)] bg-[rgba(230,255,0,0.05)] border border-[rgba(230,255,0,0.2)] enabled:hover:bg-[var(--color-primary-fixed)] enabled:hover:text-black"
-                            >
-                              <span className="material-symbols-outlined text-[18px]">check</span>
-                              Activar
-                            </button>
-                          </div>
+                <div className="flex-1 divide-y divide-white/5 overflow-y-auto max-h-[300px]">
+                  {cargando ? (
+                    <div className="flex justify-center py-10"><Spinner size="md" /></div>
+                  ) : pendientes.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-12 text-center">
+                      <span className="material-symbols-outlined text-[var(--color-success-emerald)] text-4xl mb-3">task_alt</span>
+                      <p className="text-sm text-[var(--color-on-surface-variant)]/60">Sin pagos pendientes.</p>
+                    </div>
+                  ) : pendientes.slice(0, 5).map((t) => (
+                    <div key={t.id} className="p-4 hover:bg-white/[0.02] transition-colors">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-bold text-white truncate">{t.nombre_usuario ?? t.usuarioId}</p>
+                          <p className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50 mt-0.5 truncate">
+                            {t.nombre_plan ?? 'Plan'} · {new Date(t.fecha_solicitud).toLocaleDateString('es-CO')}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {t.comprobante_url
+                            ? <Badge variant="success">Con comprobante</Badge>
+                            : <Badge variant="danger">Sin comprobante</Badge>}
                         </div>
                       </div>
-                    )
-                  })}
-                  {aprobaciones.length === 0 && (
-                    <div className="text-center py-12">
-                      <span className="material-symbols-outlined text-[var(--color-success-emerald)] text-4xl mb-3 block">task_alt</span>
-                      <p className="text-sm text-[var(--color-on-surface-variant)]/60">No hay solicitudes de plan pendientes.</p>
                     </div>
-                  )}
+                  ))}
+                </div>
+
+                <div className="p-4 border-t border-white/5">
+                  <Link href="/admin/finanzas">
+                    <Button variant="ghost" size="sm" fullWidth>
+                      Ver todas en Finanzas
+                      <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
+                    </Button>
+                  </Link>
                 </div>
               </Card>
             </Reveal>
           </div>
         </div>
 
-        {/* ── Directorio de usuarios ── */}
-        <Reveal delay={0.25}>
-          <Card padding="none" className="overflow-hidden">
-            <div className="p-6 md:p-8 border-b border-white/5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6 bg-white/[0.01]">
-              <div>
-                <h3 className="label-caps text-xs text-white mb-2">Directorio Global de Usuarios</h3>
-                <p className="text-[11px] text-[var(--color-on-surface-variant)]/50">
-                  Gestión de credenciales de atletas y personal técnico.
-                </p>
-              </div>
-              <div className="flex items-center gap-4 w-full sm:w-auto">
-                <div className="relative">
-                  <select
-                    value={filtro}
-                    onChange={(e) => setFiltro(e.target.value as Filtro)}
-                    aria-label="Filtrar usuarios"
-                    className="bg-black/30 border border-white/10 text-[11px] font-black rounded-xl py-3 pl-4 pr-10 text-[var(--color-on-surface-variant)]/70 uppercase tracking-widest appearance-none outline-none cursor-pointer hover:border-white/20 focus:border-[rgba(230,255,0,0.5)] transition-colors duration-200"
-                  >
-                    <option value="todos">Todos</option>
-                    <option value="atletas">Atletas</option>
-                    <option value="staff">Staff técnico</option>
-                  </select>
-                  <span className="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 text-[18px] pointer-events-none opacity-50">
-                    expand_more
+        {/* ── Accesos rápidos ── */}
+        <Reveal delay={0.28}>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { label: 'Usuarios', icon: 'people', href: '/admin/usuarios' },
+              { label: 'Finanzas', icon: 'account_balance', href: '/admin/finanzas' },
+              { label: 'Planes', icon: 'workspace_premium', href: '/admin/planes' },
+              { label: 'Clases', icon: 'pool', href: '/portal/clases' },
+            ].map((a) => (
+              <Link key={a.label} href={a.href}>
+                <Card hover className="flex flex-col items-center gap-3 py-6 text-center cursor-pointer group">
+                  <span className="material-symbols-outlined text-[28px] text-[var(--color-on-surface-variant)]/50 group-hover:text-[var(--color-primary-fixed)] transition-colors duration-200">
+                    {a.icon}
                   </span>
-                </div>
-                <Button size="sm">
-                  <span className="material-symbols-outlined text-[18px]">add_circle</span>
-                  Registrar
-                </Button>
-              </div>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse min-w-[720px]">
-                <thead>
-                  <tr className="border-b border-white/5 bg-white/[0.01]">
-                    {['Usuario', 'Estado', 'Asistencia', 'Standing', ''].map((h) => (
-                      <th key={h} className="px-6 md:px-8 py-5 label-caps text-[9px] text-[var(--color-on-surface-variant)]/60">
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="text-[14px]">
-                  {usuariosVisibles.map((u) => {
-                    const activo = u.estado === 'Activo'
-                    return (
-                      <tr key={u.nombre} className="hover:bg-white/[0.03] transition-colors duration-200 border-b border-white/5 group">
-                        <td className="px-6 md:px-8 py-5">
-                          <div className="flex items-center gap-4">
-                            <span className="w-11 h-11 rounded-2xl border-2 border-[rgba(230,255,0,0.4)] group-hover:border-[var(--color-primary-fixed)] transition-colors duration-200 flex items-center justify-center text-[12px] font-black text-white bg-white/5 shrink-0">
-                              {iniciales(u.nombre)}
-                            </span>
-                            <div>
-                              <p className="font-black text-white text-[15px]">{u.nombre}</p>
-                              <p className="text-[10px] text-[var(--color-on-surface-variant)]/60 uppercase tracking-widest font-bold mt-0.5">
-                                {u.rol}
-                              </p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-6 md:px-8 py-5">
-                          <Badge variant={activo ? 'success' : 'danger'}>{u.estado}</Badge>
-                        </td>
-                        <td className="px-6 md:px-8 py-5">
-                          <div className="flex items-center gap-4">
-                            <div className="flex-1 min-w-[100px] h-2 bg-white/5 rounded-full overflow-hidden">
-                              <div
-                                className={`h-full rounded-full ${
-                                  u.asistencia >= 80
-                                    ? 'bg-[var(--color-success-emerald)] shadow-[0_0_10px_rgba(16,185,129,0.3)]'
-                                    : u.asistencia >= 60
-                                      ? 'bg-[var(--color-primary-fixed)] shadow-[0_0_10px_rgba(230,255,0,0.3)]'
-                                      : 'bg-[var(--color-danger-crimson)] shadow-[0_0_10px_rgba(239,68,68,0.3)]'
-                                }`}
-                                style={{ width: `${u.asistencia}%` }}
-                              />
-                            </div>
-                            <span className="text-white text-xs font-black">{u.asistencia}%</span>
-                          </div>
-                        </td>
-                        <td className="px-6 md:px-8 py-5">
-                          <Badge variant={u.standing === 'Campeón' ? 'primary' : u.standing === 'En riesgo' ? 'danger' : 'default'}>
-                            {u.standing}
-                          </Badge>
-                        </td>
-                        <td className="px-6 md:px-8 py-5 text-right">
-                          <button
-                            aria-label={`Ver detalles de ${u.nombre}`}
-                            className="text-[var(--color-on-surface-variant)]/30 hover:text-white hover:bg-white/5 p-2 rounded-lg transition-colors duration-200"
-                          >
-                            <span className="material-symbols-outlined">page_info</span>
-                          </button>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </Card>
+                  <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/70 group-hover:text-white transition-colors duration-200">
+                    {a.label}
+                  </span>
+                </Card>
+              </Link>
+            ))}
+          </div>
         </Reveal>
       </div>
     </GuardedShell>
-  )
-}
-
-// ── Una casilla de verificación de la solicitud ──
-function Verificacion({
-  icon, label, detalle, hecho, onToggle,
-}: {
-  icon: string; label: string; detalle: string; hecho: boolean; onToggle: () => void
-}) {
-  return (
-    <button
-      onClick={onToggle}
-      role="switch"
-      aria-checked={hecho}
-      className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-colors duration-200 ${
-        hecho
-          ? 'border-[rgba(16,185,129,0.3)] bg-[rgba(16,185,129,0.06)]'
-          : 'border-white/5 bg-white/[0.02] hover:border-white/15'
-      }`}
-    >
-      <span className={`material-symbols-outlined text-[18px] shrink-0 ${
-        hecho ? 'text-[var(--color-success-emerald)]' : 'text-[var(--color-on-surface-variant)]/40'
-      }`}>
-        {icon}
-      </span>
-      <span className="flex-1 min-w-0">
-        <span className={`block text-[11px] font-black truncate ${hecho ? 'text-white' : 'text-[var(--color-on-surface-variant)]/70'}`}>
-          {label}
-        </span>
-        <span className="block text-[9px] text-[var(--color-on-surface-variant)]/40 truncate">{detalle}</span>
-      </span>
-      <span className={`material-symbols-outlined text-[20px] shrink-0 ${
-        hecho ? 'text-[var(--color-success-emerald)]' : 'text-white/20'
-      }`}>
-        {hecho ? 'check_circle' : 'radio_button_unchecked'}
-      </span>
-    </button>
   )
 }

@@ -11,8 +11,9 @@ import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button } from '@/components/ui'
-import { getUsuarios, setUsuarioActivo } from '@/lib/firestore'
-import type { Usuario } from '@/lib/types'
+import { getUsuarios, setUsuarioActivo, setUsuarioRol, crearCodigoInvitacion, getCodigosInvitacion } from '@/lib/firestore'
+import type { Usuario, CodigoInvitacion, UserRole } from '@/lib/types'
+import { useAuth } from '@/contexts/AuthContext'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -37,15 +38,26 @@ function nombreCompleto(u: Usuario) {
 }
 
 export default function UsuariosPage() {
-  const { authorized, loading } = useRoleGuard(['admin'])
+  const { authorized, loading, user: adminUser } = useRoleGuard(['admin'])
+  const { user } = useAuth()
   const [usuarios, setUsuarios] = useState<(Usuario & { activo?: boolean })[]>([])
   const [cargando, setCargando] = useState(true)
   const [rol, setRol] = useState<FiltroRol>('todos')
   const [busqueda, setBusqueda] = useState('')
+  // Códigos de invitación
+  const [codigos, setCodigos] = useState<CodigoInvitacion[]>([])
+  const [generando, setGenerando] = useState(false)
+  const [copiado, setCopiado] = useState<string | null>(null)
 
   useEffect(() => {
-    getUsuarios()
-      .then((us) => setUsuarios(us.map((u) => ({ ...u, activo: (u as any).activo !== false }))))
+    Promise.all([
+      getUsuarios(),
+      getCodigosInvitacion(),
+    ])
+      .then(([us, cs]) => {
+        setUsuarios(us.map((u) => ({ ...u, activo: (u as any).activo !== false })))
+        setCodigos(cs)
+      })
       .catch(console.error)
       .finally(() => setCargando(false))
   }, [])
@@ -72,9 +84,41 @@ export default function UsuariosPage() {
     try {
       await setUsuarioActivo(uid, nuevoActivo)
     } catch {
-      // Revertir en caso de error
       setUsuarios((prev) => prev.map((x) => x.uid === uid ? { ...x, activo: !nuevoActivo } : x))
     }
+  }
+
+  async function cambiarRol(uid: string, nuevoRol: UserRole) {
+    setUsuarios((prev) => prev.map((x) => x.uid === uid ? { ...x, rol: nuevoRol } : x))
+    try {
+      await setUsuarioRol(uid, nuevoRol)
+    } catch {
+      // Revertir
+      const u = usuarios.find((x) => x.uid === uid)
+      if (u) setUsuarios((prev) => prev.map((x) => x.uid === uid ? { ...x, rol: u.rol } : x))
+    }
+  }
+
+  async function generarCodigo() {
+    if (!user) return
+    setGenerando(true)
+    try {
+      const nombre = `${user.nombres} ${user.apellidos}`
+      const codigo = await crearCodigoInvitacion(user.uid, nombre)
+      const nuevo: CodigoInvitacion = {
+        codigo, creadoPor: nombre, creadoEn: Date.now(),
+        rol: 'profesor', activo: true, usadoPor: null, usadoEn: null,
+      }
+      setCodigos((prev) => [nuevo, ...prev])
+    } catch (e) { console.error(e) }
+    finally { setGenerando(false) }
+  }
+
+  function copiar(codigo: string) {
+    navigator.clipboard.writeText(codigo).then(() => {
+      setCopiado(codigo)
+      setTimeout(() => setCopiado(null), 2000)
+    })
   }
 
   return (
@@ -88,6 +132,63 @@ export default function UsuariosPage() {
               Usuarios
             </h2>
           </div>
+        </Reveal>
+
+        {/* ── Códigos de invitación para profesores ── */}
+        <Reveal delay={0.04}>
+          <Card padding="lg">
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
+              <div>
+                <h3 className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight">
+                  Invitaciones para profesores
+                </h3>
+                <p className="text-xs text-[var(--color-on-surface-variant)]/60 mt-1">
+                  Cada código es de un solo uso y caduca al registrarse el profesor.
+                </p>
+              </div>
+              <Button size="sm" loading={generando} onClick={generarCodigo}>
+                <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                Generar código
+              </Button>
+            </div>
+            {codigos.length === 0 ? (
+              <p className="text-sm text-[var(--color-on-surface-variant)]/50">
+                No hay códigos generados aún.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {codigos.slice(0, 6).map((c) => (
+                  <div key={c.codigo} className="flex items-center justify-between gap-4 py-2 border-b border-white/5 last:border-0">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <span className={`font-mono text-sm font-bold ${c.usadoPor ? 'text-[var(--color-on-surface-variant)]/40 line-through' : 'text-[var(--color-primary-fixed)]'}`}>
+                        {c.codigo}
+                      </span>
+                      {c.usadoPor && (
+                        <span className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/40 truncate">
+                          → {c.usadoPor}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Badge variant={c.usadoPor ? 'danger' : 'success'}>
+                        {c.usadoPor ? 'Usado' : 'Disponible'}
+                      </Badge>
+                      {!c.usadoPor && (
+                        <button
+                          onClick={() => copiar(c.codigo)}
+                          className="p-1.5 rounded-lg text-[var(--color-on-surface-variant)]/40 hover:text-white hover:bg-white/5 transition-colors"
+                          title="Copiar">
+                          <span className="material-symbols-outlined text-[16px]">
+                            {copiado === c.codigo ? 'check' : 'content_copy'}
+                          </span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
         </Reveal>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -195,13 +296,23 @@ export default function UsuariosPage() {
                         </td>
                         <td className="px-6 py-4 text-right">
                           {u.rol !== 'admin' && (
-                            <Button
-                              size="sm"
-                              variant={activo ? 'ghost' : 'primary'}
-                              onClick={() => toggleActivo(u.uid)}
-                            >
-                              {activo ? 'Suspender' : 'Reactivar'}
-                            </Button>
+                            <div className="flex items-center gap-2 justify-end">
+                              <select
+                                value={u.rol}
+                                onChange={(e) => cambiarRol(u.uid, e.target.value as UserRole)}
+                                className="bg-white/5 border border-white/10 rounded-lg px-2 py-1.5 text-[10px] font-bold text-[var(--color-on-surface-variant)] focus:border-[rgba(230,255,0,0.5)] focus:outline-none transition-colors cursor-pointer"
+                              >
+                                <option value="estudiante" className="bg-[#0a0a0a]">Estudiante</option>
+                                <option value="profesor" className="bg-[#0a0a0a]">Profesor</option>
+                              </select>
+                              <Button
+                                size="sm"
+                                variant={activo ? 'ghost' : 'primary'}
+                                onClick={() => toggleActivo(u.uid)}
+                              >
+                                {activo ? 'Suspender' : 'Reactivar'}
+                              </Button>
+                            </div>
                           )}
                         </td>
                       </tr>

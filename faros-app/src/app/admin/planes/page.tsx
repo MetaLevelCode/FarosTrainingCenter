@@ -9,15 +9,17 @@
 // Los cambios viven en estado local hasta conectar Firestore.
 // ============================================================
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
-import { Card, Badge, Button, Input } from '@/components/ui'
+import { Card, Badge, Button, Input, Spinner } from '@/components/ui'
 import {
   GRUPOS, GRUPO_POR_SESION, PERSONALES, CONJUNTOS, VACACIONES_POR_NINO,
   fmtCOP, type Grupo, type SubPersonal, type Conjunto,
 } from '@/lib/planes'
+import { getPlanes, crearPlan, actualizarPlan, archivarPlan } from '@/lib/firestore'
+import type { Plan } from '@/lib/types'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -31,14 +33,27 @@ function Reveal({ children, delay = 0 }: { children: React.ReactNode; delay?: nu
   )
 }
 
-type Cat = 'grupos' | 'personales' | 'conjuntos' | 'vacaciones'
+type Cat = 'grupos' | 'personales' | 'conjuntos' | 'vacaciones' | 'firestore'
 
 const CATS: { id: Cat; label: string; icon: string }[] = [
   { id: 'grupos', label: 'Grupos', icon: 'groups' },
   { id: 'personales', label: 'Personalizados', icon: 'person' },
   { id: 'conjuntos', label: 'Conjuntos', icon: 'join_inner' },
   { id: 'vacaciones', label: 'Vacaciones', icon: 'child_care' },
+  { id: 'firestore', label: 'Planes activos', icon: 'database' },
 ]
+
+// Plan vacío para crear nuevos
+const PLAN_VACIO: Omit<Plan, 'id' | 'planId' | 'creadoEn'> = {
+  nombre: '',
+  descripcion: '',
+  catalogo_codigo: '',
+  sesiones_incluidas: 8,
+  duracion_dias: 30,
+  precio_total: 0,
+  sede: '',
+  estado: true,
+}
 
 // Campo numérico en pesos
 function CampoPrecio({ label, value, onChange }: {
@@ -95,12 +110,61 @@ export default function AdminPlanesPage() {
   const [editId, setEditId] = useState<string | null>(null)
   const [guardado, setGuardado] = useState(false)
 
-  // Catálogo editable (arranca del catálogo real)
+  // Catálogo editable local
   const [grupos, setGrupos] = useState<Grupo[]>(() => GRUPOS.map((g) => ({ ...g, horarios: [...g.horarios] })))
   const [tarifas, setTarifas] = useState<Record<number, number>>({ ...GRUPO_POR_SESION })
   const [personales, setPersonales] = useState<SubPersonal[]>(() => PERSONALES.map((p) => ({ ...p, precios: { ...p.precios } })))
   const [conjuntos, setConjuntos] = useState<Conjunto[]>(() => CONJUNTOS.map((c) => ({ ...c, precios: { ...c.precios } })))
   const [vacaciones, setVacaciones] = useState<number>(VACACIONES_POR_NINO)
+
+  // Planes Firestore
+  const [planes, setPlanes] = useState<Plan[]>([])
+  const [cargandoPlanes, setCargandoPlanes] = useState(false)
+  const [nuevoForm, setNuevoForm] = useState<Omit<Plan, 'id' | 'planId' | 'creadoEn'> | null>(null)
+  const [guardandoPlan, setGuardandoPlan] = useState<string | null>(null)
+  const [planEditId, setPlanEditId] = useState<string | null>(null)
+  const [planEditData, setPlanEditData] = useState<Partial<Plan>>({})
+
+  useEffect(() => {
+    if (cat !== 'firestore') return
+    setCargandoPlanes(true)
+    getPlanes(false)
+      .then(setPlanes)
+      .catch(console.error)
+      .finally(() => setCargandoPlanes(false))
+  }, [cat])
+
+  async function guardarNuevoPlan() {
+    if (!nuevoForm) return
+    setGuardandoPlan('nuevo')
+    try {
+      const id = await crearPlan(nuevoForm)
+      const nuevo: Plan = { ...nuevoForm, id, planId: id, creadoEn: Date.now() }
+      setPlanes((prev) => [nuevo, ...prev])
+      setNuevoForm(null)
+    } catch (e) { console.error(e) }
+    finally { setGuardandoPlan(null) }
+  }
+
+  async function guardarEdicionPlan(planId: string) {
+    setGuardandoPlan(planId)
+    try {
+      await actualizarPlan(planId, planEditData)
+      setPlanes((prev) => prev.map((p) => p.id === planId ? { ...p, ...planEditData } : p))
+      setPlanEditId(null)
+      setPlanEditData({})
+    } catch (e) { console.error(e) }
+    finally { setGuardandoPlan(null) }
+  }
+
+  async function archivar(planId: string) {
+    setGuardandoPlan(planId)
+    try {
+      await archivarPlan(planId)
+      setPlanes((prev) => prev.map((p) => p.id === planId ? { ...p, estado: false } : p))
+    } catch (e) { console.error(e) }
+    finally { setGuardandoPlan(null) }
+  }
 
   function marcarGuardado() {
     setGuardado(true)
@@ -540,9 +604,154 @@ export default function AdminPlanesPage() {
           </Reveal>
         )}
 
-        <p className="text-[11px] text-[var(--color-on-surface-variant)]/40 text-center pt-2">
-          Los cambios se aplican en esta sesión. La persistencia llega al conectar Firestore.
-        </p>
+        {/* ══ PLANES FIRESTORE ══ */}
+        {cat === 'firestore' && (
+          <div className="space-y-5">
+            <Reveal delay={0.08}>
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-[var(--color-on-surface-variant)]/60">
+                  Estos planes aparecen en el selector de aprobación de finanzas.
+                </p>
+                <Button size="sm" onClick={() => setNuevoForm({ ...PLAN_VACIO })}>
+                  <span className="material-symbols-outlined text-[18px]">add_circle</span>
+                  Nuevo plan
+                </Button>
+              </div>
+            </Reveal>
+
+            {/* Formulario nuevo plan */}
+            {nuevoForm && (
+              <Reveal>
+                <Card padding="lg">
+                  <h3 className="font-display text-base font-extrabold text-[var(--color-primary-fixed)] uppercase tracking-tight mb-5">
+                    Nuevo plan
+                  </h3>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <Input label="Nombre *" value={nuevoForm.nombre}
+                      onChange={(e) => setNuevoForm((f) => f && ({ ...f, nombre: e.target.value }))} />
+                    <Input label="Sede" value={nuevoForm.sede}
+                      onChange={(e) => setNuevoForm((f) => f && ({ ...f, sede: e.target.value }))} />
+                    <Input label="Sesiones incluidas" type="number" min={1} value={nuevoForm.sesiones_incluidas}
+                      onChange={(e) => setNuevoForm((f) => f && ({ ...f, sesiones_incluidas: Number(e.target.value) }))} />
+                    <Input label="Duración (días)" type="number" min={1} value={nuevoForm.duracion_dias}
+                      onChange={(e) => setNuevoForm((f) => f && ({ ...f, duracion_dias: Number(e.target.value) }))} />
+                    <div className="sm:col-span-2">
+                      <CampoPrecio label="Precio total (COP) *" value={nuevoForm.precio_total}
+                        onChange={(v) => setNuevoForm((f) => f && ({ ...f, precio_total: v ?? 0 }))} />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <Input label="Descripción" value={nuevoForm.descripcion}
+                        onChange={(e) => setNuevoForm((f) => f && ({ ...f, descripcion: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div className="flex gap-3 mt-5">
+                    <Button size="sm" loading={guardandoPlan === 'nuevo'}
+                      disabled={!nuevoForm.nombre || nuevoForm.precio_total <= 0}
+                      onClick={guardarNuevoPlan}>
+                      Crear plan
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={() => setNuevoForm(null)}>
+                      Cancelar
+                    </Button>
+                  </div>
+                </Card>
+              </Reveal>
+            )}
+
+            {cargandoPlanes ? (
+              <div className="flex justify-center py-12"><Spinner size="md" /></div>
+            ) : planes.length === 0 ? (
+              <Card>
+                <p className="text-sm text-[var(--color-on-surface-variant)]/60 text-center py-4">
+                  No hay planes en Firestore todavía. Crea el primero con el botón de arriba.
+                </p>
+              </Card>
+            ) : (
+              <Card padding="none" className="overflow-hidden">
+                <table className="w-full text-left min-w-[600px]">
+                  <thead className="bg-white/5">
+                    <tr>
+                      {['Nombre', 'Sesiones', 'Duración', 'Precio', 'Estado', ''].map((h) => (
+                        <th key={h} className="px-5 py-4 label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {planes.map((p) => (
+                      <tr key={p.id} className="hover:bg-white/[0.03] transition-colors">
+                        {planEditId === p.id ? (
+                          <td colSpan={6} className="px-5 py-4">
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                              <Input label="Nombre" value={planEditData.nombre ?? p.nombre}
+                                onChange={(e) => setPlanEditData((d) => ({ ...d, nombre: e.target.value }))} />
+                              <Input label="Sesiones" type="number" min={1}
+                                value={planEditData.sesiones_incluidas ?? p.sesiones_incluidas}
+                                onChange={(e) => setPlanEditData((d) => ({ ...d, sesiones_incluidas: Number(e.target.value) }))} />
+                              <Input label="Días" type="number" min={1}
+                                value={planEditData.duracion_dias ?? p.duracion_dias}
+                                onChange={(e) => setPlanEditData((d) => ({ ...d, duracion_dias: Number(e.target.value) }))} />
+                              <CampoPrecio label="Precio (COP)"
+                                value={planEditData.precio_total ?? p.precio_total}
+                                onChange={(v) => setPlanEditData((d) => ({ ...d, precio_total: v ?? 0 }))} />
+                            </div>
+                            <div className="flex gap-2">
+                              <Button size="sm" loading={guardandoPlan === p.id}
+                                onClick={() => guardarEdicionPlan(p.id)}>Guardar</Button>
+                              <Button size="sm" variant="ghost"
+                                onClick={() => { setPlanEditId(null); setPlanEditData({}) }}>Cancelar</Button>
+                            </div>
+                          </td>
+                        ) : (
+                          <>
+                            <td className="px-5 py-4">
+                              <p className="text-sm font-bold text-white">{p.nombre}</p>
+                              {p.sede && <p className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/40 mt-0.5">{p.sede}</p>}
+                            </td>
+                            <td className="px-5 py-4 text-sm text-[var(--color-on-surface-variant)]/70">{p.sesiones_incluidas}</td>
+                            <td className="px-5 py-4 text-sm text-[var(--color-on-surface-variant)]/70">{p.duracion_dias} días</td>
+                            <td className="px-5 py-4 font-display font-black text-[var(--color-primary-fixed)] text-sm">
+                              {fmtCOP(p.precio_total)}
+                            </td>
+                            <td className="px-5 py-4">
+                              <Badge variant={p.estado ? 'success' : 'danger'}>
+                                {p.estado ? 'Activo' : 'Archivado'}
+                              </Badge>
+                            </td>
+                            <td className="px-5 py-4">
+                              <div className="flex items-center gap-1 justify-end">
+                                <button
+                                  onClick={() => { setPlanEditId(p.id); setPlanEditData({}) }}
+                                  className="p-2 rounded-lg text-[var(--color-on-surface-variant)]/40 hover:text-white hover:bg-white/5 transition-colors"
+                                  title="Editar">
+                                  <span className="material-symbols-outlined text-[18px]">edit</span>
+                                </button>
+                                {p.estado && (
+                                  <button
+                                    onClick={() => archivar(p.id)}
+                                    disabled={guardandoPlan === p.id}
+                                    className="p-2 rounded-lg text-[var(--color-on-surface-variant)]/40 hover:text-[var(--color-danger-crimson)] hover:bg-[rgba(239,68,68,0.1)] transition-colors"
+                                    title="Archivar">
+                                    <span className="material-symbols-outlined text-[18px]">archive</span>
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Card>
+            )}
+          </div>
+        )}
+
+        {cat !== 'firestore' && (
+          <p className="text-[11px] text-[var(--color-on-surface-variant)]/40 text-center pt-2">
+            Catálogo visual del wizard. Para planes de suscripción usa la pestaña "Planes activos".
+          </p>
+        )}
       </div>
     </GuardedShell>
   )
