@@ -54,8 +54,8 @@ export default function DashboardPage() {
   const tasa = user?.estadisticas?.tasaAsistencia ?? 0
   const asistidas = user?.estadisticas?.clasesAsistidas ?? 0
 
-  // Fase del ciclo de matrícula, derivada de la suscripción en Firestore.
-  const fase = faseDeSuscripcion(susc)
+  // Fase del ciclo de matrícula, derivada de la suscripción + transacción pendiente.
+  const fase = faseDeSuscripcion(susc, txPendiente)
   const vencimiento = susc?.fechaVencimiento
     ? new Intl.DateTimeFormat('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
         .format(new Date(susc.fechaVencimiento))
