@@ -246,29 +246,22 @@ export async function registrarAsistencia(
   asistio: boolean,
   profesorId: string,
 ): Promise<void> {
-  const [{ db }, { doc, collection, addDoc, updateDoc, runTransaction, query, where, getDocs }] = await Promise.all([
+  const [{ db }, { doc, collection, runTransaction }] = await Promise.all([
     getFirebase(), import('firebase/firestore'),
   ])
 
+  // ID determinista permite tx.get() en lugar de una query no-transaccional
+  const asistenciaRef = doc(db, 'asistencias', `${claseId}_${usuarioId}`)
+
   await runTransaction(db, async (tx) => {
     const now = Date.now()
+    const existingSnap = await tx.get(asistenciaRef)
 
-    // Verificar si ya existe registro
-    const q = query(
-      collection(db, 'asistencias'),
-      where('claseId', '==', claseId),
-      where('usuarioId', '==', usuarioId),
-    )
-    const existing = await getDocs(q)
-
-    if (!existing.empty) {
-      // Actualizar existente
-      tx.update(existing.docs[0].ref, { asistio, fecha_registro: now })
+    if (existingSnap.exists()) {
+      tx.update(asistenciaRef, { asistio, fecha_registro: now })
     } else {
-      // Crear nuevo
-      const ref = doc(collection(db, 'asistencias'))
-      tx.set(ref, {
-        asistenciaId: ref.id,
+      tx.set(asistenciaRef, {
+        asistenciaId: asistenciaRef.id,
         claseId, usuarioId, asistio,
         fecha_registro: now,
         registradoPor: profesorId,
@@ -277,7 +270,6 @@ export async function registrarAsistencia(
     }
 
     if (asistio) {
-      // Restar sesión de suscripción del usuario
       const usuRef = doc(db, 'usuarios', usuarioId)
       const usuSnap = await tx.get(usuRef)
       const usu = usuSnap.data() as Record<string, any> | undefined
@@ -335,17 +327,15 @@ export async function getMovimientos(limite = 50): Promise<Movimiento[]> {
 }
 
 export async function addMovimiento(data: Omit<Movimiento, 'id' | 'movimientoId' | 'creadoEn'>): Promise<void> {
-  const [{ db }, { collection, addDoc }] = await Promise.all([
+  const [{ db }, { collection, doc, setDoc }] = await Promise.all([
     getFirebase(), import('firebase/firestore'),
   ])
-  const ref = await addDoc(collection(db, 'movimientos'), {
+  const ref = doc(collection(db, 'movimientos'))
+  await setDoc(ref, {
     ...data,
-    movimientoId: '',
+    movimientoId: ref.id,
     creadoEn: Date.now(),
   })
-  // Escribimos el id generado en el documento
-  const [, { doc, updateDoc }] = await Promise.all([Promise.resolve(), import('firebase/firestore')])
-  await updateDoc(ref, { movimientoId: ref.id })
 }
 
 // ── planes CRUD ──────────────────────────────────────────────

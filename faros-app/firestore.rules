@@ -168,8 +168,8 @@ service cloud.firestore {
 
       // Se agrega 'plan' a los campos que el instructor puede modificar
       // para que el calendario del portal pueda guardar el plan de la clase.
-      // PENDIENTE: la inscripción de estudiantes (estudiantes_inscritos) debe
-      // manejarse con una Cloud Function para garantizar atomicidad de cupos.
+      // La inscripción (estudiantes_inscritos) se gestiona vía Admin SDK en
+      // POST /api/clases/[id]/inscribir y /cancelar — garantiza atomicidad de cupos.
       allow update: if isAdmin()
         || (isProfesor() && resource.data.instructor_id == request.auth.uid
             && request.resource.data.diff(resource.data).affectedKeys()

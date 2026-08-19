@@ -12,10 +12,8 @@ import Link from 'next/link'
 import { motion, AnimatePresence } from 'motion/react'
 import { Button } from '@/components/ui'
 import {
-  SEMANA, HORAS, PASOS, pasosCompletados, cuposDelPlan, diasDelPlan,
-  horaDelPlan, reservaProfesor, type Fase,
+  SEMANA, HORAS, PASOS, pasosCompletados, type Fase,
 } from '@/lib/matricula'
-import { describirPlan, type PlanAsignado } from '@/lib/planes'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -30,20 +28,28 @@ function estadoDia(fase: Fase): { label: string; cls: string } {
 }
 
 export function Semanario({
-  plan, fase, onPagar, onSolicitar,
+  fase, cupos, nombrePlan, recurrente = false, proximoPago,
+  diasIniciales = [], horaInicial = '6:00 PM',
+  onPagar, onSolicitar,
 }: {
-  plan: PlanAsignado
   fase: Fase
+  /** Sesiones que le quedan por reservar (viene de la suscripción). */
+  cupos: number
+  /** undefined cuando el estudiante todavía no tiene ninguna suscripción. */
+  nombrePlan?: string
+  /** true en planes personales: el profesor queda reservado para él. */
+  recurrente?: boolean
+  proximoPago?: string
+  diasIniciales?: number[]
+  horaInicial?: string
   onPagar: () => void
   onSolicitar: (dias: number[], hora: string) => void
 }) {
-  const info = useMemo(() => describirPlan(plan), [plan])
-  const cupos = cuposDelPlan(plan)
-  const recurrente = reservaProfesor(plan)
+  const hayPlan = Boolean(nombrePlan)
 
   const [editando, setEditando] = useState(false)
-  const [dias, setDias] = useState<number[]>(() => diasDelPlan(plan))
-  const [hora, setHora] = useState<string>(() => horaDelPlan(plan))
+  const [dias, setDias] = useState<number[]>(diasIniciales)
+  const [hora, setHora] = useState<string>(horaInicial)
   // Instantánea para restaurar si el alumno cancela la edición.
   const snapshot = useRef<{ dias: number[]; hora: string }>({ dias, hora })
 
@@ -93,9 +99,11 @@ export function Semanario({
               {fase === 'activo' ? 'Tus días' : 'Arma tu semana'}
             </h2>
             <p className="text-[var(--color-on-surface-variant)]/70 mt-3 max-w-md text-sm">
-              {recurrente
-                ? `Elige ${cupos} ${cupos === 1 ? 'día' : 'días'}: tu profesor queda reservado para ti en ese horario.`
-                : `Tu plan ${info.titulo} incluye ${cupos} ${cupos === 1 ? 'día' : 'días'} por semana.`}
+              {!hayPlan
+                ? 'Cuando tengas un plan activo podrás elegir aquí los días en que entrenas.'
+                : recurrente
+                  ? `Elige ${cupos} ${cupos === 1 ? 'día' : 'días'}: tu profesor queda reservado para ti en ese horario.`
+                  : `Tu plan ${nombrePlan} te deja ${cupos} ${cupos === 1 ? 'sesión' : 'sesiones'} por reservar.`}
             </p>
           </div>
 
@@ -235,7 +243,9 @@ export function Semanario({
         ) : (
           <BannerFase
             fase={fase}
-            plan={plan}
+            hayPlan={hayPlan}
+            nombrePlan={nombrePlan}
+            proximoPago={proximoPago}
             recurrente={recurrente}
             onPagar={onPagar}
             onEditar={editar}
@@ -248,10 +258,12 @@ export function Semanario({
 
 // ── Banner según la fase del plan ──
 function BannerFase({
-  fase, plan, recurrente, onPagar, onEditar,
+  fase, hayPlan, nombrePlan, proximoPago, recurrente, onPagar, onEditar,
 }: {
   fase: Fase
-  plan: PlanAsignado
+  hayPlan: boolean
+  nombrePlan?: string
+  proximoPago?: string
   recurrente: boolean
   onPagar: () => void
   onEditar: () => void
@@ -283,7 +295,7 @@ function BannerFase({
           </h3>
           <p className="text-sm text-[var(--color-on-surface-variant)]/70">
             {recurrente ? 'Tu profesor está disponible en esos días.' : 'Hay cupo en el horario que elegiste.'}{' '}
-            Paga para activar tu plan y reservar tu lugar — {info(plan)}.
+            Paga para activar {nombrePlan} y reservar tu lugar.
           </p>
         </div>
         <Button size="lg" onClick={onPagar} className="shrink-0 w-full sm:w-auto">
@@ -299,14 +311,16 @@ function BannerFase({
         <span className="material-symbols-outlined text-[var(--color-danger-crimson)] text-4xl shrink-0">lock_clock</span>
         <div className="flex-1">
           <h3 className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight mb-1">
-            Tu plan está vencido
+            {hayPlan ? 'Tu plan está vencido' : 'Aún no tienes un plan'}
           </h3>
           <p className="text-sm text-[var(--color-on-surface-variant)]/70">
-            Renueva para recuperar tus días y volver a entrenar.
+            {hayPlan
+              ? 'Renueva para recuperar tus días y volver a entrenar.'
+              : 'Solicita un plan para empezar a reservar tus clases.'}
           </p>
         </div>
         <Link href="/dashboard/planes" className="shrink-0 w-full sm:w-auto">
-          <Button size="lg" fullWidth>Renovar plan</Button>
+          <Button size="lg" fullWidth>{hayPlan ? 'Renovar plan' : 'Solicitar plan'}</Button>
         </Link>
       </div>
     )
@@ -323,8 +337,8 @@ function BannerFase({
         <p className="text-sm text-[var(--color-on-surface-variant)]/70">
           {recurrente
             ? 'Tus días quedaron reservados con tu profesor.'
-            : 'Estás inscrito en los días de tu grupo.'}{' '}
-          Próximo pago: {plan.proximoPago}.
+            : 'Estás inscrito en los días de tu grupo.'}
+          {proximoPago ? ` Vence: ${proximoPago}.` : ''}
         </p>
       </div>
       <Button variant="ghost" size="md" onClick={onEditar} className="shrink-0 w-full sm:w-auto">
@@ -332,9 +346,4 @@ function BannerFase({
       </Button>
     </div>
   )
-}
-
-function info(plan: PlanAsignado): string {
-  const d = describirPlan(plan)
-  return d.precioTexto === 'Por confirmar' ? 'tarifa por confirmar' : `${d.precioTexto}/mes`
 }

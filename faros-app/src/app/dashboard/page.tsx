@@ -18,6 +18,9 @@ import { getTransaccionesUsuario } from '@/lib/firestore'
 import { ScrollVideoPanel } from '@/components/shared/ScrollVideoPanel'
 import { BrandImageStrip } from '@/components/shared/BrandImageStrip'
 import type { Transaccion } from '@/lib/types'
+import { Semanario } from '@/components/dashboard/Semanario'
+import { MensajesAlumno } from '@/components/dashboard/MensajesAlumno'
+import { faseDeSuscripcion, cuposDisponibles } from '@/lib/matricula'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -45,13 +48,18 @@ export default function DashboardPage() {
   const { user } = useAuth()
   const firstName = user?.nombres ?? 'Atleta'
   const [companeros, setCompaneros] = useState<Companero[]>([])
-  const [mensaje, setMensaje] = useState('')
-  const [transmitido, setTransmitido] = useState(false)
   const [txPendiente, setTxPendiente] = useState<Transaccion | null>(null)
 
   const susc = user?.suscripcionActiva
   const tasa = user?.estadisticas?.tasaAsistencia ?? 0
   const asistidas = user?.estadisticas?.clasesAsistidas ?? 0
+
+  // Fase del ciclo de matrícula, derivada de la suscripción en Firestore.
+  const fase = faseDeSuscripcion(susc)
+  const vencimiento = susc?.fechaVencimiento
+    ? new Intl.DateTimeFormat('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
+        .format(new Date(susc.fechaVencimiento))
+    : undefined
 
   useEffect(() => {
     if (!user?.uid) return
@@ -91,13 +99,6 @@ export default function DashboardPage() {
     })()
   }, [user?.uid, user?.sede])
 
-  function enviarFeedback(e: React.FormEvent) {
-    e.preventDefault()
-    if (!mensaje.trim()) return
-    setTransmitido(true)
-    setMensaje('')
-    setTimeout(() => setTransmitido(false), 3500)
-  }
 
   return (
     <GuardedShell authorized={authorized} loading={loading} title="Dashboard">
@@ -185,6 +186,18 @@ export default function DashboardPage() {
             </Link>
           </Reveal>
         )}
+
+        {/* ── Semanario: la acción principal del estudiante ── */}
+        <Reveal delay={txPendiente ? 0.1 : 0.05}>
+          <Semanario
+            fase={fase}
+            cupos={cuposDisponibles(susc)}
+            nombrePlan={susc?.nombrePlan}
+            proximoPago={vencimiento}
+            onPagar={() => { /* pendiente: abrir el flujo de pago */ }}
+            onSolicitar={() => { /* pendiente: crear la transacción en Firestore */ }}
+          />
+        </Reveal>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Plan de clase del día */}
@@ -382,32 +395,14 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Línea directa */}
+        {/* ── Mensajes: muro de la clase + privado con el profesor ── */}
         <Reveal delay={0.15}>
-          <Card padding="lg" className="!rounded-[2.5rem]">
-            <div className="flex flex-col md:flex-row gap-10 items-center">
-              <div className="md:flex-1">
-                <h3 className="font-display text-3xl font-extrabold text-white mb-3 uppercase tracking-tighter">
-                  Línea directa con tu coach
-                </h3>
-                <p className="text-[var(--color-on-surface-variant)]/60 max-w-md">
-                  Canal inmediato para ajustes técnicos o solicitudes de equipamiento.
-                </p>
-              </div>
-              <form onSubmit={enviarFeedback} className="w-full md:w-1/2 flex flex-col sm:flex-row gap-3">
-                <input
-                  value={mensaje}
-                  onChange={(e) => setMensaje(e.target.value)}
-                  placeholder="Escribe tu solicitud..."
-                  aria-label="Mensaje para tu coach"
-                  className="flex-1 bg-white/5 border border-white/5 rounded-2xl px-6 py-4 text-[var(--color-on-surface)] placeholder:text-[var(--color-on-surface-variant)]/30 focus:border-[rgba(230,255,0,0.5)] focus:outline-none transition-colors duration-300"
-                />
-                <Button type="submit" size="md" disabled={transmitido}>
-                  {transmitido ? 'Enviado ✓' : 'Enviar'}
-                </Button>
-              </form>
-            </div>
-          </Card>
+          <MensajesAlumno
+            alumnoId={user?.uid ?? ''}
+            alumnoNombre={firstName}
+            claseId={susc?.planId ?? 'knowill'}
+            claseNombre={susc?.nombrePlan ?? 'Tu clase'}
+          />
         </Reveal>
 
         <Reveal delay={0.1}>

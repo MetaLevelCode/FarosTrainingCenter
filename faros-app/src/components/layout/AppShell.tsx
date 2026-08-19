@@ -25,8 +25,9 @@ const NAV: Record<UserRole, NavItem[]> = {
     { label: 'Perfil', href: '/dashboard/perfil', icon: 'account_circle' },
   ],
   profesor: [
+    // Sin "Mis Clases": el calendario del portal ya cubre las clases,
+    // su plan y la asistencia de cada día.
     { label: 'Portal', href: '/portal', icon: 'dashboard' },
-    { label: 'Mis Clases', href: '/portal/clases', icon: 'pool' },
     { label: 'Estudiantes', href: '/portal/alumnos', icon: 'groups' },
     { label: 'Perfil', href: '/portal/perfil', icon: 'account_circle' },
   ],

@@ -18,7 +18,13 @@
 // repetirse en el servidor, que es donde de verdad se hacen cumplir.
 // ============================================================
 
-import type { TipoDocumento } from './types'
+/**
+ * Tipo de documento. Vive aquí y no en types.ts porque solo importa
+ * durante el REGISTRO: es lo que permite cruzar documento con edad
+ * (T.I. es de menor, C.C. de mayor, C.E. de cualquiera). Una vez
+ * creado el usuario, el modelo guarda únicamente `cedula`.
+ */
+export type TipoDocumento = 'TI' | 'CC' | 'CE'
 
 export type TipoRegistro = 'alumno' | 'entrenador'
 
