@@ -49,13 +49,16 @@ export default function DashboardPage() {
   const firstName = user?.nombres ?? 'Atleta'
   const [companeros, setCompaneros] = useState<Companero[]>([])
   const [txPendiente, setTxPendiente] = useState<Transaccion | null>(null)
+  const [txCargada, setTxCargada] = useState(false)
 
   const susc = user?.suscripcionActiva
   const tasa = user?.estadisticas?.tasaAsistencia ?? 0
   const asistidas = user?.estadisticas?.clasesAsistidas ?? 0
 
   // Fase del ciclo de matrícula, derivada de la suscripción + transacción pendiente.
-  const fase = faseDeSuscripcion(susc, txPendiente)
+  // Solo se calcula cuando la tx ya fue consultada (txCargada) para evitar
+  // mostrar 'vencido' durante la carga y luego saltar a 'pendiente'.
+  const fase = txCargada ? faseDeSuscripcion(susc, txPendiente) : null
   const vencimiento = susc?.fechaVencimiento
     ? new Intl.DateTimeFormat('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
         .format(new Date(susc.fechaVencimiento))
@@ -69,6 +72,7 @@ export default function DashboardPage() {
         if (pendiente) setTxPendiente(pendiente)
       })
       .catch(() => {})
+      .finally(() => setTxCargada(true))
   }, [user?.uid])
 
   useEffect(() => {
@@ -188,16 +192,18 @@ export default function DashboardPage() {
         )}
 
         {/* ── Semanario: la acción principal del estudiante ── */}
-        <Reveal delay={txPendiente ? 0.1 : 0.05}>
-          <Semanario
-            fase={fase}
-            cupos={cuposDisponibles(susc)}
-            nombrePlan={susc?.nombrePlan}
-            proximoPago={vencimiento}
-            onPagar={() => { /* pendiente: abrir el flujo de pago */ }}
-            onSolicitar={() => { /* pendiente: crear la transacción en Firestore */ }}
-          />
-        </Reveal>
+        {fase && (
+          <Reveal delay={txPendiente ? 0.1 : 0.05}>
+            <Semanario
+              fase={fase}
+              cupos={cuposDisponibles(susc)}
+              nombrePlan={susc?.nombrePlan}
+              proximoPago={vencimiento}
+              onPagar={() => { /* pendiente: abrir el flujo de pago */ }}
+              onSolicitar={() => { /* pendiente: crear la transacción en Firestore */ }}
+            />
+          </Reveal>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
           {/* Plan de clase del día */}
