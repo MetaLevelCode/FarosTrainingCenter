@@ -40,6 +40,8 @@ export default function FinanzasPage() {
   const [mostrarRechazo, setMostrarRechazo] = useState<string | null>(null)
   const [planSeleccionado, setPlanSeleccionado] = useState<Record<string, string>>({})
   const [comprobanteModal, setComprobanteModal] = useState<string | null>(null)
+  const [imgError, setImgError] = useState(false)
+  const [imgLoading, setImgLoading] = useState(false)
 
   useEffect(() => {
     Promise.all([getTransacciones(), getMovimientos(), getPlanes()])
@@ -172,7 +174,7 @@ export default function FinanzasPage() {
                         )}
                         {t.comprobante_url && (
                           <button
-                            onClick={() => setComprobanteModal(t.comprobante_url!)}
+                            onClick={() => { setComprobanteModal(t.comprobante_url!); setImgError(false); setImgLoading(true) }}
                             className="label-caps text-[10px] text-[var(--color-primary-fixed)] mt-1 inline-flex items-center gap-1 hover:underline"
                           >
                             <span className="material-symbols-outlined text-[14px]">receipt</span>
@@ -340,7 +342,7 @@ export default function FinanzasPage() {
           onClick={() => setComprobanteModal(null)}
         >
           <div
-            className="relative w-full max-w-2xl max-h-[90vh] rounded-2xl overflow-hidden bg-[#111] border border-white/10"
+            className="relative w-full max-w-2xl rounded-2xl overflow-hidden bg-[#111] border border-white/10"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-5 py-3 border-b border-white/10">
@@ -352,22 +354,46 @@ export default function FinanzasPage() {
                 <span className="material-symbols-outlined text-[18px]">close</span>
               </button>
             </div>
-            <div className="overflow-auto max-h-[80vh] flex items-center justify-center p-4">
+            <div className="flex items-center justify-center p-4 min-h-[300px] bg-black/20">
               {comprobanteModal.includes('.pdf') || comprobanteModal.includes('%2Fpdf') ? (
                 <iframe
                   src={comprobanteModal}
                   className="w-full h-[70vh] rounded-lg"
                   title="Comprobante PDF"
                 />
+              ) : imgError ? (
+                <div className="text-center space-y-4 py-8">
+                  <span className="material-symbols-outlined text-[48px] text-white/20">broken_image</span>
+                  <p className="text-sm text-[var(--color-on-surface-variant)]/60">No se pudo cargar la imagen.</p>
+                  <a
+                    href={comprobanteModal}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 text-[var(--color-primary-fixed)] text-sm hover:underline"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                    Abrir imagen
+                  </a>
+                </div>
               ) : (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={comprobanteModal}
-                  alt="Comprobante de pago"
-                  className="max-w-full max-h-[70vh] rounded-lg object-contain select-none"
-                  onClick={(e) => e.preventDefault()}
-                  draggable={false}
-                />
+                <div className="relative w-full flex items-center justify-center">
+                  {imgLoading && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className="w-8 h-8 border-2 border-white/20 border-t-[var(--color-primary-fixed)] rounded-full animate-spin" />
+                    </div>
+                  )}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={comprobanteModal}
+                    alt="Comprobante de pago"
+                    className={`max-w-full max-h-[75vh] rounded-lg object-contain select-none transition-opacity duration-300 ${imgLoading ? 'opacity-0' : 'opacity-100'}`}
+                    onClick={(e) => e.preventDefault()}
+                    draggable={false}
+                    onLoadStart={() => { setImgLoading(true); setImgError(false) }}
+                    onLoad={() => setImgLoading(false)}
+                    onError={() => { setImgLoading(false); setImgError(true) }}
+                  />
+                </div>
               )}
             </div>
           </div>
