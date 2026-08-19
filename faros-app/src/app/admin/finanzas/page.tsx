@@ -40,6 +40,7 @@ export default function FinanzasPage() {
   const [mostrarRechazo, setMostrarRechazo] = useState<string | null>(null)
   const [planSeleccionado, setPlanSeleccionado] = useState<Record<string, string>>({})
   const [comprobanteModal, setComprobanteModal] = useState<string | null>(null)
+  const [comprobanteProxyUrl, setComprobanteProxyUrl] = useState<string | null>(null)
   const [imgError, setImgError] = useState(false)
   const [imgLoading, setImgLoading] = useState(false)
 
@@ -174,7 +175,29 @@ export default function FinanzasPage() {
                         )}
                         {t.comprobante_url && (
                           <button
-                            onClick={() => { setComprobanteModal(t.comprobante_url!); setImgError(false); setImgLoading(true) }}
+                            onClick={async () => {
+                              setComprobanteModal(t.comprobante_url!)
+                              setImgError(false)
+                              setImgLoading(true)
+                              setComprobanteProxyUrl(null)
+                              try {
+                                const { getAuth } = await import('firebase/auth')
+                                const idToken = await getAuth().currentUser?.getIdToken()
+                                const proxyUrl = `/api/comprobante?url=${encodeURIComponent(t.comprobante_url!)}`
+                                // Pre-fetch con token para cachear en el browser
+                                const res = await fetch(proxyUrl, { headers: { Authorization: `Bearer ${idToken}` } })
+                                if (res.ok) {
+                                  const blob = await res.blob()
+                                  setComprobanteProxyUrl(URL.createObjectURL(blob))
+                                } else {
+                                  setImgError(true)
+                                }
+                              } catch {
+                                setImgError(true)
+                              } finally {
+                                setImgLoading(false)
+                              }
+                            }}
                             className="label-caps text-[10px] text-[var(--color-primary-fixed)] mt-1 inline-flex items-center gap-1 hover:underline"
                           >
                             <span className="material-symbols-outlined text-[14px]">receipt</span>
@@ -384,14 +407,11 @@ export default function FinanzasPage() {
                   )}
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={comprobanteModal}
+                    src={comprobanteProxyUrl ?? ''}
                     alt="Comprobante de pago"
-                    className={`max-w-full max-h-[75vh] rounded-lg object-contain select-none transition-opacity duration-300 ${imgLoading ? 'opacity-0' : 'opacity-100'}`}
+                    className={`max-w-full max-h-[75vh] rounded-lg object-contain select-none transition-opacity duration-300 ${comprobanteProxyUrl ? 'opacity-100' : 'opacity-0'}`}
                     onClick={(e) => e.preventDefault()}
                     draggable={false}
-                    onLoadStart={() => { setImgLoading(true); setImgError(false) }}
-                    onLoad={() => setImgLoading(false)}
-                    onError={() => { setImgLoading(false); setImgError(true) }}
                   />
                 </div>
               )}
