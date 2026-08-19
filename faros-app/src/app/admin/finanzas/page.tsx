@@ -345,12 +345,23 @@ export default function FinanzasPage() {
           >
             <div className="flex items-center justify-between px-5 py-3 border-b border-white/10">
               <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/60">Comprobante de pago</span>
-              <button
-                onClick={() => setComprobanteModal(null)}
-                className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--color-on-surface-variant)] hover:text-white hover:bg-white/10 transition-colors"
-              >
-                <span className="material-symbols-outlined text-[18px]">close</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <a
+                  href={comprobanteModal}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--color-on-surface-variant)] hover:text-white hover:bg-white/10 transition-colors"
+                  title="Abrir en nueva pestaña"
+                >
+                  <span className="material-symbols-outlined text-[18px]">open_in_new</span>
+                </a>
+                <button
+                  onClick={() => setComprobanteModal(null)}
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--color-on-surface-variant)] hover:text-white hover:bg-white/10 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[18px]">close</span>
+                </button>
+              </div>
             </div>
             <div className="overflow-auto max-h-[80vh] flex items-center justify-center p-4">
               {comprobanteModal.includes('.pdf') || comprobanteModal.includes('%2Fpdf') ? (
@@ -364,7 +375,7 @@ export default function FinanzasPage() {
                 <img
                   src={comprobanteModal}
                   alt="Comprobante de pago"
-                  className="max-w-full max-h-[70vh] rounded-lg object-contain"
+                  className="max-w-full max-h-[70vh] rounded-lg object-contain pointer-events-none select-none"
                 />
               )}
             </div>
