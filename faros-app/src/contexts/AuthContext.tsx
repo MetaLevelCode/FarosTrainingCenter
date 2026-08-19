@@ -57,7 +57,7 @@ interface AuthContextValue {
   error: string | null
   isMockMode: boolean
   signIn: (email: string, password: string) => Promise<{ ok: boolean; role?: UserRole; error?: string }>
-  signUp: (email: string, password: string, nombres: string, apellidos: string, cedula: string, rol: UserRole, extra?: { telefono?: string; eps?: string; sede?: string }) => Promise<{ ok: boolean; error?: string }>
+  signUp: (email: string, password: string, nombres: string, apellidos: string, cedula: string, rol: UserRole, extra?: { telefono?: string; telefonoEmergencia?: string; eps?: string; sede?: string; dificultades?: string[] }) => Promise<{ ok: boolean; error?: string }>
   signOut: () => Promise<void>
   clearError: () => void
 }
@@ -187,7 +187,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signUp = useCallback(async (
     email: string, password: string,
     nombres: string, apellidos: string, cedula: string, rol: UserRole,
-    extra?: { telefono?: string; eps?: string; sede?: string },
+    extra?: { telefono?: string; telefonoEmergencia?: string; eps?: string; sede?: string; dificultades?: string[] },
   ) => {
     setError(null)
     if (MAL_CONFIGURADO) {
@@ -208,8 +208,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         fecha_registro: Date.now(),
       }
       if (extra?.telefono) docData.telefono = extra.telefono
+      if (extra?.telefonoEmergencia) docData.telefonoEmergencia = extra.telefonoEmergencia
       if (extra?.eps) docData.eps = extra.eps
       if (extra?.sede) docData.sede = extra.sede
+      if (extra?.dificultades?.length) docData.dificultades = extra.dificultades
       await setDoc(doc(db, 'usuarios', cred.user.uid), docData)
       return { ok: true }
     } catch (e: any) {

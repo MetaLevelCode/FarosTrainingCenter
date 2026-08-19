@@ -2,33 +2,75 @@
 
 // ============================================================
 // FAROS — Registro de estudiantes
-// Crea cuenta en Firebase Auth + documento en Firestore.
+// Todos los campos son obligatorios excepto dificultades médicas.
 // Solo escribe los campos del whitelist de firestore.rules.
 // ============================================================
 
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { motion } from 'motion/react'
+import { motion, AnimatePresence } from 'motion/react'
 import { useAuth } from '@/contexts/AuthContext'
 import { Button, Input, FarosWordmark } from '@/components/ui'
 import { WaterBackground } from '@/components/shared/WaterBackground'
 
 const SEDES = ['UTP', 'Comfamiliar', 'Otra']
+const TIPO_DOC = [
+  { value: 'CC', label: 'Cédula de ciudadanía' },
+  { value: 'TI', label: 'Tarjeta de identidad' },
+  { value: 'CE', label: 'Cédula de extranjería' },
+]
+
+const EASE = [0.23, 1, 0.32, 1] as const
+
+function FieldError({ msg }: { msg?: string }) {
+  return (
+    <AnimatePresence>
+      {msg && (
+        <motion.p
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0 }}
+          className="text-[10px] text-[var(--color-danger-crimson)] mt-1"
+        >
+          {msg}
+        </motion.p>
+      )}
+    </AnimatePresence>
+  )
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="label-caps text-[9px] text-[var(--color-primary-fixed)]/70 border-b border-[rgba(230,255,0,0.15)] pb-2 mb-4">
+      {children}
+    </p>
+  )
+}
 
 export default function RegistroPage() {
   const router = useRouter()
   const { signUp } = useAuth()
 
+  // Identidad
   const [nombres, setNombres] = useState('')
   const [apellidos, setApellidos] = useState('')
+  const [tipoDoc, setTipoDoc] = useState('CC')
   const [cedula, setCedula] = useState('')
+
+  // Contacto
+  const [telefono, setTelefono] = useState('')
+  const [telefonoEmergencia, setTelefonoEmergencia] = useState('')
+  const [sede, setSede] = useState('')
+
+  // Salud
+  const [eps, setEps] = useState('')
+  const [dificultades, setDificultades] = useState('')
+
+  // Cuenta
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmar, setConfirmar] = useState('')
-  const [telefono, setTelefono] = useState('')
-  const [eps, setEps] = useState('')
-  const [sede, setSede] = useState('')
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -36,9 +78,13 @@ export default function RegistroPage() {
 
   function validar(): boolean {
     const e: Record<string, string> = {}
-    if (!nombres.trim()) e.nombres = 'Escribe tu nombre.'
-    if (!apellidos.trim()) e.apellidos = 'Escribe tus apellidos.'
-    if (!cedula.trim()) e.cedula = 'Escribe tu número de documento.'
+    if (!nombres.trim()) e.nombres = 'Campo obligatorio.'
+    if (!apellidos.trim()) e.apellidos = 'Campo obligatorio.'
+    if (!cedula.trim()) e.cedula = 'Campo obligatorio.'
+    if (!telefono.trim()) e.telefono = 'Campo obligatorio.'
+    if (!telefonoEmergencia.trim()) e.telefonoEmergencia = 'Campo obligatorio.'
+    if (!sede) e.sede = 'Selecciona tu sede.'
+    if (!eps.trim()) e.eps = 'Campo obligatorio.'
     if (!email.includes('@')) e.email = 'Correo inválido.'
     if (password.length < 6) e.password = 'Mínimo 6 caracteres.'
     if (password !== confirmar) e.confirmar = 'Las contraseñas no coinciden.'
@@ -51,12 +97,23 @@ export default function RegistroPage() {
     setError(null)
     if (!validar()) return
 
+    const dificultadesArr = dificultades.trim()
+      ? dificultades.split(',').map((d) => d.trim()).filter(Boolean)
+      : []
+
     setLoading(true)
-    const res = await signUp(email, password, nombres.trim(), apellidos.trim(), cedula.trim(), 'estudiante', {
-      telefono: telefono.trim() || undefined,
-      eps: eps.trim() || undefined,
-      sede: sede || undefined,
-    })
+    const res = await signUp(
+      email.trim(), password,
+      nombres.trim(), apellidos.trim(), cedula.trim(),
+      'estudiante',
+      {
+        telefono: telefono.trim(),
+        telefonoEmergencia: telefonoEmergencia.trim(),
+        eps: eps.trim(),
+        sede,
+        dificultades: dificultadesArr.length ? dificultadesArr : undefined,
+      },
+    )
     setLoading(false)
 
     if (res.ok) {
@@ -73,9 +130,10 @@ export default function RegistroPage() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
-        className="w-full max-w-[480px]"
+        transition={{ duration: 0.5, ease: EASE }}
+        className="w-full max-w-[520px]"
       >
+        {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <Link href="/" aria-label="Volver al inicio">
             <FarosWordmark />
@@ -93,109 +151,63 @@ export default function RegistroPage() {
           Crear cuenta
         </h1>
         <p className="text-[var(--color-on-surface-variant)] text-sm mb-8">
-          Completa tus datos para empezar a entrenar.
+          Completa todos tus datos para empezar a entrenar.
         </p>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Input
-                label="Nombres"
-                value={nombres}
-                onChange={(e) => setNombres(e.target.value)}
-                placeholder="Carlos"
-                autoComplete="given-name"
-                required
-              />
-              {errores.nombres && <p className="text-[10px] text-[var(--color-danger-crimson)] mt-1">{errores.nombres}</p>}
-            </div>
-            <div>
-              <Input
-                label="Apellidos"
-                value={apellidos}
-                onChange={(e) => setApellidos(e.target.value)}
-                placeholder="Méndez"
-                autoComplete="family-name"
-                required
-              />
-              {errores.apellidos && <p className="text-[10px] text-[var(--color-danger-crimson)] mt-1">{errores.apellidos}</p>}
-            </div>
-          </div>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-6">
 
-          <div>
-            <Input
-              label="Número de documento"
-              value={cedula}
-              onChange={(e) => setCedula(e.target.value)}
-              placeholder="1088301457"
-              inputMode="numeric"
-              required
-            />
-            {errores.cedula && <p className="text-[10px] text-[var(--color-danger-crimson)] mt-1">{errores.cedula}</p>}
-          </div>
-
-          <div>
-            <Input
-              label="Correo electrónico"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="tu@correo.com"
-              autoComplete="email"
-              required
-            />
-            {errores.email && <p className="text-[10px] text-[var(--color-danger-crimson)] mt-1">{errores.email}</p>}
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Input
-                label="Contraseña"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                autoComplete="new-password"
-                required
-              />
-              {errores.password && <p className="text-[10px] text-[var(--color-danger-crimson)] mt-1">{errores.password}</p>}
-            </div>
-            <div>
-              <Input
-                label="Confirmar contraseña"
-                type="password"
-                value={confirmar}
-                onChange={(e) => setConfirmar(e.target.value)}
-                placeholder="••••••••"
-                autoComplete="new-password"
-                required
-              />
-              {errores.confirmar && <p className="text-[10px] text-[var(--color-danger-crimson)] mt-1">{errores.confirmar}</p>}
-            </div>
-          </div>
-
-          <div className="border-t border-white/10 pt-4 space-y-4">
-            <p className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">Datos opcionales</p>
+          {/* ── Datos personales ── */}
+          <div className="space-y-4">
+            <SectionLabel>Datos personales</SectionLabel>
 
             <div className="grid grid-cols-2 gap-4">
-              <Input
-                label="Teléfono"
-                type="tel"
-                value={telefono}
-                onChange={(e) => setTelefono(e.target.value)}
-                placeholder="+57 310 000 0000"
-                autoComplete="tel"
-              />
-              <Input
-                label="EPS"
-                value={eps}
-                onChange={(e) => setEps(e.target.value)}
-                placeholder="Nueva EPS"
-              />
+              <div>
+                <Input label="Nombres *" value={nombres} onChange={(e) => setNombres(e.target.value)} placeholder="Carlos" autoComplete="given-name" />
+                <FieldError msg={errores.nombres} />
+              </div>
+              <div>
+                <Input label="Apellidos *" value={apellidos} onChange={(e) => setApellidos(e.target.value)} placeholder="Méndez" autoComplete="family-name" />
+                <FieldError msg={errores.apellidos} />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/70 mb-2 block">Tipo de documento *</label>
+                <select
+                  value={tipoDoc}
+                  onChange={(e) => setTipoDoc(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-[rgba(230,255,0,0.5)] focus:outline-none transition-colors"
+                >
+                  {TIPO_DOC.map((t) => (
+                    <option key={t.value} value={t.value} className="bg-[#0a0a0a]">{t.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <Input label="Número de documento *" value={cedula} onChange={(e) => setCedula(e.target.value)} placeholder="1088301457" inputMode="numeric" />
+                <FieldError msg={errores.cedula} />
+              </div>
+            </div>
+          </div>
+
+          {/* ── Contacto ── */}
+          <div className="space-y-4">
+            <SectionLabel>Contacto</SectionLabel>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Input label="Teléfono *" type="tel" value={telefono} onChange={(e) => setTelefono(e.target.value)} placeholder="+57 310 000 0000" autoComplete="tel" />
+                <FieldError msg={errores.telefono} />
+              </div>
+              <div>
+                <Input label="Teléfono de emergencia *" type="tel" value={telefonoEmergencia} onChange={(e) => setTelefonoEmergencia(e.target.value)} placeholder="+57 312 000 0000" />
+                <FieldError msg={errores.telefonoEmergencia} />
+              </div>
             </div>
 
             <div>
-              <label className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/70 mb-2 block">Sede</label>
+              <label className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/70 mb-2 block">Sede *</label>
               <select
                 value={sede}
                 onChange={(e) => setSede(e.target.value)}
@@ -206,6 +218,51 @@ export default function RegistroPage() {
                   <option key={s} value={s} className="bg-[#0a0a0a]">{s}</option>
                 ))}
               </select>
+              <FieldError msg={errores.sede} />
+            </div>
+          </div>
+
+          {/* ── Salud ── */}
+          <div className="space-y-4">
+            <SectionLabel>Información de salud</SectionLabel>
+
+            <div>
+              <Input label="EPS *" value={eps} onChange={(e) => setEps(e.target.value)} placeholder="Nueva EPS" />
+              <FieldError msg={errores.eps} />
+            </div>
+
+            <div>
+              <label className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/70 mb-2 block">
+                Dificultades médicas <span className="text-[var(--color-on-surface-variant)]/40">(opcional — separa por comas)</span>
+              </label>
+              <textarea
+                value={dificultades}
+                onChange={(e) => setDificultades(e.target.value)}
+                placeholder="Ej: asma, escoliosis leve"
+                rows={2}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/20 focus:border-[rgba(230,255,0,0.5)] focus:outline-none transition-colors resize-none"
+              />
+            </div>
+          </div>
+
+          {/* ── Cuenta ── */}
+          <div className="space-y-4">
+            <SectionLabel>Credenciales de acceso</SectionLabel>
+
+            <div>
+              <Input label="Correo electrónico *" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="tu@correo.com" autoComplete="email" />
+              <FieldError msg={errores.email} />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Input label="Contraseña *" type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="new-password" />
+                <FieldError msg={errores.password} />
+              </div>
+              <div>
+                <Input label="Confirmar contraseña *" type="password" value={confirmar} onChange={(e) => setConfirmar(e.target.value)} placeholder="••••••••" autoComplete="new-password" />
+                <FieldError msg={errores.confirmar} />
+              </div>
             </div>
           </div>
 
@@ -219,7 +276,7 @@ export default function RegistroPage() {
             </motion.p>
           )}
 
-          <Button type="submit" size="lg" fullWidth loading={loading} className="mt-2">
+          <Button type="submit" size="lg" fullWidth loading={loading}>
             {loading ? 'Creando cuenta…' : 'Crear cuenta'}
           </Button>
         </form>

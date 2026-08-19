@@ -93,7 +93,8 @@ service cloud.firestore {
         && request.resource.data.rol == 'estudiante'
         && request.resource.data.keys().hasOnly([
              'nombres', 'apellidos', 'cedula', 'email', 'rol',
-             'telefono', 'telefonoEmergencia', 'eps', 'sede', 'fecha_registro'
+             'telefono', 'telefonoEmergencia', 'eps', 'sede',
+             'dificultades', 'fecha_registro'
            ])
         && validString('nombres', 100)
         && validString('apellidos', 100)
