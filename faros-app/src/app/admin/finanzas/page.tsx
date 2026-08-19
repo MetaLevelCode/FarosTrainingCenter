@@ -38,8 +38,8 @@ export default function FinanzasPage() {
   const [procesando, setProcesando] = useState<string | null>(null)
   const [motivoRechazo, setMotivoRechazo] = useState<Record<string, string>>({})
   const [mostrarRechazo, setMostrarRechazo] = useState<string | null>(null)
-  // planSeleccionado[txId] = planId que el admin eligió para esa transacción
   const [planSeleccionado, setPlanSeleccionado] = useState<Record<string, string>>({})
+  const [comprobanteModal, setComprobanteModal] = useState<string | null>(null)
 
   useEffect(() => {
     Promise.all([getTransacciones(), getMovimientos(), getPlanes()])
@@ -171,15 +171,13 @@ export default function FinanzasPage() {
                           </p>
                         )}
                         {t.comprobante_url && (
-                          <a
-                            href={t.comprobante_url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="label-caps text-[10px] text-[var(--color-primary-fixed)] mt-1 inline-flex items-center gap-1"
+                          <button
+                            onClick={() => setComprobanteModal(t.comprobante_url!)}
+                            className="label-caps text-[10px] text-[var(--color-primary-fixed)] mt-1 inline-flex items-center gap-1 hover:underline"
                           >
                             <span className="material-symbols-outlined text-[14px]">receipt</span>
                             Ver comprobante
-                          </a>
+                          </button>
                         )}
                       </div>
                       <p className="font-display text-xl font-black text-[var(--color-primary-fixed)] shrink-0">
@@ -334,6 +332,45 @@ export default function FinanzasPage() {
           </Reveal>
         )}
       </div>
+
+      {/* ── Modal comprobante ── */}
+      {comprobanteModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+          onClick={() => setComprobanteModal(null)}
+        >
+          <div
+            className="relative w-full max-w-2xl max-h-[90vh] rounded-2xl overflow-hidden bg-[#111] border border-white/10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3 border-b border-white/10">
+              <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/60">Comprobante de pago</span>
+              <button
+                onClick={() => setComprobanteModal(null)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--color-on-surface-variant)] hover:text-white hover:bg-white/10 transition-colors"
+              >
+                <span className="material-symbols-outlined text-[18px]">close</span>
+              </button>
+            </div>
+            <div className="overflow-auto max-h-[80vh] flex items-center justify-center p-4">
+              {comprobanteModal.includes('.pdf') || comprobanteModal.includes('%2Fpdf') ? (
+                <iframe
+                  src={comprobanteModal}
+                  className="w-full h-[70vh] rounded-lg"
+                  title="Comprobante PDF"
+                />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={comprobanteModal}
+                  alt="Comprobante de pago"
+                  className="max-w-full max-h-[70vh] rounded-lg object-contain"
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </GuardedShell>
   )
 }
