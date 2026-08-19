@@ -57,7 +57,7 @@ interface AuthContextValue {
   error: string | null
   isMockMode: boolean
   signIn: (email: string, password: string) => Promise<{ ok: boolean; role?: UserRole; error?: string }>
-  signUp: (email: string, password: string, nombres: string, apellidos: string, cedula: string, rol: UserRole) => Promise<{ ok: boolean; error?: string }>
+  signUp: (email: string, password: string, nombres: string, apellidos: string, cedula: string, rol: UserRole, extra?: { telefono?: string; eps?: string; sede?: string }) => Promise<{ ok: boolean; error?: string }>
   signOut: () => Promise<void>
   clearError: () => void
 }
@@ -187,6 +187,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signUp = useCallback(async (
     email: string, password: string,
     nombres: string, apellidos: string, cedula: string, rol: UserRole,
+    extra?: { telefono?: string; eps?: string; sede?: string },
   ) => {
     setError(null)
     if (MAL_CONFIGURADO) {
@@ -201,13 +202,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ])
       const cred = await fbAuth.createUserWithEmailAndPassword(auth, email, password)
       await fbAuth.updateProfile(cred.user, { displayName: `${nombres} ${apellidos}` })
-      await setDoc(doc(db, 'usuarios', cred.user.uid), {
+      // Solo escribe campos del whitelist de firestore.rules (allow create)
+      const docData: Record<string, unknown> = {
         nombres, apellidos, cedula, email, rol,
         fecha_registro: Date.now(),
-        estadisticas: { clasesReservadas: 0, clasesAsistidas: 0, tasaAsistencia: 0 },
-        suscripcionActiva: null,
-        clasesDadas: rol === 'profesor' ? 0 : undefined,
-      })
+      }
+      if (extra?.telefono) docData.telefono = extra.telefono
+      if (extra?.eps) docData.eps = extra.eps
+      if (extra?.sede) docData.sede = extra.sede
+      await setDoc(doc(db, 'usuarios', cred.user.uid), docData)
       return { ok: true }
     } catch (e: any) {
       const msg = e?.code === 'auth/email-already-in-use'

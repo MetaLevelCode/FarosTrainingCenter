@@ -197,6 +197,13 @@ export default function LoginPage() {
             </Button>
           </form>
 
+          <p className="mt-6 text-center text-sm text-[var(--color-on-surface-variant)]/60">
+            ¿No tienes cuenta?{' '}
+            <Link href="/registro" className="text-[var(--color-primary-fixed)] hover:underline font-bold">
+              Regístrate aquí
+            </Link>
+          </p>
+
           {DEMO_UI && isMockMode && (
             <div className="mt-8">
               <div className="flex items-center gap-3 mb-4">
