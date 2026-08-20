@@ -273,6 +273,46 @@ export default function PlanesFlowPage() {
     )
   }
 
+  // Ya tiene una suscripción activa — no debería estar armando otro plan
+  const suscActiva = user?.suscripcionActiva
+  if (suscActiva && suscActiva.estado === 'activa' && !solicitado) {
+    const vence = new Date(suscActiva.fechaVencimiento).toLocaleDateString('es-CO', {
+      day: '2-digit', month: 'long', year: 'numeric',
+    })
+    return (
+      <div className="relative min-h-dvh flex flex-col">
+        <WaterBackground />
+        <header className="relative z-10 h-20 px-5 md:px-10 flex items-center justify-between shrink-0">
+          <FarosWordmark size="sm" />
+          <Link href="/dashboard" aria-label="Volver al dashboard"
+            className="w-11 h-11 rounded-full border border-white/10 bg-white/5 flex items-center justify-center text-[var(--color-on-surface-variant)] hover:text-white hover:border-white/25 transition-colors duration-200"
+          >
+            <span className="material-symbols-outlined text-[20px]">close</span>
+          </Link>
+        </header>
+        <main className="relative z-10 flex-1 flex items-center justify-center px-5 md:px-10 pb-10">
+          <div className="w-full max-w-md text-center">
+            <span className="w-20 h-20 rounded-full bg-[rgba(230,255,0,0.08)] border border-[rgba(230,255,0,0.3)] flex items-center justify-center mx-auto mb-7">
+              <span className="material-symbols-outlined text-[40px] text-[var(--color-primary-fixed)]">verified</span>
+            </span>
+            <h2 className="font-display text-2xl font-black text-white uppercase tracking-tight mb-4">
+              Ya tienes un plan activo
+            </h2>
+            <p className="text-sm text-[var(--color-on-surface-variant)]/70 leading-relaxed mb-2">
+              {suscActiva.nombrePlan}
+            </p>
+            <p className="text-xs text-[var(--color-on-surface-variant)]/50 leading-relaxed mb-8">
+              {suscActiva.sesionesRestantes} sesiones restantes · vence el {vence}
+            </p>
+            <Link href="/dashboard">
+              <Button variant="outline" size="lg" fullWidth>Volver al dashboard</Button>
+            </Link>
+          </div>
+        </main>
+      </div>
+    )
+  }
+
   // Tx con comprobante ya subido — esperando aprobación del admin
   if (txEnRevision) {
     return (
