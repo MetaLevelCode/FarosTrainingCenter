@@ -7,6 +7,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { FieldValue } from 'firebase-admin/firestore'
 import { getAdminAuth, getAdminDb } from '@/lib/admin'
+import { rateLimit, clientIp } from '@/lib/ratelimit'
+import { log } from '@/lib/logger'
 
 export const runtime = 'nodejs'
 
@@ -16,6 +18,13 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ claseId: string }> },
 ) {
+  const ip = clientIp(req)
+  const limited = rateLimit(req, 'clases:cancelar', { max: 20, windowMs: 60_000 })
+  if (limited) {
+    log.warn({ scope: 'clases', event: 'rate_limited', action: 'cancelar', ip })
+    return limited
+  }
+
   try {
     const token = req.headers.get('authorization')?.replace('Bearer ', '')
     if (!token) return NextResponse.json({ error: 'Sin autorización' }, { status: 401 })
@@ -70,14 +79,16 @@ export async function POST(
     })
 
     if ('error' in resultado) {
+      log.info({ scope: 'clases', event: 'cancelar_rechazado', ip, uid, claseId, motivo: resultado.error })
       return NextResponse.json({ error: resultado.error }, { status: resultado.status as number })
     }
+    log.info({ scope: 'clases', event: 'cancelado', ip, uid, claseId })
     return NextResponse.json({ ok: true })
   } catch (err: any) {
     if ((err?.code ?? '').startsWith('auth/')) {
       return NextResponse.json({ error: 'Token inválido o expirado' }, { status: 401 })
     }
-    console.error('[POST /api/clases/cancelar]', err)
+    log.error({ scope: 'clases', event: 'cancelar_error', ip, err })
     return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
   }
 }

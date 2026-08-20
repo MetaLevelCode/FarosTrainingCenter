@@ -6,6 +6,8 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getAdminAuth } from '@/lib/admin'
+import { log } from '@/lib/logger'
+import { clientIp } from '@/lib/ratelimit'
 
 export const runtime = 'nodejs'
 
@@ -117,7 +119,7 @@ export async function GET(req: NextRequest) {
     if ((err?.code ?? '').startsWith('auth/')) {
       return new NextResponse('Token inválido', { status: 401 })
     }
-    console.error('[GET /api/comprobante]', err)
+    log.error({ scope: 'comprobante', event: 'internal_error', ip: clientIp(req), err })
     return new NextResponse('Error interno', { status: 500 })
   }
 }

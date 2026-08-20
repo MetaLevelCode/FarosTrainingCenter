@@ -8,10 +8,20 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAdminAuth, getAdminDb } from '@/lib/admin'
 import { calcularPrecio, resumenPlan } from '@/lib/planes'
 import type { SeleccionPlan } from '@/lib/planes'
+import { rateLimit, clientIp } from '@/lib/ratelimit'
+import { log } from '@/lib/logger'
 
 export const runtime = 'nodejs'
 
 export async function POST(req: NextRequest) {
+  const ip = clientIp(req)
+  // 10 solicitudes por IP por minuto — un alumno legítimo hace 1 cada tanto
+  const limited = rateLimit(req, 'transacciones', { max: 10, windowMs: 60_000 })
+  if (limited) {
+    log.warn({ scope: 'transacciones', event: 'rate_limited', ip })
+    return limited
+  }
+
   try {
     const token = req.headers.get('authorization')?.replace('Bearer ', '')
     if (!token) {
@@ -60,13 +70,19 @@ export async function POST(req: NextRequest) {
       creadoEn: now,
     })
 
+    log.info({
+      scope: 'transacciones', event: 'creada', ip, uid,
+      transaccionId: ref.id,
+      monto_disponible: precio.disponible,
+      monto: precio.disponible ? precio.total : 0,
+    })
     return NextResponse.json({ transaccionId: ref.id })
   } catch (err: any) {
     const code: string = err?.code ?? ''
     if (code.startsWith('auth/')) {
       return NextResponse.json({ error: 'Token inválido o expirado' }, { status: 401 })
     }
-    console.error('[POST /api/transacciones]', err)
+    log.error({ scope: 'transacciones', event: 'internal_error', ip, err })
     return NextResponse.json({ error: 'Error interno del servidor' }, { status: 500 })
   }
 }

@@ -70,6 +70,24 @@ export default function FinanzasPage() {
       alert('Selecciona el plan de Firestore antes de aprobar.')
       return
     }
+    const plan = planes.find((p) => p.id === planId)
+    if (!plan) {
+      alert('El plan seleccionado ya no existe en Firestore.')
+      return
+    }
+
+    // Confirmación explícita: si el alumno pidió "tarifa por confirmar"
+    // (monto_disponible === false), el admin debe reconocer que va a cobrar
+    // el precio del plan que asignó, no el que declaró el alumno.
+    const alumno = t.nombre_usuario ?? t.usuarioId
+    const precioPlan = fmtCOP(plan.precio_total)
+    const msg = t.monto_disponible === false
+      ? `El alumno "${alumno}" pidió TARIFA POR CONFIRMAR.\n\n` +
+        `Al aprobar cobrarás:\n  Plan: ${plan.nombre}\n  Precio: ${precioPlan}\n\n` +
+        `¿Continuar?`
+      : `Aprobar el pago de ${alumno}:\n\n  Plan: ${plan.nombre}\n  Precio: ${precioPlan}\n\n¿Continuar?`
+    if (!window.confirm(msg)) return
+
     setProcesando(t.id)
     try {
       await aprobarTransaccion(t.id, user.uid, planId, t.usuarioId)
@@ -77,6 +95,7 @@ export default function FinanzasPage() {
       getMovimientos().then(setMovimientos).catch(console.error)
     } catch (err) {
       console.error(err)
+      alert('No se pudo aprobar la transacción. Intenta de nuevo.')
     } finally {
       setProcesando(null)
     }
