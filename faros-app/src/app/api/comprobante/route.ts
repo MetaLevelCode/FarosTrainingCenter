@@ -59,7 +59,10 @@ export async function GET(req: NextRequest) {
 
     let jpegSource: Buffer = buffer
     if (isHeic) {
-      const heicConvert = (await import('heic-convert')).default as any
+      // heic-convert no publica types
+      // @ts-expect-error — sin types
+      const mod = await import('heic-convert')
+      const heicConvert = (mod as { default: (opts: { buffer: Buffer; format: 'JPEG'; quality: number }) => Promise<ArrayBuffer> }).default
       const converted = await heicConvert({ buffer, format: 'JPEG', quality: 0.9 })
       jpegSource = Buffer.from(converted)
     }

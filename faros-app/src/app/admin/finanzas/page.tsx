@@ -418,7 +418,7 @@ export default function FinanzasPage() {
                   src={comprobanteProxyUrl}
                   alt="Comprobante de pago"
                   className="max-w-full max-h-[75vh] rounded-lg object-contain select-none"
-                  onError={() => setImgError('El <img> no pudo decodificar la respuesta del proxy')}
+                  onError={() => setImgError(true)}
                   onClick={(e) => e.preventDefault()}
                   draggable={false}
                 />
