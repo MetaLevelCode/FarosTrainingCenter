@@ -276,9 +276,16 @@ export default function PlanesFlowPage() {
   // Ya tiene una suscripción activa — no debería estar armando otro plan
   const suscActiva = user?.suscripcionActiva
   if (suscActiva && suscActiva.estado === 'activa' && !solicitado) {
-    const vence = new Date(suscActiva.fechaVencimiento).toLocaleDateString('es-CO', {
-      day: '2-digit', month: 'long', year: 'numeric',
-    })
+    // fechaVencimiento puede venir como number (ms), string ISO, o Firestore Timestamp
+    const raw: any = suscActiva.fechaVencimiento
+    const ms = typeof raw === 'number' ? raw
+      : typeof raw === 'string' ? Date.parse(raw)
+      : raw?.seconds ? raw.seconds * 1000
+      : raw?.toMillis ? raw.toMillis()
+      : NaN
+    const vence = Number.isFinite(ms)
+      ? new Date(ms).toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })
+      : null
     return (
       <div className="relative min-h-dvh flex flex-col">
         <WaterBackground />
@@ -302,7 +309,7 @@ export default function PlanesFlowPage() {
               {suscActiva.nombrePlan}
             </p>
             <p className="text-xs text-[var(--color-on-surface-variant)]/50 leading-relaxed mb-8">
-              {suscActiva.sesionesRestantes} sesiones restantes · vence el {vence}
+              {suscActiva.sesionesRestantes} sesiones restantes{vence ? ` · vence el ${vence}` : ''}
             </p>
             <Link href="/dashboard">
               <Button variant="outline" size="lg" fullWidth>Volver al dashboard</Button>
