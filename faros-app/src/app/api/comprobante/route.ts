@@ -11,6 +11,25 @@ export const runtime = 'nodejs'
 
 const STORAGE_HOST = 'firebasestorage.googleapis.com'
 
+// Cache in-memory de JPEGs convertidos. Persiste mientras la instancia esté
+// caliente — evita repetir la conversión HEIC (que puede tardar segundos)
+// cuando el admin abre el mismo comprobante varias veces o cambia entre
+// pendientes. TTL: 1 hora; máx: 32 entradas (~50MB máx).
+const cache = new Map<string, { buffer: Buffer; type: string; expires: number }>()
+const CACHE_TTL_MS = 60 * 60 * 1000
+const CACHE_MAX = 32
+
+function getCached(url: string) {
+  const entry = cache.get(url)
+  if (!entry) return null
+  if (entry.expires < Date.now()) { cache.delete(url); return null }
+  return entry
+}
+function setCached(url: string, buffer: Buffer, type: string) {
+  if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value!)
+  cache.set(url, { buffer, type, expires: Date.now() + CACHE_TTL_MS })
+}
+
 export async function GET(req: NextRequest) {
   try {
     const token = req.headers.get('authorization')?.replace('Bearer ', '')
@@ -34,6 +53,14 @@ export async function GET(req: NextRequest) {
       return new NextResponse('URL no permitida', { status: 400 })
     }
 
+    // Cache hit — devolver directo
+    const cached = getCached(url)
+    if (cached) {
+      return new NextResponse(cached.buffer, {
+        headers: { 'Content-Type': cached.type, 'Cache-Control': 'private, max-age=3600' },
+      })
+    }
+
     const upstream = await fetch(url)
     if (!upstream.ok) {
       return new NextResponse('No se pudo obtener el archivo', { status: 502 })
@@ -44,6 +71,7 @@ export async function GET(req: NextRequest) {
 
     // PDFs se devuelven tal cual
     if (contentType.includes('pdf')) {
+      setCached(url, buffer, 'application/pdf')
       return new NextResponse(buffer, {
         headers: { 'Content-Type': 'application/pdf', 'Cache-Control': 'private, max-age=3600' },
       })
@@ -71,12 +99,14 @@ export async function GET(req: NextRequest) {
     try {
       const sharp = (await import('sharp')).default
       const jpeg = await sharp(jpegSource).rotate().jpeg({ quality: 90 }).toBuffer()
+      setCached(url, jpeg, 'image/jpeg')
       return new NextResponse(jpeg, {
         headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=3600' },
       })
     } catch (sharpErr: any) {
       // Si sharp falla pero heic-convert ya produjo un JPEG, devolver ese
       if (isHeic) {
+        setCached(url, jpegSource, 'image/jpeg')
         return new NextResponse(jpegSource, {
           headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=3600' },
         })

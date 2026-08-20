@@ -364,10 +364,10 @@ export default function FinanzasPage() {
           onClick={() => setComprobanteModal(null)}
         >
           <div
-            className="relative w-full max-w-2xl rounded-2xl overflow-hidden bg-[#111] border border-white/10"
+            className="relative w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl overflow-hidden bg-[#111] border border-white/10"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between px-5 py-3 border-b border-white/10">
+            <div className="flex items-center justify-between px-5 py-3 border-b border-white/10 shrink-0">
               <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/60">Comprobante de pago</span>
               <div className="flex items-center gap-2">
                 <a
@@ -387,7 +387,7 @@ export default function FinanzasPage() {
                 </button>
               </div>
             </div>
-            <div className="flex items-center justify-center p-4 min-h-[300px] bg-black/20">
+            <div className="flex-1 flex items-center justify-center p-4 min-h-[300px] bg-black/20 overflow-auto">
               {comprobanteModal.includes('.pdf') || comprobanteModal.includes('%2Fpdf') ? (
                 <iframe
                   src={comprobanteModal}
@@ -417,7 +417,7 @@ export default function FinanzasPage() {
                 <img
                   src={comprobanteProxyUrl}
                   alt="Comprobante de pago"
-                  className="max-w-full max-h-[75vh] rounded-lg object-contain select-none"
+                  className="max-w-full max-h-full rounded-lg object-contain select-none"
                   onError={() => setImgError(true)}
                   onClick={(e) => e.preventDefault()}
                   draggable={false}
