@@ -14,6 +14,7 @@ const STORAGE_HOST = 'firebasestorage.googleapis.com'
 export async function GET(req: NextRequest) {
   try {
     const token = req.headers.get('authorization')?.replace('Bearer ', '')
+      ?? req.nextUrl.searchParams.get('token')
     if (!token) return new NextResponse('Sin autorización', { status: 401 })
 
     const decoded = await getAdminAuth().verifyIdToken(token)
@@ -39,14 +40,46 @@ export async function GET(req: NextRequest) {
     }
 
     const contentType = upstream.headers.get('content-type') ?? 'application/octet-stream'
-    const buffer = await upstream.arrayBuffer()
+    const buffer = Buffer.from(await upstream.arrayBuffer())
 
-    return new NextResponse(buffer, {
-      headers: {
-        'Content-Type': contentType,
-        'Cache-Control': 'private, max-age=3600',
-      },
-    })
+    // PDFs se devuelven tal cual
+    if (contentType.includes('pdf')) {
+      return new NextResponse(buffer, {
+        headers: { 'Content-Type': 'application/pdf', 'Cache-Control': 'private, max-age=3600' },
+      })
+    }
+
+    // Detectar HEIC/HEIF por magic bytes (fotos de iPhone que Chrome Mac no puede renderizar)
+    // Formato ISOBMFF: bytes 4-7 == 'ftyp', bytes 8-11 indican el brand
+    const isHeic = buffer.length > 12
+      && buffer.slice(4, 8).toString('ascii') === 'ftyp'
+      && ['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1'].includes(
+        buffer.slice(8, 12).toString('ascii'),
+      )
+
+    let jpegSource: Buffer = buffer
+    if (isHeic) {
+      const heicConvert = (await import('heic-convert')).default as any
+      const converted = await heicConvert({ buffer, format: 'JPEG', quality: 0.9 })
+      jpegSource = Buffer.from(converted)
+    }
+
+    // Normalizar a JPEG con sharp para garantizar compatibilidad
+    try {
+      const sharp = (await import('sharp')).default
+      const jpeg = await sharp(jpegSource).rotate().jpeg({ quality: 90 }).toBuffer()
+      return new NextResponse(jpeg, {
+        headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=3600' },
+      })
+    } catch (sharpErr: any) {
+      // Si sharp falla pero heic-convert ya produjo un JPEG, devolver ese
+      if (isHeic) {
+        return new NextResponse(jpegSource, {
+          headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=3600' },
+        })
+      }
+      return new NextResponse(`sharp error: ${sharpErr?.message ?? String(sharpErr)}`, { status: 500 })
+    }
   } catch (err: any) {
     if ((err?.code ?? '').startsWith('auth/')) {
       return new NextResponse('Token inválido', { status: 401 })

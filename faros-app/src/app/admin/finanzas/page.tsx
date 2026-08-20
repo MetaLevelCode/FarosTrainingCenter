@@ -183,15 +183,14 @@ export default function FinanzasPage() {
                               try {
                                 const { getAuth } = await import('firebase/auth')
                                 const idToken = await getAuth().currentUser?.getIdToken()
-                                const proxyUrl = `/api/comprobante?url=${encodeURIComponent(t.comprobante_url!)}`
-                                // Pre-fetch con token para cachear en el browser
-                                const res = await fetch(proxyUrl, { headers: { Authorization: `Bearer ${idToken}` } })
-                                if (res.ok) {
-                                  const blob = await res.blob()
-                                  setComprobanteProxyUrl(URL.createObjectURL(blob))
-                                } else {
-                                  setImgError(true)
-                                }
+                                if (!idToken) throw new Error('sin token')
+                                const res = await fetch(
+                                  `/api/comprobante?url=${encodeURIComponent(t.comprobante_url!)}`,
+                                  { headers: { Authorization: `Bearer ${idToken}` } },
+                                )
+                                if (!res.ok) throw new Error(`${res.status}`)
+                                const blob = await res.blob()
+                                setComprobanteProxyUrl(URL.createObjectURL(blob))
                               } catch {
                                 setImgError(true)
                               } finally {
@@ -370,12 +369,23 @@ export default function FinanzasPage() {
           >
             <div className="flex items-center justify-between px-5 py-3 border-b border-white/10">
               <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/60">Comprobante de pago</span>
-              <button
-                onClick={() => setComprobanteModal(null)}
-                className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--color-on-surface-variant)] hover:text-white hover:bg-white/10 transition-colors"
-              >
-                <span className="material-symbols-outlined text-[18px]">close</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <a
+                  href={comprobanteModal}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--color-on-surface-variant)] hover:text-white hover:bg-white/10 transition-colors"
+                  title="Abrir en nueva pestaña"
+                >
+                  <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                </a>
+                <button
+                  onClick={() => setComprobanteModal(null)}
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--color-on-surface-variant)] hover:text-white hover:bg-white/10 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[18px]">close</span>
+                </button>
+              </div>
             </div>
             <div className="flex items-center justify-center p-4 min-h-[300px] bg-black/20">
               {comprobanteModal.includes('.pdf') || comprobanteModal.includes('%2Fpdf') ? (
@@ -387,7 +397,7 @@ export default function FinanzasPage() {
               ) : imgError ? (
                 <div className="text-center space-y-4 py-8">
                   <span className="material-symbols-outlined text-[48px] text-white/20">broken_image</span>
-                  <p className="text-sm text-[var(--color-on-surface-variant)]/60">No se pudo cargar la imagen.</p>
+                  <p className="text-sm text-[var(--color-on-surface-variant)]/60">No se pudo cargar el comprobante.</p>
                   <a
                     href={comprobanteModal}
                     target="_blank"
@@ -395,26 +405,24 @@ export default function FinanzasPage() {
                     className="inline-flex items-center gap-2 text-[var(--color-primary-fixed)] text-sm hover:underline"
                   >
                     <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-                    Abrir imagen
+                    Abrir directamente
                   </a>
                 </div>
-              ) : (
-                <div className="relative w-full flex items-center justify-center">
-                  {imgLoading && (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <span className="w-8 h-8 border-2 border-white/20 border-t-[var(--color-primary-fixed)] rounded-full animate-spin" />
-                    </div>
-                  )}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={comprobanteProxyUrl ?? ''}
-                    alt="Comprobante de pago"
-                    className={`max-w-full max-h-[75vh] rounded-lg object-contain select-none transition-opacity duration-300 ${comprobanteProxyUrl ? 'opacity-100' : 'opacity-0'}`}
-                    onClick={(e) => e.preventDefault()}
-                    draggable={false}
-                  />
+              ) : imgLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <span className="w-8 h-8 border-2 border-white/20 border-t-[var(--color-primary-fixed)] rounded-full animate-spin" />
                 </div>
-              )}
+              ) : comprobanteProxyUrl ? (
+                /* eslint-disable-next-line @next/next/no-img-element */
+                <img
+                  src={comprobanteProxyUrl}
+                  alt="Comprobante de pago"
+                  className="max-w-full max-h-[75vh] rounded-lg object-contain select-none"
+                  onError={() => setImgError('El <img> no pudo decodificar la respuesta del proxy')}
+                  onClick={(e) => e.preventDefault()}
+                  draggable={false}
+                />
+              ) : null}
             </div>
           </div>
         </div>

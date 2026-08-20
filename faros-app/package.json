@@ -12,6 +12,7 @@
   "dependencies": {
     "firebase": "11.2.0",
     "firebase-admin": "^14.2.0",
+    "heic-convert": "^2.1.0",
     "motion": "11.18.2",
     "next": "^15.3.9",
     "react": "19.0.0",
