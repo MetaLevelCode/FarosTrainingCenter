@@ -16,8 +16,10 @@ import { useAuth } from '@/contexts/AuthContext'
 import { FarosWordmark, Spinner, Button } from '@/components/ui'
 import { WaterBackground } from '@/components/shared/WaterBackground'
 import { SubirComprobante } from '@/components/dashboard/SubirComprobante'
-import { getTransaccionesUsuario } from '@/lib/firestore'
+import { getTransaccionesUsuario, getSuscripcionesUsuario } from '@/lib/firestore'
 import { parseVencimiento } from '@/lib/matricula'
+import type { Suscripcion } from '@/lib/types'
+import { Card } from '@/components/ui'
 import {
   TIPOS, GRUPOS, GRUPO_POR_SESION, PERSONALES, CONJUNTOS, FRECUENCIAS,
   SELECCION_INICIAL, calcularPrecio, resumenPlan, fmtCOP,
@@ -173,6 +175,7 @@ export default function PlanesFlowPage() {
   const [checkingPendiente, setCheckingPendiente] = useState(true)
   const [txPendienteId, setTxPendienteId] = useState<string | null>(null)
   const [txEnRevision, setTxEnRevision] = useState(false)
+  const [suscripcionDetalle, setSuscripcionDetalle] = useState<Suscripcion | null>(null)
 
   useEffect(() => {
     if (!user?.uid) { setCheckingPendiente(false); return }
@@ -190,6 +193,19 @@ export default function PlanesFlowPage() {
       .catch(() => {})
       .finally(() => setCheckingPendiente(false))
   }, [user?.uid])
+
+  // Detalle de la suscripción activa — necesario para conocer sesiones_compradas
+  // y fecha_compra, que suscripcionActiva (denormalizado en usuario) no incluye.
+  useEffect(() => {
+    const suscId = user?.suscripcionActiva?.suscripcionId
+    if (!user?.uid || !suscId) return
+    getSuscripcionesUsuario(user.uid)
+      .then((ss) => {
+        const s = ss.find((x) => x.id === suscId) ?? ss[0] ?? null
+        setSuscripcionDetalle(s)
+      })
+      .catch(() => {})
+  }, [user?.uid, user?.suscripcionActiva?.suscripcionId])
 
   // Restaura el plan que un invitado dejó a medias antes de iniciar sesión.
   useEffect(() => {
@@ -274,11 +290,34 @@ export default function PlanesFlowPage() {
     )
   }
 
-  // Ya tiene una suscripción activa — no debería estar armando otro plan
+  // Ya tiene una suscripción activa — muestra resumen y bloquea el wizard
   const suscActiva = user?.suscripcionActiva
   if (suscActiva && suscActiva.estado === 'activa' && !solicitado) {
     const venceDate = parseVencimiento(suscActiva.fechaVencimiento)
     const vence = venceDate?.toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })
+    const hoy = Date.now()
+    const diasRestantes = venceDate
+      ? Math.max(0, Math.ceil((venceDate.getTime() - hoy) / 86_400_000))
+      : null
+
+    const totalSesiones = suscripcionDetalle?.sesiones_compradas
+      ?? (suscActiva.sesionesRestantes + (user?.estadisticas?.clasesAsistidas ?? 0))
+    const restantes = suscActiva.sesionesRestantes
+    const usadas = Math.max(0, totalSesiones - restantes)
+    const pctSesiones = totalSesiones > 0 ? Math.min(100, Math.round((usadas / totalSesiones) * 100)) : 0
+
+    const compraDate = parseVencimiento(suscripcionDetalle?.fecha_compra)
+    const duracionTotalMs = compraDate && venceDate ? venceDate.getTime() - compraDate.getTime() : 0
+    const transcurridoMs = compraDate ? Math.max(0, hoy - compraDate.getTime()) : 0
+    const pctTiempo = duracionTotalMs > 0 ? Math.min(100, Math.round((transcurridoMs / duracionTotalMs) * 100)) : 0
+
+    const asistidas = user?.estadisticas?.clasesAsistidas ?? 0
+    const reservadas = user?.estadisticas?.clasesReservadas ?? 0
+    const tasa = user?.estadisticas?.tasaAsistencia ?? 0
+
+    const vencePronto = diasRestantes !== null && diasRestantes <= 7
+    const tono = vencePronto ? 'danger' : 'primary'
+
     return (
       <div className="relative min-h-dvh flex flex-col">
         <WaterBackground />
@@ -290,23 +329,164 @@ export default function PlanesFlowPage() {
             <span className="material-symbols-outlined text-[20px]">close</span>
           </Link>
         </header>
-        <main className="relative z-10 flex-1 flex items-center justify-center px-5 md:px-10 pb-10">
-          <div className="w-full max-w-md text-center">
-            <span className="w-20 h-20 rounded-full bg-[rgba(230,255,0,0.08)] border border-[rgba(230,255,0,0.3)] flex items-center justify-center mx-auto mb-7">
-              <span className="material-symbols-outlined text-[40px] text-[var(--color-primary-fixed)]">verified</span>
-            </span>
-            <h2 className="font-display text-2xl font-black text-white uppercase tracking-tight mb-4">
-              Ya tienes un plan activo
-            </h2>
-            <p className="text-sm text-[var(--color-on-surface-variant)]/70 leading-relaxed mb-2">
-              {suscActiva.nombrePlan}
-            </p>
-            <p className="text-xs text-[var(--color-on-surface-variant)]/50 leading-relaxed mb-8">
-              {suscActiva.sesionesRestantes} sesiones restantes{vence ? ` · vence el ${vence}` : ''}
-            </p>
-            <Link href="/dashboard">
-              <Button variant="outline" size="lg" fullWidth>Volver al dashboard</Button>
-            </Link>
+
+        <main className="relative z-10 flex-1 px-5 md:px-10 pb-16 pt-4">
+          <div className="w-full max-w-3xl mx-auto space-y-8">
+
+            {/* ── Encabezado ── */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, ease: EASE }}
+            >
+              <p className="label-caps text-[var(--color-primary-fixed)] mb-3 tracking-[0.3em]">Tu plan activo</p>
+              <h2 className="font-display text-3xl md:text-5xl font-black text-white leading-none tracking-tighter uppercase mb-3">
+                {suscActiva.nombrePlan}
+              </h2>
+              <div className="flex items-center gap-2 text-xs text-[var(--color-on-surface-variant)]/60">
+                <span className="w-2 h-2 rounded-full bg-[var(--color-success-emerald)] shadow-[0_0_10px_currentColor]" />
+                <span className="label-caps tracking-[0.15em]">Activo</span>
+              </div>
+            </motion.div>
+
+            {/* ── KPIs principales ── */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.1, ease: EASE }}
+              className="grid grid-cols-1 md:grid-cols-2 gap-4"
+            >
+              {/* Sesiones restantes con barra de progreso */}
+              <Card padding="lg">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="material-symbols-outlined text-[22px] text-[var(--color-primary-fixed)]">event_available</span>
+                  <span className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">Sesiones</span>
+                </div>
+                <div className="flex items-baseline gap-2 mb-1">
+                  <span className="font-display text-5xl font-black text-white leading-none">{restantes}</span>
+                  <span className="text-sm text-[var(--color-on-surface-variant)]/50">/ {totalSesiones}</span>
+                </div>
+                <p className="text-xs text-[var(--color-on-surface-variant)]/60 mb-4">
+                  {usadas} usadas · {restantes} disponibles
+                </p>
+                <div className="h-1.5 rounded-full bg-white/8 overflow-hidden">
+                  <motion.div
+                    className="h-full rounded-full bg-[var(--color-primary-fixed)] shadow-[0_0_12px_rgba(230,255,0,0.5)]"
+                    initial={{ width: 0 }}
+                    animate={{ width: `${pctSesiones}%` }}
+                    transition={{ duration: 0.8, delay: 0.3, ease: EASE }}
+                  />
+                </div>
+              </Card>
+
+              {/* Vencimiento con días restantes */}
+              <Card padding="lg">
+                <div className="flex items-center justify-between mb-4">
+                  <span className={`material-symbols-outlined text-[22px] ${
+                    tono === 'danger' ? 'text-[var(--color-danger-crimson)]' : 'text-[var(--color-primary-fixed)]'
+                  }`}>schedule</span>
+                  <span className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">Vencimiento</span>
+                </div>
+                <div className="flex items-baseline gap-2 mb-1">
+                  <span className={`font-display text-5xl font-black leading-none ${
+                    tono === 'danger' ? 'text-[var(--color-danger-crimson)]' : 'text-white'
+                  }`}>
+                    {diasRestantes ?? '—'}
+                  </span>
+                  <span className="text-sm text-[var(--color-on-surface-variant)]/50">días</span>
+                </div>
+                <p className="text-xs text-[var(--color-on-surface-variant)]/60 mb-4">
+                  {vence ? `Vence el ${vence}` : 'Fecha no disponible'}
+                </p>
+                {duracionTotalMs > 0 && (
+                  <div className="h-1.5 rounded-full bg-white/8 overflow-hidden">
+                    <motion.div
+                      className={`h-full rounded-full ${
+                        tono === 'danger'
+                          ? 'bg-[var(--color-danger-crimson)]'
+                          : 'bg-white/40'
+                      }`}
+                      initial={{ width: 0 }}
+                      animate={{ width: `${pctTiempo}%` }}
+                      transition={{ duration: 0.8, delay: 0.4, ease: EASE }}
+                    />
+                  </div>
+                )}
+              </Card>
+            </motion.div>
+
+            {/* ── Aprovechamiento ── */}
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.18, ease: EASE }}
+            >
+              <Card padding="lg">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mb-1">Aprovechamiento del plan</p>
+                    <h3 className="font-display text-xl font-extrabold text-white uppercase tracking-tight">
+                      {tasa >= 80 ? 'Excelente ritmo' : tasa >= 50 ? 'Vas bien' : tasa > 0 ? 'Ponle el pecho' : 'Sin registros aún'}
+                    </h3>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-display text-4xl font-black text-[var(--color-primary-fixed)] leading-none">
+                      {Math.round(tasa * 100)}%
+                    </p>
+                    <p className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50 mt-1">Asistencia</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-6 pt-6 border-t border-white/5">
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="material-symbols-outlined text-[16px] text-[var(--color-success-emerald)]">check_circle</span>
+                      <span className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/60">Clases hechas</span>
+                    </div>
+                    <p className="font-display text-2xl font-black text-white">{asistidas}</p>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="material-symbols-outlined text-[16px] text-white/40">calendar_month</span>
+                      <span className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/60">Reservadas</span>
+                    </div>
+                    <p className="font-display text-2xl font-black text-white">{reservadas}</p>
+                  </div>
+                </div>
+              </Card>
+            </motion.div>
+
+            {/* ── Aviso vencimiento cercano ── */}
+            {vencePronto && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5, delay: 0.28, ease: EASE }}
+                className="rounded-2xl border border-[rgba(239,68,68,0.25)] bg-[rgba(239,68,68,0.06)] p-5 flex items-center gap-4"
+              >
+                <span className="material-symbols-outlined text-[22px] text-[var(--color-danger-crimson)] shrink-0">warning</span>
+                <div className="flex-1 min-w-0">
+                  <p className="font-display font-black text-white text-sm">Tu plan vence pronto</p>
+                  <p className="text-xs text-[var(--color-on-surface-variant)]/60 mt-0.5">
+                    Contacta a administración para renovarlo antes de que caduque.
+                  </p>
+                </div>
+              </motion.div>
+            )}
+
+            {/* ── Acción ── */}
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.35, ease: EASE }}
+            >
+              <Link href="/dashboard">
+                <Button variant="outline" size="lg" fullWidth>
+                  <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+                  Volver al dashboard
+                </Button>
+              </Link>
+            </motion.div>
           </div>
         </main>
       </div>
