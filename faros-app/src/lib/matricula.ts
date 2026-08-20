@@ -56,6 +56,26 @@ export function cuposDisponibles(susc: SuscripcionActiva | null | undefined): nu
   return Math.max(0, susc?.sesionesRestantes ?? 0)
 }
 
+/**
+ * Normaliza fechaVencimiento a un `Date` o null. Acepta number (ms), string ISO
+ * y Firestore Timestamp — devuelve null si el valor no es una fecha válida.
+ */
+export function parseVencimiento(raw: unknown): Date | null {
+  if (raw == null) return null
+  let ms: number
+  if (typeof raw === 'number') ms = raw
+  else if (typeof raw === 'string') ms = Date.parse(raw)
+  else if (typeof raw === 'object') {
+    const r = raw as { seconds?: number; toMillis?: () => number }
+    if (typeof r.toMillis === 'function') ms = r.toMillis()
+    else if (typeof r.seconds === 'number') ms = r.seconds * 1000
+    else return null
+  } else return null
+  if (!Number.isFinite(ms)) return null
+  const d = new Date(ms)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
 /** Solo el alumno con plan activo (confirmado y pagado) tiene acceso total. */
 export function esAlumnoCompleto(fase: Fase): boolean {
   return fase === 'activo'

@@ -20,7 +20,7 @@ import { BrandImageStrip } from '@/components/shared/BrandImageStrip'
 import type { Transaccion } from '@/lib/types'
 import { Semanario } from '@/components/dashboard/Semanario'
 import { MensajesAlumno } from '@/components/dashboard/MensajesAlumno'
-import { faseDeSuscripcion, cuposDisponibles } from '@/lib/matricula'
+import { faseDeSuscripcion, cuposDisponibles, parseVencimiento } from '@/lib/matricula'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -59,9 +59,9 @@ export default function DashboardPage() {
   // Solo se calcula cuando la tx ya fue consultada (txCargada) para evitar
   // mostrar 'vencido' durante la carga y luego saltar a 'pendiente'.
   const fase = txCargada ? faseDeSuscripcion(susc, txPendiente) : null
-  const vencimiento = susc?.fechaVencimiento
-    ? new Intl.DateTimeFormat('es-CO', { day: '2-digit', month: 'short', year: 'numeric' })
-        .format(new Date(susc.fechaVencimiento))
+  const vencimientoDate = parseVencimiento(susc?.fechaVencimiento)
+  const vencimiento = vencimientoDate
+    ? new Intl.DateTimeFormat('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }).format(vencimientoDate)
     : undefined
 
   useEffect(() => {
@@ -384,7 +384,7 @@ export default function DashboardPage() {
                     <div className="flex items-center justify-between py-4 border-y border-white/5 mb-5">
                       <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50">Vencimiento</span>
                       <span className="font-display font-black text-white text-sm">
-                        {new Date(susc.fechaVencimiento).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' })}
+                        {vencimientoDate ? vencimientoDate.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }) : '—'}
                       </span>
                     </div>
                   </>

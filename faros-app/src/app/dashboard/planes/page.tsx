@@ -17,6 +17,7 @@ import { FarosWordmark, Spinner, Button } from '@/components/ui'
 import { WaterBackground } from '@/components/shared/WaterBackground'
 import { SubirComprobante } from '@/components/dashboard/SubirComprobante'
 import { getTransaccionesUsuario } from '@/lib/firestore'
+import { parseVencimiento } from '@/lib/matricula'
 import {
   TIPOS, GRUPOS, GRUPO_POR_SESION, PERSONALES, CONJUNTOS, FRECUENCIAS,
   SELECCION_INICIAL, calcularPrecio, resumenPlan, fmtCOP,
@@ -276,16 +277,8 @@ export default function PlanesFlowPage() {
   // Ya tiene una suscripción activa — no debería estar armando otro plan
   const suscActiva = user?.suscripcionActiva
   if (suscActiva && suscActiva.estado === 'activa' && !solicitado) {
-    // fechaVencimiento puede venir como number (ms), string ISO, o Firestore Timestamp
-    const raw: any = suscActiva.fechaVencimiento
-    const ms = typeof raw === 'number' ? raw
-      : typeof raw === 'string' ? Date.parse(raw)
-      : raw?.seconds ? raw.seconds * 1000
-      : raw?.toMillis ? raw.toMillis()
-      : NaN
-    const vence = Number.isFinite(ms)
-      ? new Date(ms).toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })
-      : null
+    const venceDate = parseVencimiento(suscActiva.fechaVencimiento)
+    const vence = venceDate?.toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })
     return (
       <div className="relative min-h-dvh flex flex-col">
         <WaterBackground />
