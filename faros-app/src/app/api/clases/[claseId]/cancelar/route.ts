@@ -68,10 +68,13 @@ export async function POST(
         actualizadoEn: Date.now(),
       })
 
+      const asistidas = (usu.estadisticas?.clasesAsistidas as number) ?? 0
       const clasesReservadas: number = usu.estadisticas?.clasesReservadas ?? 0
       if (clasesReservadas > 0) {
+        const reservadas = clasesReservadas - 1
         tx.update(usuSnap.ref, {
-          'estadisticas.clasesReservadas': FieldValue.increment(-1),
+          'estadisticas.clasesReservadas': reservadas,
+          'estadisticas.tasaAsistencia': reservadas > 0 ? Math.min(1, asistidas / reservadas) : 0,
         })
       }
 

@@ -72,8 +72,12 @@ export async function POST(
         estudiantes_inscritos: FieldValue.arrayUnion(uid),
         actualizadoEn: Date.now(),
       })
+
+      const asistidas = (usu.estadisticas?.clasesAsistidas as number) ?? 0
+      const reservadas = ((usu.estadisticas?.clasesReservadas as number) ?? 0) + 1
       tx.update(usuSnap.ref, {
-        'estadisticas.clasesReservadas': FieldValue.increment(1),
+        'estadisticas.clasesReservadas': reservadas,
+        'estadisticas.tasaAsistencia': reservadas > 0 ? Math.min(1, asistidas / reservadas) : 0,
       })
 
       return { ok: true }

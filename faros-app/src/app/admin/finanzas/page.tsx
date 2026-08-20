@@ -12,7 +12,7 @@ import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button } from '@/components/ui'
-import { getTransacciones, getMovimientos, aprobarTransaccion, rechazarTransaccion, getPlanes } from '@/lib/firestore'
+import { getTransacciones, getMovimientos, aprobarTransaccion, getPlanes } from '@/lib/firestore'
 import type { Transaccion, Movimiento, Plan } from '@/lib/types'
 import { fmtCOP, resumenPlan } from '@/lib/planes'
 
@@ -106,11 +106,26 @@ export default function FinanzasPage() {
     const motivo = motivoRechazo[t.id] ?? 'Sin motivo especificado'
     setProcesando(t.id)
     try {
-      await rechazarTransaccion(t.id, user.uid, motivo)
-      setTransacciones((prev) => prev.map((x) => x.id === t.id ? { ...x, estado: 'rechazada', motivo_rechazo: motivo } : x))
+      const { getAuth } = await import('firebase/auth')
+      const idToken = await getAuth().currentUser?.getIdToken()
+      if (!idToken) throw new Error('Sesión expirada')
+
+      const res = await fetch(`/api/transacciones/${t.id}/rechazar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+        body: JSON.stringify({ motivo }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        throw new Error(data.error ?? `HTTP ${res.status}`)
+      }
+      setTransacciones((prev) => prev.map((x) => x.id === t.id
+        ? { ...x, estado: 'rechazada', motivo_rechazo: motivo, comprobante_url: null }
+        : x))
       setMostrarRechazo(null)
-    } catch (err) {
+    } catch (err: any) {
       console.error(err)
+      alert(err?.message ?? 'No se pudo rechazar la transacción.')
     } finally {
       setProcesando(null)
     }

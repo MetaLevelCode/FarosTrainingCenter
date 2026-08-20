@@ -242,6 +242,17 @@ export async function getAsistenciasClase(claseId: string): Promise<Asistencia[]
   return snap.docs.map(docToId<Asistencia>)
 }
 
+/**
+ * Registra o corrige la asistencia del alumno a una clase.
+ *
+ * La delta contra el estado previo determina el ajuste:
+ *   nuevo=true, previo=false|null → +1 clasesAsistidas, -1 sesionesRestantes
+ *   nuevo=false, previo=true      → -1 clasesAsistidas, +1 sesionesRestantes
+ *   sin cambio                    → solo actualiza timestamp
+ *
+ * `tasaAsistencia` se recalcula como asistidas / reservadas y se guarda
+ * de forma denormalizada para que los rankings no la calculen a mano.
+ */
 export async function registrarAsistencia(
   claseId: string,
   usuarioId: string,
@@ -257,8 +268,18 @@ export async function registrarAsistencia(
 
   await runTransaction(db, async (tx) => {
     const now = Date.now()
-    const existingSnap = await tx.get(asistenciaRef)
+    const usuRef = doc(db, 'usuarios', usuarioId)
 
+    // Lecturas primero (regla de Firestore: todas las gets antes de writes)
+    const [existingSnap, usuSnap] = await Promise.all([
+      tx.get(asistenciaRef),
+      tx.get(usuRef),
+    ])
+
+    const previo = existingSnap.exists() ? Boolean(existingSnap.data()!.asistio) : null
+    const delta = asistio === previo ? 0 : (asistio ? 1 : -1)
+
+    // 1. Upsert asistencia
     if (existingSnap.exists()) {
       tx.update(asistenciaRef, { asistio, fecha_registro: now })
     } else {
@@ -271,25 +292,38 @@ export async function registrarAsistencia(
       })
     }
 
-    if (asistio) {
-      const usuRef = doc(db, 'usuarios', usuarioId)
-      const usuSnap = await tx.get(usuRef)
-      const usu = usuSnap.data() as Record<string, any> | undefined
-      const sesionesRestantes: number = usu?.suscripcionActiva?.sesionesRestantes ?? 0
-      if (usu && sesionesRestantes > 0) {
-        const restantes = sesionesRestantes - 1
-        const nuevoEstado = restantes === 0 ? 'vencida' : 'activa'
-        tx.update(usuRef, {
-          'suscripcionActiva.sesionesRestantes': restantes,
-          'suscripcionActiva.estado': nuevoEstado,
-          'estadisticas.clasesAsistidas': ((usu.estadisticas?.clasesAsistidas as number) ?? 0) + 1,
-        })
-        const suscId: string = usu.suscripcionActiva?.suscripcionId ?? ''
-        if (suscId) {
-          const suscRef = doc(db, 'suscripciones', suscId)
-          tx.update(suscRef, { sesiones_restantes: restantes, estado: nuevoEstado })
-        }
-      }
+    // 2. Ajustar estadísticas + suscripción según la delta
+    if (delta === 0 || !usuSnap.exists()) return
+    const usu = usuSnap.data() as Record<string, any>
+
+    const asistidasPrev = (usu.estadisticas?.clasesAsistidas as number) ?? 0
+    const reservadasPrev = (usu.estadisticas?.clasesReservadas as number) ?? 0
+    const asistidas = Math.max(0, asistidasPrev + delta)
+    const tasaAsistencia = reservadasPrev > 0 ? Math.min(1, asistidas / reservadasPrev) : 0
+
+    const restantesPrev: number = usu.suscripcionActiva?.sesionesRestantes ?? 0
+    const sesionesCompradas: number | undefined = usu.suscripcionActiva?.sesionesCompradas
+    const cap = Number.isFinite(sesionesCompradas) ? (sesionesCompradas as number) : Number.POSITIVE_INFINITY
+    // Al restar (delta=+1) no bajamos de 0; al devolver (delta=-1) no subimos del total comprado.
+    const restantes = Math.max(0, Math.min(cap, restantesPrev - delta))
+
+    const nuevoEstado = restantes === 0 ? 'vencida' : 'activa'
+
+    const usuUpdate: Record<string, any> = {
+      'estadisticas.clasesAsistidas': asistidas,
+      'estadisticas.tasaAsistencia': tasaAsistencia,
+    }
+    // Solo tocamos suscripcionActiva si existe (no crear el campo si el user no tiene plan)
+    if (usu.suscripcionActiva) {
+      usuUpdate['suscripcionActiva.sesionesRestantes'] = restantes
+      usuUpdate['suscripcionActiva.estado'] = nuevoEstado
+    }
+    tx.update(usuRef, usuUpdate)
+
+    const suscId: string = usu.suscripcionActiva?.suscripcionId ?? ''
+    if (suscId) {
+      const suscRef = doc(db, 'suscripciones', suscId)
+      tx.update(suscRef, { sesiones_restantes: restantes, estado: nuevoEstado })
     }
   })
 }
@@ -342,7 +376,57 @@ export async function addMovimiento(data: Omit<Movimiento, 'id' | 'movimientoId'
 
 // ── planes CRUD ──────────────────────────────────────────────
 
-export async function crearPlan(data: Omit<Plan, 'id' | 'planId' | 'creadoEn'>): Promise<string> {
+type PlanEditable = Omit<Plan, 'id' | 'planId' | 'creadoEn'>
+
+/**
+ * Verifica los invariantes que debe cumplir un plan antes de escribirlo.
+ * Lanza Error con mensaje descriptivo si algo está mal.
+ */
+function validarPlan(data: Partial<PlanEditable>) {
+  if ('nombre' in data) {
+    if (typeof data.nombre !== 'string' || data.nombre.trim().length === 0) {
+      throw new Error('El nombre del plan no puede estar vacío.')
+    }
+    if (data.nombre.length > 120) throw new Error('El nombre del plan es demasiado largo.')
+  }
+  if ('precio_total' in data) {
+    if (typeof data.precio_total !== 'number' || !Number.isFinite(data.precio_total) || data.precio_total <= 0) {
+      throw new Error('El precio total debe ser un número mayor a 0.')
+    }
+  }
+  if ('sesiones_incluidas' in data) {
+    if (!Number.isInteger(data.sesiones_incluidas) || (data.sesiones_incluidas as number) <= 0) {
+      throw new Error('Las sesiones incluidas deben ser un entero mayor a 0.')
+    }
+  }
+  if ('duracion_dias' in data) {
+    if (!Number.isInteger(data.duracion_dias) || (data.duracion_dias as number) <= 0) {
+      throw new Error('La duración en días debe ser un entero mayor a 0.')
+    }
+  }
+  if ('catalogo_codigo' in data) {
+    if (typeof data.catalogo_codigo !== 'string' || data.catalogo_codigo.trim().length === 0) {
+      throw new Error('El código del catálogo es obligatorio.')
+    }
+  }
+  if ('sede' in data) {
+    if (typeof data.sede !== 'string' || data.sede.trim().length === 0) {
+      throw new Error('La sede es obligatoria.')
+    }
+  }
+}
+
+export async function crearPlan(data: PlanEditable): Promise<string> {
+  // En creación todos los campos son obligatorios; validar todo el shape
+  validarPlan({
+    nombre: data.nombre,
+    precio_total: data.precio_total,
+    sesiones_incluidas: data.sesiones_incluidas,
+    duracion_dias: data.duracion_dias,
+    catalogo_codigo: data.catalogo_codigo,
+    sede: data.sede,
+  })
+
   const [{ db }, { collection, doc, addDoc, updateDoc }] = await Promise.all([
     getFirebase(), import('firebase/firestore'),
   ])
@@ -357,12 +441,13 @@ export async function crearPlan(data: Omit<Plan, 'id' | 'planId' | 'creadoEn'>):
 
 export async function actualizarPlan(
   planId: string,
-  data: Partial<Omit<Plan, 'id' | 'planId' | 'creadoEn'>>,
+  data: Partial<PlanEditable>,
 ): Promise<void> {
+  validarPlan(data)
   const [{ db }, { doc, updateDoc }] = await Promise.all([
     getFirebase(), import('firebase/firestore'),
   ])
-  await updateDoc(doc(db, 'planes', planId), data as any)
+  await updateDoc(doc(db, 'planes', planId), data)
 }
 
 export const archivarPlan = (planId: string) => actualizarPlan(planId, { estado: false })

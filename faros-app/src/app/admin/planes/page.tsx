@@ -142,8 +142,10 @@ export default function AdminPlanesPage() {
       const nuevo: Plan = { ...nuevoForm, id, planId: id, creadoEn: Date.now() }
       setPlanes((prev) => [nuevo, ...prev])
       setNuevoForm(null)
-    } catch (e) { console.error(e) }
-    finally { setGuardandoPlan(null) }
+    } catch (e: any) {
+      console.error(e)
+      alert(e?.message ?? 'No se pudo crear el plan.')
+    } finally { setGuardandoPlan(null) }
   }
 
   async function guardarEdicionPlan(planId: string) {
@@ -153,17 +155,23 @@ export default function AdminPlanesPage() {
       setPlanes((prev) => prev.map((p) => p.id === planId ? { ...p, ...planEditData } : p))
       setPlanEditId(null)
       setPlanEditData({})
-    } catch (e) { console.error(e) }
-    finally { setGuardandoPlan(null) }
+    } catch (e: any) {
+      console.error(e)
+      alert(e?.message ?? 'No se pudo actualizar el plan.')
+    } finally { setGuardandoPlan(null) }
   }
 
   async function archivar(planId: string) {
+    const plan = planes.find((p) => p.id === planId)
+    if (!window.confirm(`¿Archivar el plan "${plan?.nombre ?? planId}"?\n\nDejará de aparecer para los alumnos, pero las suscripciones activas siguen vigentes.`)) return
     setGuardandoPlan(planId)
     try {
       await archivarPlan(planId)
       setPlanes((prev) => prev.map((p) => p.id === planId ? { ...p, estado: false } : p))
-    } catch (e) { console.error(e) }
-    finally { setGuardandoPlan(null) }
+    } catch (e: any) {
+      console.error(e)
+      alert(e?.message ?? 'No se pudo archivar el plan.')
+    } finally { setGuardandoPlan(null) }
   }
 
   function marcarGuardado() {
