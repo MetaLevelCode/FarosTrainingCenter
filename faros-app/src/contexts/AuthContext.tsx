@@ -80,21 +80,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    let unsub: (() => void) | undefined
+    let unsubAuth: (() => void) | undefined
+    let unsubDoc: (() => void) | undefined
     let cancelado = false
 
     ;(async () => {
-      const [{ auth, db }, { onAuthStateChanged }, { doc, getDoc }] = await Promise.all([
+      const [{ auth, db }, { onAuthStateChanged }, { doc, onSnapshot }] = await Promise.all([
         getFirebase(),
         import('firebase/auth'),
         import('firebase/firestore'),
       ])
       if (cancelado) return
 
-      unsub = onAuthStateChanged(auth, async (fbUser) => {
-        if (fbUser) {
-          try {
-            const snap = await getDoc(doc(db, 'usuarios', fbUser.uid))
+      unsubAuth = onAuthStateChanged(auth, (fbUser) => {
+        // Cambio de sesión → tirar el listener anterior antes de armar uno nuevo
+        unsubDoc?.()
+        unsubDoc = undefined
+
+        if (!fbUser) {
+          setUser(null)
+          setLoading(false)
+          return
+        }
+
+        // Fallback mientras carga el doc — evita "user=null" durante la primera
+        // pintada tras el login.
+        const fallback: Usuario = {
+          uid: fbUser.uid,
+          nombres: fbUser.displayName?.split(' ')[0] ?? '',
+          apellidos: fbUser.displayName?.split(' ').slice(1).join(' ') ?? '',
+          cedula: '',
+          email: fbUser.email ?? '',
+          rol: 'estudiante',
+        }
+
+        unsubDoc = onSnapshot(
+          doc(db, 'usuarios', fbUser.uid),
+          (snap) => {
             const data = snap.data()
             if (data) {
               setUser({
@@ -115,36 +137,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 fecha_registro: data.fecha_registro,
                 estadisticas: data.estadisticas,
                 suscripcionActiva: data.suscripcionActiva ?? null,
-              })
+                // Denormalizado para poder mostrar el banner de suspensión sin
+                // otro fetch. Por defecto activo=true si el campo no existe.
+                activo: data.activo !== false,
+              } as Usuario)
             } else {
-              // Documento aún no existe (usuario recién creado)
-              setUser({
-                uid: fbUser.uid,
-                nombres: fbUser.displayName?.split(' ')[0] ?? '',
-                apellidos: fbUser.displayName?.split(' ').slice(1).join(' ') ?? '',
-                cedula: '',
-                email: fbUser.email ?? '',
-                rol: 'estudiante',
-              })
+              setUser(fallback)
             }
-          } catch {
-            setUser({
-              uid: fbUser.uid,
-              nombres: fbUser.displayName?.split(' ')[0] ?? '',
-              apellidos: fbUser.displayName?.split(' ').slice(1).join(' ') ?? '',
-              cedula: '',
-              email: fbUser.email ?? '',
-              rol: 'estudiante',
-            })
-          }
-        } else {
-          setUser(null)
-        }
-        setLoading(false)
+            setLoading(false)
+          },
+          () => {
+            // Firestore rules pueden negar la lectura mientras el doc aún no existe
+            setUser(fallback)
+            setLoading(false)
+          },
+        )
       })
     })().catch(() => setLoading(false))
 
-    return () => { cancelado = true; unsub?.() }
+    return () => {
+      cancelado = true
+      unsubDoc?.()
+      unsubAuth?.()
+    }
   }, [])
 
   // ── Sign in ─────────────────────────────────────────────

@@ -12,6 +12,7 @@ import { motion, AnimatePresence } from 'motion/react'
 import { useAuth } from '@/contexts/AuthContext'
 import { WaterBackground } from '@/components/shared/WaterBackground'
 import { FarosWordmark, Spinner } from '@/components/ui'
+import { CuentaSuspendida } from '@/components/shared/CuentaSuspendida'
 import type { UserRole } from '@/lib/types'
 
 interface NavItem { label: string; href: string; icon: string }
@@ -215,5 +216,9 @@ export function GuardedShell({ authorized, loading, title, children }: {
       </div>
     )
   }
-  return <AppShell title={title}>{children}</AppShell>
+  return (
+    <CuentaSuspendida>
+      <AppShell title={title}>{children}</AppShell>
+    </CuentaSuspendida>
+  )
 }

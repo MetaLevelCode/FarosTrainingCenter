@@ -80,22 +80,36 @@ export default function UsuariosPage() {
     const u = usuarios.find((x) => x.uid === uid)
     if (!u) return
     const nuevoActivo = !(u.activo !== false)
+    const nombre = `${u.nombres} ${u.apellidos}`.trim() || u.email
+    const accion = nuevoActivo ? 'reactivar' : 'suspender'
+    if (!window.confirm(`¿${accion === 'suspender' ? 'Suspender' : 'Reactivar'} a "${nombre}"?\n\n${
+      accion === 'suspender'
+        ? 'No podrá iniciar sesión ni realizar acciones hasta que lo reactives.'
+        : 'Recuperará acceso completo.'
+    }`)) return
     setUsuarios((prev) => prev.map((x) => x.uid === uid ? { ...x, activo: nuevoActivo } : x))
     try {
       await setUsuarioActivo(uid, nuevoActivo)
-    } catch {
+    } catch (e: any) {
       setUsuarios((prev) => prev.map((x) => x.uid === uid ? { ...x, activo: !nuevoActivo } : x))
+      alert(e?.message ?? `No se pudo ${accion} al usuario.`)
     }
   }
 
   async function cambiarRol(uid: string, nuevoRol: UserRole) {
+    const u = usuarios.find((x) => x.uid === uid)
+    if (!u || u.rol === nuevoRol) return
+    const nombre = `${u.nombres} ${u.apellidos}`.trim() || u.email
+    if (!window.confirm(
+      `¿Cambiar el rol de "${nombre}" de ${u.rol} a ${nuevoRol}?\n\n` +
+      `Esto altera los permisos de la cuenta en toda la app.`,
+    )) return
     setUsuarios((prev) => prev.map((x) => x.uid === uid ? { ...x, rol: nuevoRol } : x))
     try {
       await setUsuarioRol(uid, nuevoRol)
-    } catch {
-      // Revertir
-      const u = usuarios.find((x) => x.uid === uid)
-      if (u) setUsuarios((prev) => prev.map((x) => x.uid === uid ? { ...x, rol: u.rol } : x))
+    } catch (e: any) {
+      setUsuarios((prev) => prev.map((x) => x.uid === uid ? { ...x, rol: u.rol } : x))
+      alert(e?.message ?? 'No se pudo cambiar el rol.')
     }
   }
 

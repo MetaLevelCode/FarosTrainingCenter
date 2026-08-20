@@ -30,6 +30,7 @@ export interface Usuario {
   cedula: string
   email: string
   rol: UserRole
+  activo?: boolean
   telefono?: string
   telefonoEmergencia?: string
   eps?: string
