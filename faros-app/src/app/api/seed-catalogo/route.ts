@@ -118,11 +118,11 @@ export async function POST(req: NextRequest) {
     const now = Date.now()
     const batch = db.batch()
 
-    for (const s of SEDES) {
-      batch.set(db.collection('sedes').doc(s.id), { ...s, creadoEn: now, actualizadoEn: now })
+    for (const { id, ...s } of SEDES) {
+      batch.set(db.collection('sedes').doc(id), { ...s, creadoEn: now, actualizadoEn: now })
     }
-    for (const g of GRUPOS) {
-      batch.set(db.collection('grupos').doc(g.id), { ...g, creadoEn: now, actualizadoEn: now })
+    for (const { id, ...g } of GRUPOS) {
+      batch.set(db.collection('grupos').doc(id), { ...g, creadoEn: now, actualizadoEn: now })
     }
     batch.set(db.collection('tarifas').doc('actual'), {
       ...TARIFAS_ACTUAL,

@@ -14,7 +14,9 @@ import type {
 // ── Utilidades internas ──────────────────────────────────────
 
 function docToId<T extends object>(snap: any): T {
-  return { id: snap.id, ...snap.data() } as T
+  // snap.id (el path real del doc) siempre debe ganar sobre cualquier
+  // campo `id` guardado dentro de los datos — por eso va al final del spread.
+  return { ...snap.data(), id: snap.id } as T
 }
 
 // ── usuarios ─────────────────────────────────────────────────
