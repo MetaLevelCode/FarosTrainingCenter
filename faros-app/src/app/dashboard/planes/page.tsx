@@ -16,13 +16,14 @@ import { useAuth } from '@/contexts/AuthContext'
 import { FarosWordmark, Spinner, Button } from '@/components/ui'
 import { WaterBackground } from '@/components/shared/WaterBackground'
 import { SubirComprobante } from '@/components/dashboard/SubirComprobante'
-import { getTransaccionesUsuario, getSuscripcionesUsuario } from '@/lib/firestore'
+import { getTransaccionesUsuario, getSuscripcionesUsuario, getSedes, getGrupos, getTarifas } from '@/lib/firestore'
 import { parseVencimiento } from '@/lib/matricula'
-import type { Suscripcion } from '@/lib/types'
+import type { Suscripcion, Sede, Grupo as GrupoFS, Tarifas } from '@/lib/types'
 import { Card } from '@/components/ui'
 import {
-  TIPOS, GRUPOS, GRUPO_POR_SESION, PERSONALES, CONJUNTOS, FRECUENCIAS,
+  TIPOS, GRUPOS as GRUPOS_FALLBACK, PERSONALES, CONJUNTOS, FRECUENCIAS,
   SELECCION_INICIAL, calcularPrecio, resumenPlan, fmtCOP,
+  TARIFAS_FALLBACK,
   type SeleccionPlan, type TipoPlan,
 } from '@/lib/planes'
 
@@ -176,6 +177,31 @@ export default function PlanesFlowPage() {
   const [txPendienteId, setTxPendienteId] = useState<string | null>(null)
   const [txEnRevision, setTxEnRevision] = useState(false)
   const [suscripcionDetalle, setSuscripcionDetalle] = useState<Suscripcion | null>(null)
+  // Catálogo dinámico desde Firestore (sedes/grupos/tarifas). Si no hay
+  // conexión o el seed no se ha corrido, seguimos usando el fallback estático.
+  const [sedes, setSedes] = useState<Sede[]>([])
+  const [gruposFS, setGruposFS] = useState<GrupoFS[]>([])
+  const [tarifas, setTarifas] = useState<Tarifas | null>(null)
+
+  useEffect(() => {
+    Promise.all([getSedes(), getGrupos(), getTarifas()])
+      .then(([s, g, t]) => { setSedes(s); setGruposFS(g); if (t) setTarifas(t) })
+      .catch(() => {}) // silencioso — usamos fallback
+  }, [])
+
+  // Grupos a mostrar: los de Firestore si el seed corrió, si no el fallback estático.
+  const gruposEfectivos = useMemo(() => {
+    if (gruposFS.length === 0) return GRUPOS_FALLBACK
+    return gruposFS.map((g) => ({
+      id: g.id,
+      nombre: g.nombre,
+      horarios: g.horarios,
+      disponible: g.disponible,
+      nivel: g.nivel,
+      cupos: `Cupo máximo ${g.cupoMaximo}`,
+      coach: g.coach ?? '',
+    }))
+  }, [gruposFS])
 
   useEffect(() => {
     if (!user?.uid) { setCheckingPendiente(false); return }
@@ -221,7 +247,8 @@ export default function PlanesFlowPage() {
 
   const steps = useMemo(() => stepsFor(sel.tipo), [sel.tipo])
   const stepKey = steps[Math.min(stepIdx, steps.length - 1)]
-  const precio = useMemo(() => calcularPrecio(sel), [sel])
+  const tarifasEfectivas = tarifas ?? TARIFAS_FALLBACK
+  const precio = useMemo(() => calcularPrecio(sel, tarifasEfectivas), [sel, tarifasEfectivas])
   const resumen = useMemo(() => resumenPlan(sel), [sel])
 
   const subPersonal = PERSONALES.find((p) => p.id === sel.personalId)
@@ -654,7 +681,7 @@ export default function PlanesFlowPage() {
             {/* PASO: GRUPO */}
             {stepKey === 'grupo' && (
               <div className="space-y-6">
-                {GRUPOS.map((g) => (
+                {gruposEfectivos.map((g) => (
                   <ChoiceCard
                     key={g.id}
                     selected={sel.grupoId === g.id}
@@ -727,7 +754,7 @@ export default function PlanesFlowPage() {
                 {FRECUENCIAS
                   .filter((f) => sel.tipo !== 'conjunto' || f.week <= 2)
                   .map((f) => {
-                    const p = calcularPrecio({ ...sel, week: f.week })
+                    const p = calcularPrecio({ ...sel, week: f.week }, tarifasEfectivas)
                     return (
                       <ChoiceCard
                         key={f.week}
@@ -736,7 +763,7 @@ export default function PlanesFlowPage() {
                         icon="calendar_month"
                         title={f.label}
                         desc={sel.tipo === 'grupal'
-                          ? `${fmtCOP(GRUPO_POR_SESION[f.week])} por sesión`
+                          ? `${fmtCOP(tarifasEfectivas.grupoPorSesion[f.week])} por sesión`
                           : `${f.mes} sesiones al mes`}
                         expand={
                           <div className="flex items-center justify-between">

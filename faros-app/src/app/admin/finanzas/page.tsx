@@ -12,8 +12,8 @@ import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button } from '@/components/ui'
-import { getTransacciones, getMovimientos, aprobarTransaccion, getPlanes } from '@/lib/firestore'
-import type { Transaccion, Movimiento, Plan } from '@/lib/types'
+import { getTransacciones, getMovimientos, aprobarTransaccion } from '@/lib/firestore'
+import type { Transaccion, Movimiento } from '@/lib/types'
 import { fmtCOP, resumenPlan } from '@/lib/planes'
 
 const EASE = [0.22, 1, 0.36, 1] as const
@@ -33,20 +33,21 @@ export default function FinanzasPage() {
   const { authorized, loading, user } = useRoleGuard(['admin'])
   const [transacciones, setTransacciones] = useState<Transaccion[]>([])
   const [movimientos, setMovimientos] = useState<Movimiento[]>([])
-  const [planes, setPlanes] = useState<Plan[]>([])
   const [cargando, setCargando] = useState(true)
   const [procesando, setProcesando] = useState<string | null>(null)
   const [motivoRechazo, setMotivoRechazo] = useState<Record<string, string>>({})
   const [mostrarRechazo, setMostrarRechazo] = useState<string | null>(null)
-  const [planSeleccionado, setPlanSeleccionado] = useState<Record<string, string>>({})
+  // Override opcional del monto por tx (descuento acordado entre admin y alumno).
+  // Si queda vacío, se cobra el precio congelado en la transacción.
+  const [montoOverride, setMontoOverride] = useState<Record<string, string>>({})
   const [comprobanteModal, setComprobanteModal] = useState<string | null>(null)
   const [comprobanteProxyUrl, setComprobanteProxyUrl] = useState<string | null>(null)
   const [imgError, setImgError] = useState(false)
   const [imgLoading, setImgLoading] = useState(false)
 
   useEffect(() => {
-    Promise.all([getTransacciones(), getMovimientos(), getPlanes()])
-      .then(([ts, ms, ps]) => { setTransacciones(ts); setMovimientos(ms); setPlanes(ps) })
+    Promise.all([getTransacciones(), getMovimientos()])
+      .then(([ts, ms]) => { setTransacciones(ts); setMovimientos(ms) })
       .catch(console.error)
       .finally(() => setCargando(false))
   }, [])
@@ -65,37 +66,38 @@ export default function FinanzasPage() {
 
   async function aprobar(t: Transaccion) {
     if (!user) return
-    const planId = planSeleccionado[t.id] ?? t.planId
-    if (!planId) {
-      alert('Selecciona el plan de Firestore antes de aprobar.')
-      return
+
+    // Determinar el monto final: override del admin (si escribió algo) o monto de la tx.
+    const overrideStr = montoOverride[t.id]?.trim() ?? ''
+    let montoFinal = t.monto
+    if (overrideStr !== '') {
+      const parsed = Number(overrideStr.replace(/[.\s]/g, ''))
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        alert('El monto override debe ser un número mayor a 0.')
+        return
+      }
+      montoFinal = parsed
     }
-    const plan = planes.find((p) => p.id === planId)
-    if (!plan) {
-      alert('El plan seleccionado ya no existe en Firestore.')
+    if (!Number.isFinite(montoFinal) || montoFinal <= 0) {
+      alert('Esta transacción no tiene monto definido. Escribe uno en el campo "Ajustar monto".')
       return
     }
 
-    // Confirmación explícita: si el alumno pidió "tarifa por confirmar"
-    // (monto_disponible === false), el admin debe reconocer que va a cobrar
-    // el precio del plan que asignó, no el que declaró el alumno.
     const alumno = t.nombre_usuario ?? t.usuarioId
-    const precioPlan = fmtCOP(plan.precio_total)
-    const msg = t.monto_disponible === false
-      ? `El alumno "${alumno}" pidió TARIFA POR CONFIRMAR.\n\n` +
-        `Al aprobar cobrarás:\n  Plan: ${plan.nombre}\n  Precio: ${precioPlan}\n\n` +
-        `¿Continuar?`
-      : `Aprobar el pago de ${alumno}:\n\n  Plan: ${plan.nombre}\n  Precio: ${precioPlan}\n\n¿Continuar?`
+    const plan = t.nombre_plan ?? 'Plan solicitado'
+    const msg = `Aprobar el pago de ${alumno}:\n\n  Plan: ${plan}\n  Cobrar: ${fmtCOP(montoFinal)}\n\n¿Continuar?`
     if (!window.confirm(msg)) return
 
     setProcesando(t.id)
     try {
-      await aprobarTransaccion(t.id, user.uid, planId, t.usuarioId)
-      setTransacciones((prev) => prev.map((x) => x.id === t.id ? { ...x, estado: 'aprobada' } : x))
+      await aprobarTransaccion(t.id, user.uid,
+        overrideStr !== '' ? { montoOverride: montoFinal } : undefined)
+      setTransacciones((prev) => prev.map((x) => x.id === t.id
+        ? { ...x, estado: 'aprobada', monto: montoFinal } : x))
       getMovimientos().then(setMovimientos).catch(console.error)
-    } catch (err) {
+    } catch (err: any) {
       console.error(err)
-      alert('No se pudo aprobar la transacción. Intenta de nuevo.')
+      alert(err?.message ?? 'No se pudo aprobar la transacción. Intenta de nuevo.')
     } finally {
       setProcesando(null)
     }
@@ -243,26 +245,23 @@ export default function FinanzasPage() {
                       </p>
                     </div>
 
-                    {/* Selector de plan de Firestore (obligatorio para aprobar) */}
-                    {planes.length > 0 && (
-                      <div>
-                        <label className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50 block mb-1.5">
-                          Asignar plan de Firestore *
-                        </label>
-                        <select
-                          value={planSeleccionado[t.id] ?? ''}
-                          onChange={(e) => setPlanSeleccionado((prev) => ({ ...prev, [t.id]: e.target.value }))}
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white focus:border-[rgba(230,255,0,0.5)] focus:outline-none"
-                        >
-                          <option value="" className="bg-[#0a0a0a]">Seleccionar plan…</option>
-                          {planes.map((p) => (
-                            <option key={p.id} value={p.id} className="bg-[#0a0a0a]">
-                              {p.nombre} — {fmtCOP(p.precio_total)}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
+                    {/* Ajuste opcional del monto (descuento acordado o
+                        "tarifa por confirmar"). Vacío → cobra el precio congelado. */}
+                    <div>
+                      <label className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50 block mb-1.5">
+                        {t.monto > 0
+                          ? `Ajustar monto (opcional) · precio del alumno: ${fmtCOP(t.monto)}`
+                          : 'Definir monto (obligatorio · el alumno pidió tarifa por confirmar)'}
+                      </label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={montoOverride[t.id] ?? ''}
+                        onChange={(e) => setMontoOverride((prev) => ({ ...prev, [t.id]: e.target.value }))}
+                        placeholder={t.monto > 0 ? `Dejar vacío para cobrar ${fmtCOP(t.monto)}` : 'Ej: 120000'}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-white/20 focus:border-[rgba(230,255,0,0.5)] focus:outline-none"
+                      />
+                    </div>
 
                     {mostrarRechazo === t.id ? (
                       <div className="space-y-3">

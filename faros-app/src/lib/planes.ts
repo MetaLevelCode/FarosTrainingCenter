@@ -162,15 +162,41 @@ export interface PrecioCalculado {
 export const fmtCOP = (n: number) =>
   new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(n)
 
-// Motor de cálculo — la pieza central del flujo.
-export function calcularPrecio(sel: SeleccionPlan): PrecioCalculado {
+// ── Fallback estático (usado si Firestore no cargó todavía) ──
+// Mantener sincronizado con /api/seed-catalogo. La UI debe preferir
+// las tarifas de Firestore vía calcularPrecio(sel, tarifas).
+import type { Tarifas } from './types'
+
+export const TARIFAS_FALLBACK: Tarifas = {
+  version: 0,
+  actualizadoEn: 0,
+  grupoPorSesion: GRUPO_POR_SESION,
+  personales: PERSONALES.reduce((acc, p) => {
+    acc[p.id] = {
+      categoria: p.id === 'funcional' ? 'AFP' : 'NP',
+      porPersona: p.porPersona,
+      personasMin: p.personasMin,
+      personasMax: p.personasMax,
+      precios: p.precios,
+    }
+    return acc
+  }, {} as Tarifas['personales']),
+  conjuntos: CONJUNTOS.reduce((acc, c) => {
+    acc[c.id] = { precios: c.precios }
+    return acc
+  }, {} as Tarifas['conjuntos']),
+  vacacionesPorNino: VACACIONES_POR_NINO,
+}
+
+// Motor de cálculo — la pieza central del flujo. Si se pasa `tarifas`,
+// usa esa matriz (Firestore); si no, cae al fallback hardcoded.
+export function calcularPrecio(sel: SeleccionPlan, tarifas: Tarifas = TARIFAS_FALLBACK): PrecioCalculado {
   const base: PrecioCalculado = { disponible: false, total: 0, porPersona: null, personas: 1, detalleFrecuencia: '' }
 
   if (sel.tipo === 'grupal') {
-    const porSesion = GRUPO_POR_SESION[sel.week]
+    const porSesion = tarifas.grupoPorSesion[sel.week]
     const freq = FRECUENCIAS.find((f) => f.week === sel.week)!
-    const grupo = GRUPOS.find((g) => g.id === sel.grupoId)
-    if (!grupo || !grupo.disponible) return { ...base, detalleFrecuencia: freq.label }
+    if (!sel.grupoId || porSesion == null) return { ...base, detalleFrecuencia: freq.label }
     return {
       disponible: true,
       total: porSesion * freq.mes,
@@ -181,11 +207,14 @@ export function calcularPrecio(sel: SeleccionPlan): PrecioCalculado {
   }
 
   if (sel.tipo === 'personal') {
-    const sub = PERSONALES.find((p) => p.id === sel.personalId)
+    const sub = sel.personalId ? tarifas.personales[sel.personalId] : null
     const freq = FRECUENCIAS.find((f) => f.week === sel.week)!
     if (!sub) return { ...base, detalleFrecuencia: freq.label }
     const unit = sub.precios[freq.mes]
-    const personas = sub.porPersona ? Math.min(Math.max(sel.personas, sub.personasMin), sub.personasMax) : 1
+    if (unit == null) return { ...base, detalleFrecuencia: freq.label }
+    const personas = sub.porPersona
+      ? Math.min(Math.max(sel.personas, sub.personasMin), sub.personasMax)
+      : 1
     return {
       disponible: true,
       total: sub.porPersona ? unit * personas : unit,
@@ -196,7 +225,7 @@ export function calcularPrecio(sel: SeleccionPlan): PrecioCalculado {
   }
 
   if (sel.tipo === 'conjunto') {
-    const combo = CONJUNTOS.find((c) => c.id === sel.conjuntoId)
+    const combo = sel.conjuntoId ? tarifas.conjuntos[sel.conjuntoId] : null
     const semanal = sel.week === 1 ? 1 : 2
     const freqLabel = semanal === 1 ? '1 vez / semana' : '2 veces / semana'
     if (!combo) return { ...base, detalleFrecuencia: freqLabel }
@@ -209,14 +238,27 @@ export function calcularPrecio(sel: SeleccionPlan): PrecioCalculado {
     const ninos = Math.max(1, sel.ninos)
     return {
       disponible: true,
-      total: VACACIONES_POR_NINO * ninos,
-      porPersona: ninos > 1 ? VACACIONES_POR_NINO : null,
+      total: tarifas.vacacionesPorNino * ninos,
+      porPersona: ninos > 1 ? tarifas.vacacionesPorNino : null,
       personas: ninos,
       detalleFrecuencia: 'Programa de 2 semanas',
     }
   }
 
   return base
+}
+
+// Sesiones incluidas al aprobar una tx — deriva del wizard.
+export function sesionesDelPlan(sel: SeleccionPlan): number {
+  if (sel.tipo === 'vacaciones') return 10   // programa de 2 semanas ~ 10 clases
+  if (sel.tipo === 'conjunto') return (sel.week === 1 ? 4 : 8)
+  const freq = FRECUENCIAS.find((f) => f.week === sel.week)
+  return freq?.mes ?? 0
+}
+
+// Duración del plan en días — para calcular fecha_vencimiento al aprobar.
+export function duracionDiasDelPlan(sel: SeleccionPlan): number {
+  return sel.tipo === 'vacaciones' ? 14 : 30
 }
 
 // Resumen legible del plan seleccionado (para el paso final y la solicitud).

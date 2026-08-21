@@ -8,6 +8,7 @@ import { getFirebase } from './firebase'
 import type {
   Usuario, Catalogo, Plan, Suscripcion, Transaccion,
   Clase, Asistencia, Movimiento, Categoria, UserRole, CodigoInvitacion,
+  Sede, Grupo, Tarifas,
 } from './types'
 
 // ── Utilidades internas ──────────────────────────────────────
@@ -105,57 +106,75 @@ export async function getTransacciones(estado?: Transaccion['estado']): Promise<
   return snap.docs.map(docToId<Transaccion>)
 }
 
+/**
+ * Aprueba una transacción usando el precio y la selección CONGELADOS
+ * en la propia tx (lo que vio el alumno en el wizard). Ya no depende
+ * de la colección planes/ — el admin no elige plantilla.
+ *
+ * Opcionalmente el admin puede overridear el monto (descuento acordado).
+ */
 export async function aprobarTransaccion(
   transaccionId: string,
   adminUid: string,
-  planId: string,
-  usuarioId: string,
+  opts?: { montoOverride?: number },
 ): Promise<void> {
-  const [{ db }, { doc, updateDoc, addDoc, collection, runTransaction, serverTimestamp }] = await Promise.all([
+  const [{ db }, { doc, collection, runTransaction }] = await Promise.all([
     getFirebase(), import('firebase/firestore'),
   ])
-
-  const plan = await getPlan(planId)
-  if (!plan) throw new Error('Plan no encontrado')
+  const { sesionesDelPlan, duracionDiasDelPlan, resumenPlan } = await import('./planes')
 
   await runTransaction(db, async (tx) => {
+    const txRef = doc(db, 'transacciones', transaccionId)
+    const txSnap = await tx.get(txRef)
+    if (!txSnap.exists()) throw new Error('Transacción no encontrada')
+    const t = txSnap.data() as Transaccion
+    if (t.estado !== 'pendiente') throw new Error('La transacción ya fue procesada')
+    if (!t.seleccion) throw new Error('La transacción no tiene selección de plan')
+
+    const sel = t.seleccion
     const now = Date.now()
-    // Fallback a 30 días si el plan no tiene duracion_dias definido
-    const raw = plan.duracion_dias ?? 30
-    const dias = Number.isFinite(raw) && raw > 0 ? raw : 30
+    const sesiones = sesionesDelPlan(sel)
+    const dias = duracionDiasDelPlan(sel)
     const fechaVencimiento = now + dias * 86_400_000
+    const monto = Number.isFinite(opts?.montoOverride) ? (opts!.montoOverride as number) : t.monto
+    const resumen = resumenPlan(sel)
+    const nombrePlan = t.nombre_plan ?? resumen.titulo
 
     // 1. Crear suscripción
     const suscRef = doc(collection(db, 'suscripciones'))
     tx.set(suscRef, {
       suscripcionId: suscRef.id,
-      usuarioId,
-      planId,
-      nombre_plan: plan.nombre,
-      sesiones_compradas: plan.sesiones_incluidas,
-      sesiones_restantes: plan.sesiones_incluidas,
+      usuarioId: t.usuarioId,
+      planId: t.planId ?? '',
+      nombre_plan: nombrePlan,
+      sesiones_compradas: sesiones,
+      sesiones_restantes: sesiones,
       fecha_compra: now,
       fecha_vencimiento: fechaVencimiento,
       estado: 'activa',
+      seleccion: sel,
+      monto_pagado: monto,
       creadoEn: now,
     })
 
     // 2. Actualizar transacción
-    tx.update(doc(db, 'transacciones', transaccionId), {
+    tx.update(txRef, {
       estado: 'aprobada',
       fecha_revision: now,
       adminQueAprobo: adminUid,
+      monto,  // registra el monto real (útil si hubo override)
       suscripcionCreada: { suscripcionId: suscRef.id, fechaActivacion: now },
     })
 
     // 3. Actualizar usuario.suscripcionActiva
-    tx.update(doc(db, 'usuarios', usuarioId), {
+    tx.update(doc(db, 'usuarios', t.usuarioId), {
       suscripcionActiva: {
         suscripcionId: suscRef.id,
-        planId,
-        nombrePlan: plan.nombre,
-        sesionesRestantes: plan.sesiones_incluidas,
-        fechaVencimiento: fechaVencimiento,
+        planId: t.planId ?? '',
+        nombrePlan,
+        sesionesRestantes: sesiones,
+        sesionesCompradas: sesiones,
+        fechaVencimiento,
         estado: 'activa',
       },
     })
@@ -165,10 +184,10 @@ export async function aprobarTransaccion(
     tx.set(movRef, {
       movimientoId: movRef.id,
       tipo: 'ingreso',
-      monto: plan.precio_total,
+      monto,
       categoriaId: 'planes',
       categoriaNombre: 'Planes',
-      descripcion: `${plan.nombre} — aprobación`,
+      descripcion: `${nombrePlan} — aprobación`,
       fecha: now,
       origen: 'transaccion_aprobada',
       transaccionId,
@@ -506,4 +525,82 @@ export async function getCategorias(): Promise<Categoria[]> {
   ])
   const snap = await getDocs(collection(db, 'categorias'))
   return snap.docs.map(docToId<Categoria>)
+}
+
+// ── sedes ────────────────────────────────────────────────────
+
+export async function getSedes(soloActivas = true): Promise<Sede[]> {
+  const [{ db }, { collection, query, where, orderBy, getDocs }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  const col = collection(db, 'sedes')
+  const q = soloActivas
+    ? query(col, where('activo', '==', true), orderBy('orden'))
+    : query(col, orderBy('orden'))
+  const snap = await getDocs(q)
+  return snap.docs.map(docToId<Sede>)
+}
+
+export async function upsertSede(id: string, data: Omit<Sede, 'id' | 'creadoEn' | 'actualizadoEn'>): Promise<void> {
+  const [{ db }, { doc, setDoc, serverTimestamp }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  const now = Date.now()
+  await setDoc(doc(db, 'sedes', id), { ...data, actualizadoEn: now, creadoEn: now }, { merge: true })
+  void serverTimestamp
+}
+
+export async function eliminarSede(id: string): Promise<void> {
+  const [{ db }, { doc, deleteDoc }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  await deleteDoc(doc(db, 'sedes', id))
+}
+
+// ── grupos ───────────────────────────────────────────────────
+
+export async function getGrupos(sedeCodigo?: string): Promise<Grupo[]> {
+  const [{ db }, { collection, query, where, getDocs }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  const col = collection(db, 'grupos')
+  const q = sedeCodigo ? query(col, where('sedeCodigo', '==', sedeCodigo)) : query(col)
+  const snap = await getDocs(q)
+  return snap.docs.map(docToId<Grupo>)
+}
+
+export async function upsertGrupo(id: string, data: Omit<Grupo, 'id' | 'creadoEn' | 'actualizadoEn'>): Promise<void> {
+  const [{ db }, { doc, setDoc }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  const now = Date.now()
+  await setDoc(doc(db, 'grupos', id), { ...data, actualizadoEn: now, creadoEn: now }, { merge: true })
+}
+
+export async function eliminarGrupo(id: string): Promise<void> {
+  const [{ db }, { doc, deleteDoc }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  await deleteDoc(doc(db, 'grupos', id))
+}
+
+// ── tarifas ──────────────────────────────────────────────────
+
+export async function getTarifas(): Promise<Tarifas | null> {
+  const [{ db }, { doc, getDoc }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  const snap = await getDoc(doc(db, 'tarifas', 'actual'))
+  return snap.exists() ? (snap.data() as Tarifas) : null
+}
+
+export async function actualizarTarifas(data: Omit<Tarifas, 'actualizadoEn'>, actualizadoPor?: string): Promise<void> {
+  const [{ db }, { doc, setDoc }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  await setDoc(doc(db, 'tarifas', 'actual'), {
+    ...data,
+    actualizadoEn: Date.now(),
+    ...(actualizadoPor ? { actualizadoPor } : {}),
+  })
 }
