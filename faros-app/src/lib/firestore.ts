@@ -529,12 +529,18 @@ export async function getCategorias(): Promise<Categoria[]> {
 
 // ── sedes ────────────────────────────────────────────────────
 
-/** Firestore SDK rechaza undefined; los strippeo antes de escribir. */
-function stripUndefined<T extends object>(obj: T): T {
-  const out: any = {}
-  for (const [k, v] of Object.entries(obj)) if (v !== undefined) out[k] = v
-  return out
+/**
+ * Firestore SDK rechaza `undefined` (rompe con 'Cannot read properties
+ * of undefined (reading M_ID)') y tampoco acepta instancias de clase con
+ * métodos ni referencias circulares. `JSON.parse(JSON.stringify(x))`
+ * garantiza plain data y ya de paso elimina las claves con `undefined`.
+ */
+function toPlainData<T>(obj: T): T {
+  return JSON.parse(JSON.stringify(obj))
 }
+
+/** Compat: nombre anterior por si algún caller la usaba. */
+const stripUndefined = toPlainData
 
 export async function getSedes(soloActivas = true): Promise<Sede[]> {
   const [{ db }, { collection, query, where, orderBy, getDocs }] = await Promise.all([
