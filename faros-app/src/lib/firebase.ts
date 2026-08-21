@@ -47,7 +47,7 @@ let cache: Promise<{ auth: Auth; db: Firestore; storage: FirebaseStorage }> | nu
 export function getFirebase() {
   if (!cache) {
     cache = (async () => {
-      const [{ initializeApp, getApps, getApp }, { getAuth }, { getFirestore }, { getStorage }] =
+      const [{ initializeApp, getApps, getApp }, { getAuth }, firestoreMod, { getStorage }] =
         await Promise.all([
           import('firebase/app'),
           import('firebase/auth'),
@@ -55,7 +55,22 @@ export function getFirebase() {
           import('firebase/storage'),
         ])
       const app = getApps().length ? getApp() : initializeApp(firebaseConfig)
-      return { auth: getAuth(app), db: getFirestore(app), storage: getStorage(app) }
+
+      // Firestore: usar initializeFirestore con auto-detect long polling.
+      // Evita el bug "Cannot read properties of undefined (reading M_ID)"
+      // que se dispara con WebChannel en entornos con proxy, service worker
+      // o red inestable. Si ya está inicializado (HMR / segunda llamada),
+      // caemos a getFirestore.
+      let db
+      try {
+        db = firestoreMod.initializeFirestore(app, {
+          experimentalAutoDetectLongPolling: true,
+        })
+      } catch {
+        db = firestoreMod.getFirestore(app)
+      }
+
+      return { auth: getAuth(app), db, storage: getStorage(app) }
     })()
   }
   return cache
