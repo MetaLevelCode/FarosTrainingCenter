@@ -12,6 +12,7 @@ import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button, Spinner } from '@/components/ui'
+import { BotonSeed } from '@/components/admin/BotonSeed'
 import { getMovimientos, getTransacciones, getUsuarios } from '@/lib/firestore'
 import { fmtCOP } from '@/lib/planes'
 import type { Movimiento, Transaccion, Usuario } from '@/lib/types'
@@ -98,11 +99,14 @@ export default function AdminPage() {
       <div className="space-y-8">
 
         <Reveal>
-          <div>
-            <p className="label-caps text-[var(--color-primary-fixed)] mb-3 tracking-[0.3em]">Torre de Control</p>
-            <h2 className="font-display text-display-lg text-white leading-none tracking-tighter uppercase">
-              Panel Admin
-            </h2>
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="label-caps text-[var(--color-primary-fixed)] mb-3 tracking-[0.3em]">Torre de Control</p>
+              <h2 className="font-display text-display-lg text-white leading-none tracking-tighter uppercase">
+                Panel Admin
+              </h2>
+            </div>
+            <BotonSeed />
           </div>
         </Reveal>
 

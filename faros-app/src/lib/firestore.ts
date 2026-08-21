@@ -121,7 +121,8 @@ export async function aprobarTransaccion(
   await runTransaction(db, async (tx) => {
     const now = Date.now()
     // Fallback a 30 días si el plan no tiene duracion_dias definido
-    const dias = Number.isFinite(plan.duracion_dias) && plan.duracion_dias > 0 ? plan.duracion_dias : 30
+    const raw = plan.duracion_dias ?? 30
+    const dias = Number.isFinite(raw) && raw > 0 ? raw : 30
     const fechaVencimiento = now + dias * 86_400_000
 
     // 1. Crear suscripción

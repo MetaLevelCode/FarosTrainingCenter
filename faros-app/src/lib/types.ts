@@ -65,19 +65,26 @@ export interface Catalogo {
 }
 
 // ── planes/{planId} ──────────────────────────────────────────
+// Plantillas nombradas que el admin puede tener guardadas (promos,
+// planes ad-hoc, etc.). NO son la fuente de precios del wizard — el
+// wizard usa tarifas/actual. Los campos opcionales toleran plantillas
+// legacy escritas a mano en Firebase Console.
 
 export interface Plan {
   id: string
-  planId: string
+  planId?: string             // denormalizado — no obligatorio en plantillas legacy
   nombre: string
-  descripcion: string
-  catalogo_codigo: string
+  descripcion?: string
+  catalogo_codigo?: string
   sesiones_incluidas: number
-  duracion_dias: number
+  duracion_dias?: number      // default 30 al aprobar si no está definido
   precio_total: number
-  sede: string
+  sede?: string               // legacy
+  sede_aplica?: string        // alias visto en plantillas del admin
+  categoria_id?: string       // referencia a categorías/{id} de movimientos (opcional)
   estado: boolean
-  creadoEn: number
+  creadoEn?: number
+  actualizadoEn?: number
 }
 
 // ── suscripciones/{suscripcionId} ────────────────────────────
