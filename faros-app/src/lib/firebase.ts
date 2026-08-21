@@ -56,15 +56,15 @@ export function getFirebase() {
         ])
       const app = getApps().length ? getApp() : initializeApp(firebaseConfig)
 
-      // Firestore: usar initializeFirestore con auto-detect long polling.
-      // Evita el bug "Cannot read properties of undefined (reading M_ID)"
-      // que se dispara con WebChannel en entornos con proxy, service worker
-      // o red inestable. Si ya está inicializado (HMR / segunda llamada),
-      // caemos a getFirestore.
+      // Firestore: FORZAR long polling en lugar de WebChannel. El auto-detect
+      // sigue eligiendo WebChannel primero y falla con
+      // "Cannot read properties of undefined (reading M_ID)".
+      // Con forceLongPolling el SDK usa HTTP polling clásico — un poco más
+      // lento (ms), pero estable e inmune al bug del transporte streaming.
       let db
       try {
         db = firestoreMod.initializeFirestore(app, {
-          experimentalAutoDetectLongPolling: true,
+          experimentalForceLongPolling: true,
         })
       } catch {
         db = firestoreMod.getFirestore(app)
