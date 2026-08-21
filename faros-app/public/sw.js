@@ -8,7 +8,7 @@
 //   · Firebase / APIs ............ never intercepted
 // Bump VERSION on every deploy that should invalidate caches.
 // ============================================================
-const VERSION = 'faros-v5'
+const VERSION = 'faros-v6'
 const PRECACHE = `${VERSION}-precache`
 const RUNTIME = `${VERSION}-runtime`
 const MEDIA = `${VERSION}-media`
@@ -21,6 +21,11 @@ const NEVER_CACHE_HOSTS = [
   'identitytoolkit.googleapis.com',
   'securetoken.googleapis.com',
   'firebaseinstallations.googleapis.com',
+  // Fonts externas: dejar que el navegador las descargue directo.
+  // Si el SW hace fetch(), la request cuenta como connect-src y el
+  // CSP la bloquea. Sin interceptación, la font cae en font-src y OK.
+  'fonts.googleapis.com',
+  'fonts.gstatic.com',
 ]
 
 self.addEventListener('install', (e) => {
@@ -68,12 +73,18 @@ async function networkFirstPage(request) {
 async function cacheFirst(request, cacheName) {
   const cached = await caches.match(request)
   if (cached) return cached
-  const res = await fetch(request)
-  if (res.ok || res.type === 'opaque') {
-    const cache = await caches.open(cacheName)
-    cache.put(request, res.clone())
+  try {
+    const res = await fetch(request)
+    if (res.ok || res.type === 'opaque') {
+      const cache = await caches.open(cacheName)
+      cache.put(request, res.clone())
+    }
+    return res
+  } catch {
+    // Si el fetch fue bloqueado (CSP, red caída), devolver un 504 en vez
+    // de propagar la excepción — evita 'Failed to convert value to Response'.
+    return new Response('', { status: 504, statusText: 'Gateway Timeout' })
   }
-  return res
 }
 
 async function staleWhileRevalidate(request, cacheName, maxEntries) {
@@ -87,7 +98,7 @@ async function staleWhileRevalidate(request, cacheName, maxEntries) {
       }
       return res
     })
-    .catch(() => cached)
+    .catch(() => cached ?? new Response('', { status: 504, statusText: 'Gateway Timeout' }))
   return cached || network
 }
 
@@ -108,12 +119,6 @@ self.addEventListener('fetch', (e) => {
 
   // Hashed build assets: immutable
   if (url.origin === self.location.origin && url.pathname.startsWith('/_next/static/')) {
-    e.respondWith(cacheFirst(request, RUNTIME))
-    return
-  }
-
-  // Google Fonts (css + woff2)
-  if (url.hostname === 'fonts.googleapis.com' || url.hostname === 'fonts.gstatic.com') {
     e.respondWith(cacheFirst(request, RUNTIME))
     return
   }

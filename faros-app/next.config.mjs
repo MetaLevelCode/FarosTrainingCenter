@@ -25,7 +25,7 @@ const CSP = [
   "font-src 'self' https://fonts.gstatic.com data:",
   "img-src 'self' data: blob: https://*.googleusercontent.com",
   "media-src 'self'",
-  `connect-src 'self' ${FIREBASE_ENDPOINTS} https://fonts.googleapis.com https://fonts.gstatic.com${ES_DEV ? ' ws://localhost:* http://localhost:*' : ''}`,
+  `connect-src 'self' ${FIREBASE_ENDPOINTS}${ES_DEV ? ' ws://localhost:* http://localhost:*' : ''}`,
   "worker-src 'self'",
   "manifest-src 'self'",
   // Nadie puede meter la app en un <iframe> (clickjacking).
