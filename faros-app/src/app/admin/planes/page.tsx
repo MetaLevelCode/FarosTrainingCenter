@@ -1,25 +1,30 @@
 'use client'
 
 // ============================================================
-// FAROS — Admin · Gestión de planes
-// El admin edita AQUÍ el catálogo que alimenta el flujo
-// "Arma tu plan" del alumno (lib/planes.ts): grupos y sus
-// horarios, tarifas por frecuencia, modalidades personalizadas,
-// conjuntos y vacaciones.
-// Los cambios viven en estado local hasta conectar Firestore.
+// FAROS — Admin · Catálogo
+// El admin edita AQUÍ el catálogo que alimenta el wizard del alumno.
+//
+// Cuatro pestañas:
+//   Sedes      — CRUD de sedes físicas (Firestore: sedes/)
+//   Grupos     — CRUD de grupos grupales por sede (Firestore: grupos/)
+//   Tarifas    — Matriz de precios (Firestore: tarifas/actual)
+//   Plantillas — Planes nombrados ad-hoc (Firestore: planes/) legacy
 // ============================================================
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
-import { Card, Badge, Button, Input, Spinner } from '@/components/ui'
+import { Card, Badge, Button, Spinner } from '@/components/ui'
+import { fmtCOP } from '@/lib/planes'
 import {
-  GRUPOS, GRUPO_POR_SESION, PERSONALES, CONJUNTOS, VACACIONES_POR_NINO,
-  fmtCOP, type Grupo, type SubPersonal, type Conjunto,
-} from '@/lib/planes'
-import { getPlanes, crearPlan, actualizarPlan, archivarPlan } from '@/lib/firestore'
-import type { Plan } from '@/lib/types'
+  getSedes, upsertSede, eliminarSede,
+  getGrupos, upsertGrupo, eliminarGrupo,
+  getTarifas, actualizarTarifas,
+  getPlanes, crearPlan, actualizarPlan, archivarPlan,
+} from '@/lib/firestore'
+import type { Sede, Grupo, Tarifas, Plan } from '@/lib/types'
+import { useAuth } from '@/contexts/AuthContext'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -33,17 +38,701 @@ function Reveal({ children, delay = 0 }: { children: React.ReactNode; delay?: nu
   )
 }
 
-type Cat = 'grupos' | 'personales' | 'conjuntos' | 'vacaciones' | 'firestore'
+// ── Inputs reutilizables ───────────────────────────────────
 
-const CATS: { id: Cat; label: string; icon: string }[] = [
-  { id: 'grupos', label: 'Grupos', icon: 'groups' },
-  { id: 'personales', label: 'Personalizados', icon: 'person' },
-  { id: 'conjuntos', label: 'Conjuntos', icon: 'join_inner' },
-  { id: 'vacaciones', label: 'Vacaciones', icon: 'child_care' },
-  { id: 'firestore', label: 'Planes activos', icon: 'database' },
+function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <label className="label-caps text-[10px] text-[var(--color-on-surface-variant)]">{label}</label>
+      {children}
+      {hint && <span className="text-[10px] text-[var(--color-on-surface-variant)]/50">{hint}</span>}
+    </div>
+  )
+}
+
+function InputText(props: React.InputHTMLAttributes<HTMLInputElement>) {
+  return (
+    <input
+      {...props}
+      className={
+        'w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white ' +
+        'placeholder:text-white/20 focus:border-[rgba(230,255,0,0.5)] focus:outline-none ' +
+        (props.className ?? '')
+      }
+    />
+  )
+}
+
+function InputPrecio({ value, onChange, placeholder }: {
+  value: number | null | undefined
+  onChange: (v: number | null) => void
+  placeholder?: string
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      <input
+        type="number"
+        min={0}
+        step={1000}
+        inputMode="numeric"
+        value={value ?? ''}
+        placeholder={placeholder ?? 'Por confirmar'}
+        onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white placeholder:text-white/20 focus:border-[rgba(230,255,0,0.5)] focus:outline-none"
+      />
+      <span className="text-[10px] text-[var(--color-on-surface-variant)]/50">
+        {value != null ? fmtCOP(value) : '—'}
+      </span>
+    </div>
+  )
+}
+
+// ── Tabs ────────────────────────────────────────────────────
+
+type Tab = 'sedes' | 'grupos' | 'tarifas' | 'plantillas'
+const TABS: { id: Tab; label: string; icon: string }[] = [
+  { id: 'sedes',      label: 'Sedes',      icon: 'location_on' },
+  { id: 'grupos',     label: 'Grupos',     icon: 'groups' },
+  { id: 'tarifas',    label: 'Tarifas',    icon: 'payments' },
+  { id: 'plantillas', label: 'Plantillas', icon: 'database' },
 ]
 
-// Plan vacío para crear nuevos
+export default function CatalogoPage() {
+  const { authorized, loading } = useRoleGuard(['admin'])
+  const { user } = useAuth()
+  const [tab, setTab] = useState<Tab>('sedes')
+
+  return (
+    <GuardedShell authorized={authorized} loading={loading} title="Catálogo">
+      <div className="space-y-8">
+        <Reveal>
+          <div>
+            <p className="label-caps text-[var(--color-primary-fixed)] mb-3 tracking-[0.3em]">Configuración</p>
+            <h2 className="font-display text-display-lg text-white leading-none tracking-tighter uppercase">
+              Catálogo
+            </h2>
+          </div>
+        </Reveal>
+
+        {/* Tabs */}
+        <Reveal delay={0.08}>
+          <div className="flex flex-wrap gap-2 border-b border-white/10 pb-1">
+            {TABS.map((t) => {
+              const active = tab === t.id
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setTab(t.id)}
+                  className={`inline-flex items-center gap-2 px-4 py-2.5 rounded-t-lg text-xs font-semibold transition-colors ${
+                    active
+                      ? 'bg-white/5 text-white border-b-2 border-[var(--color-primary-fixed)]'
+                      : 'text-white/50 hover:text-white/80'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[16px]">{t.icon}</span>
+                  {t.label}
+                </button>
+              )
+            })}
+          </div>
+        </Reveal>
+
+        {tab === 'sedes' && <SedesTab />}
+        {tab === 'grupos' && <GruposTab />}
+        {tab === 'tarifas' && <TarifasTab actualizadoPor={user?.uid} />}
+        {tab === 'plantillas' && <PlantillasTab />}
+      </div>
+    </GuardedShell>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// TAB SEDES
+// ─────────────────────────────────────────────────────────────
+
+function SedesTab() {
+  const [sedes, setSedes] = useState<Sede[]>([])
+  const [cargando, setCargando] = useState(true)
+  const [borrador, setBorrador] = useState<Partial<Sede> | null>(null)
+  const [procesando, setProcesando] = useState<string | null>(null)
+
+  useEffect(() => {
+    getSedes(false).then(setSedes).catch(console.error).finally(() => setCargando(false))
+  }, [])
+
+  async function guardar(s: Partial<Sede>) {
+    const codigo = (s.codigo ?? '').trim().toUpperCase()
+    const nombre = (s.nombre ?? '').trim()
+    if (!codigo || !nombre) { alert('Código y nombre son obligatorios.'); return }
+    if (!/^[A-Z0-9_-]+$/.test(codigo)) { alert('El código solo puede tener letras, números, guion y guion bajo.'); return }
+    const id = s.id ?? codigo.toLowerCase()
+    setProcesando(id)
+    try {
+      await upsertSede(id, {
+        codigo,
+        nombre,
+        direccion: s.direccion?.trim() || undefined,
+        activo: s.activo ?? true,
+        orden: Number.isFinite(s.orden) ? (s.orden as number) : sedes.length + 1,
+      })
+      const fresh = await getSedes(false)
+      setSedes(fresh)
+      setBorrador(null)
+    } catch (e: any) {
+      alert(e?.message ?? 'No se pudo guardar la sede.')
+    } finally { setProcesando(null) }
+  }
+
+  async function borrar(s: Sede) {
+    if (!window.confirm(`¿Eliminar la sede "${s.nombre}"?\n\nLos grupos que la referencian quedarán huérfanos.`)) return
+    setProcesando(s.id)
+    try {
+      await eliminarSede(s.id)
+      setSedes((prev) => prev.filter((x) => x.id !== s.id))
+    } catch (e: any) {
+      alert(e?.message ?? 'No se pudo eliminar.')
+    } finally { setProcesando(null) }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-white/60">
+          Sedes físicas donde se dictan clases. El código corto (ej. UTP) se usa internamente.
+        </p>
+        <Button size="sm" onClick={() => setBorrador({ codigo: '', nombre: '', activo: true, orden: sedes.length + 1 })}>
+          <span className="material-symbols-outlined text-[16px]">add</span>
+          Nueva sede
+        </Button>
+      </div>
+
+      {cargando ? (
+        <div className="flex justify-center py-10"><Spinner /></div>
+      ) : (
+        <div className="space-y-3">
+          {sedes.map((s) => (
+            <SedeRow key={s.id} sede={s} onGuardar={guardar} onBorrar={borrar} procesando={procesando === s.id} />
+          ))}
+          {sedes.length === 0 && !borrador && (
+            <Card><p className="text-center text-sm text-white/50 py-8">No hay sedes. Crea la primera.</p></Card>
+          )}
+        </div>
+      )}
+
+      {borrador && (
+        <Card>
+          <p className="label-caps text-[10px] text-[var(--color-primary-fixed)] mb-4">Nueva sede</p>
+          <SedeFormBody value={borrador} onChange={setBorrador} />
+          <div className="flex gap-3 mt-5">
+            <Button size="sm" onClick={() => guardar(borrador)} loading={procesando === (borrador.id ?? 'new')}>
+              Crear
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setBorrador(null)}>Cancelar</Button>
+          </div>
+        </Card>
+      )}
+    </div>
+  )
+}
+
+function SedeRow({ sede, onGuardar, onBorrar, procesando }: {
+  sede: Sede
+  onGuardar: (s: Partial<Sede>) => Promise<void>
+  onBorrar: (s: Sede) => Promise<void>
+  procesando: boolean
+}) {
+  const [editando, setEditando] = useState(false)
+  const [draft, setDraft] = useState<Sede>(sede)
+
+  if (!editando) {
+    return (
+      <Card>
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <div className="flex items-center gap-3">
+              <p className="font-display text-lg font-black text-white uppercase">{sede.nombre}</p>
+              <Badge variant={sede.activo ? 'success' : 'default'}>
+                {sede.activo ? 'Activa' : 'Inactiva'}
+              </Badge>
+            </div>
+            <p className="text-xs text-white/50 mt-1">
+              Código: <span className="font-mono">{sede.codigo}</span> · Orden: {sede.orden}
+              {sede.direccion && ` · ${sede.direccion}`}
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="ghost" onClick={() => { setDraft(sede); setEditando(true) }}>Editar</Button>
+            <Button size="sm" variant="danger" onClick={() => onBorrar(sede)} loading={procesando}>Eliminar</Button>
+          </div>
+        </div>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <SedeFormBody value={draft} onChange={(d) => setDraft(d as Sede)} />
+      <div className="flex gap-3 mt-5">
+        <Button size="sm" onClick={async () => { await onGuardar(draft); setEditando(false) }} loading={procesando}>
+          Guardar
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => setEditando(false)}>Cancelar</Button>
+      </div>
+    </Card>
+  )
+}
+
+function SedeFormBody({ value, onChange }: { value: Partial<Sede>; onChange: (v: Partial<Sede>) => void }) {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <Field label="Código *" hint="Ej: UTP, TULCAN, BAMBU">
+        <InputText
+          value={value.codigo ?? ''}
+          onChange={(e) => onChange({ ...value, codigo: e.target.value.toUpperCase() })}
+          placeholder="UTP"
+        />
+      </Field>
+      <Field label="Nombre visible *">
+        <InputText
+          value={value.nombre ?? ''}
+          onChange={(e) => onChange({ ...value, nombre: e.target.value })}
+          placeholder="UTP"
+        />
+      </Field>
+      <Field label="Dirección (opcional)">
+        <InputText
+          value={value.direccion ?? ''}
+          onChange={(e) => onChange({ ...value, direccion: e.target.value })}
+          placeholder="Universidad Tecnológica de Pereira"
+        />
+      </Field>
+      <Field label="Orden">
+        <InputText
+          type="number"
+          value={String(value.orden ?? 1)}
+          onChange={(e) => onChange({ ...value, orden: Number(e.target.value) || 1 })}
+        />
+      </Field>
+      <label className="flex items-center gap-3 text-sm text-white">
+        <input
+          type="checkbox"
+          checked={value.activo !== false}
+          onChange={(e) => onChange({ ...value, activo: e.target.checked })}
+        />
+        Sede activa (visible en el wizard)
+      </label>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// TAB GRUPOS
+// ─────────────────────────────────────────────────────────────
+
+function GruposTab() {
+  const [grupos, setGrupos] = useState<Grupo[]>([])
+  const [sedes, setSedes] = useState<Sede[]>([])
+  const [cargando, setCargando] = useState(true)
+  const [borrador, setBorrador] = useState<Partial<Grupo> | null>(null)
+  const [procesando, setProcesando] = useState<string | null>(null)
+
+  useEffect(() => {
+    Promise.all([getGrupos(), getSedes(false)])
+      .then(([g, s]) => { setGrupos(g); setSedes(s) })
+      .catch(console.error)
+      .finally(() => setCargando(false))
+  }, [])
+
+  async function guardar(g: Partial<Grupo>) {
+    const nombre = (g.nombre ?? '').trim()
+    const sedeCodigo = (g.sedeCodigo ?? '').trim().toUpperCase()
+    if (!nombre || !sedeCodigo) { alert('Nombre y sede son obligatorios.'); return }
+    const id = g.id ?? nombre.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+    setProcesando(id)
+    try {
+      await upsertGrupo(id, {
+        nombre,
+        sedeCodigo,
+        horarios: (g.horarios ?? []).filter((h) => h.trim().length > 0),
+        nivel: g.nivel ?? 'Todos los niveles',
+        coach: g.coach?.trim() || undefined,
+        cupoMaximo: Number.isFinite(g.cupoMaximo) ? (g.cupoMaximo as number) : 12,
+        disponible: g.disponible ?? true,
+      })
+      setGrupos(await getGrupos())
+      setBorrador(null)
+    } catch (e: any) {
+      alert(e?.message ?? 'No se pudo guardar el grupo.')
+    } finally { setProcesando(null) }
+  }
+
+  async function borrar(g: Grupo) {
+    if (!window.confirm(`¿Eliminar el grupo "${g.nombre}"?`)) return
+    setProcesando(g.id)
+    try {
+      await eliminarGrupo(g.id)
+      setGrupos((prev) => prev.filter((x) => x.id !== g.id))
+    } catch (e: any) {
+      alert(e?.message ?? 'No se pudo eliminar.')
+    } finally { setProcesando(null) }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-white/60">
+          Grupos grupales con horario fijo. Cada uno vive en una sede.
+        </p>
+        <Button size="sm" onClick={() => setBorrador({
+          nombre: '', sedeCodigo: sedes[0]?.codigo ?? '',
+          horarios: [''], nivel: 'Todos los niveles', cupoMaximo: 12, disponible: true,
+        })}>
+          <span className="material-symbols-outlined text-[16px]">add</span>
+          Nuevo grupo
+        </Button>
+      </div>
+
+      {cargando ? (
+        <div className="flex justify-center py-10"><Spinner /></div>
+      ) : (
+        <div className="space-y-3">
+          {grupos.map((g) => (
+            <GrupoRow key={g.id} grupo={g} sedes={sedes} onGuardar={guardar} onBorrar={borrar} procesando={procesando === g.id} />
+          ))}
+          {grupos.length === 0 && !borrador && (
+            <Card><p className="text-center text-sm text-white/50 py-8">No hay grupos.</p></Card>
+          )}
+        </div>
+      )}
+
+      {borrador && (
+        <Card>
+          <p className="label-caps text-[10px] text-[var(--color-primary-fixed)] mb-4">Nuevo grupo</p>
+          <GrupoFormBody value={borrador} sedes={sedes} onChange={setBorrador} />
+          <div className="flex gap-3 mt-5">
+            <Button size="sm" onClick={() => guardar(borrador)} loading={procesando === (borrador.id ?? 'new')}>
+              Crear
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setBorrador(null)}>Cancelar</Button>
+          </div>
+        </Card>
+      )}
+    </div>
+  )
+}
+
+function GrupoRow({ grupo, sedes, onGuardar, onBorrar, procesando }: {
+  grupo: Grupo
+  sedes: Sede[]
+  onGuardar: (g: Partial<Grupo>) => Promise<void>
+  onBorrar: (g: Grupo) => Promise<void>
+  procesando: boolean
+}) {
+  const [editando, setEditando] = useState(false)
+  const [draft, setDraft] = useState<Grupo>(grupo)
+
+  if (!editando) {
+    return (
+      <Card>
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-3 flex-wrap">
+              <p className="font-display text-lg font-black text-white">{grupo.nombre}</p>
+              <Badge variant="primary">{grupo.sedeCodigo}</Badge>
+              {!grupo.disponible && <Badge variant="danger">No disponible</Badge>}
+            </div>
+            <p className="text-xs text-white/60 mt-1">
+              {grupo.nivel} · Cupo {grupo.cupoMaximo}{grupo.coach ? ` · ${grupo.coach}` : ''}
+            </p>
+            <div className="flex flex-wrap gap-2 mt-2">
+              {grupo.horarios.map((h) => (
+                <span key={h} className="label-caps text-[9px] px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-white/70">
+                  {h}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="ghost" onClick={() => { setDraft(grupo); setEditando(true) }}>Editar</Button>
+            <Button size="sm" variant="danger" onClick={() => onBorrar(grupo)} loading={procesando}>Eliminar</Button>
+          </div>
+        </div>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <GrupoFormBody value={draft} sedes={sedes} onChange={(d) => setDraft(d as Grupo)} />
+      <div className="flex gap-3 mt-5">
+        <Button size="sm" onClick={async () => { await onGuardar(draft); setEditando(false) }} loading={procesando}>
+          Guardar
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => setEditando(false)}>Cancelar</Button>
+      </div>
+    </Card>
+  )
+}
+
+function GrupoFormBody({ value, sedes, onChange }: {
+  value: Partial<Grupo>; sedes: Sede[]; onChange: (v: Partial<Grupo>) => void
+}) {
+  const horarios = value.horarios ?? ['']
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <Field label="Nombre del grupo *">
+        <InputText
+          value={value.nombre ?? ''}
+          onChange={(e) => onChange({ ...value, nombre: e.target.value })}
+          placeholder="Estrellas UTP"
+        />
+      </Field>
+      <Field label="Sede *">
+        <select
+          value={value.sedeCodigo ?? ''}
+          onChange={(e) => onChange({ ...value, sedeCodigo: e.target.value })}
+          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:border-[rgba(230,255,0,0.5)] focus:outline-none"
+        >
+          <option value="" className="bg-[#0a0a0a]">Selecciona sede…</option>
+          {sedes.map((s) => (
+            <option key={s.id} value={s.codigo} className="bg-[#0a0a0a]">
+              {s.nombre} ({s.codigo})
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Nivel">
+        <InputText
+          value={value.nivel ?? ''}
+          onChange={(e) => onChange({ ...value, nivel: e.target.value })}
+          placeholder="Principiantes / Intermedio / Todos"
+        />
+      </Field>
+      <Field label="Coach">
+        <InputText
+          value={value.coach ?? ''}
+          onChange={(e) => onChange({ ...value, coach: e.target.value })}
+          placeholder="Coach Ana Torres"
+        />
+      </Field>
+      <Field label="Cupo máximo">
+        <InputText
+          type="number"
+          value={String(value.cupoMaximo ?? 12)}
+          onChange={(e) => onChange({ ...value, cupoMaximo: Number(e.target.value) || 12 })}
+        />
+      </Field>
+      <label className="flex items-center gap-3 text-sm text-white">
+        <input
+          type="checkbox"
+          checked={value.disponible !== false}
+          onChange={(e) => onChange({ ...value, disponible: e.target.checked })}
+        />
+        Disponible para inscripción
+      </label>
+      <div className="md:col-span-2">
+        <Field label="Horarios" hint="Ej: 'Lun · 6:00 PM'">
+          <div className="space-y-2">
+            {horarios.map((h, i) => (
+              <div key={i} className="flex gap-2">
+                <InputText
+                  value={h}
+                  onChange={(e) => {
+                    const nuevos = [...horarios]; nuevos[i] = e.target.value
+                    onChange({ ...value, horarios: nuevos })
+                  }}
+                  placeholder="Lun · 6:00 PM"
+                />
+                <Button size="sm" variant="ghost" onClick={() => {
+                  onChange({ ...value, horarios: horarios.filter((_, j) => j !== i) })
+                }}>×</Button>
+              </div>
+            ))}
+            <Button size="sm" variant="ghost" onClick={() => onChange({ ...value, horarios: [...horarios, ''] })}>
+              + Agregar horario
+            </Button>
+          </div>
+        </Field>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// TAB TARIFAS
+// ─────────────────────────────────────────────────────────────
+
+function TarifasTab({ actualizadoPor }: { actualizadoPor?: string }) {
+  const [tarifas, setTarifas] = useState<Tarifas | null>(null)
+  const [cargando, setCargando] = useState(true)
+  const [guardando, setGuardando] = useState(false)
+  const [dirty, setDirty] = useState(false)
+  const [guardado, setGuardado] = useState(false)
+
+  useEffect(() => {
+    getTarifas().then((t) => setTarifas(t)).catch(console.error).finally(() => setCargando(false))
+  }, [])
+
+  function update(fn: (t: Tarifas) => Tarifas) {
+    if (!tarifas) return
+    setTarifas(fn(tarifas))
+    setDirty(true)
+    setGuardado(false)
+  }
+
+  async function guardarTodo() {
+    if (!tarifas) return
+    setGuardando(true)
+    try {
+      await actualizarTarifas({
+        version: (tarifas.version ?? 0) + 1,
+        grupoPorSesion: tarifas.grupoPorSesion,
+        personales: tarifas.personales,
+        conjuntos: tarifas.conjuntos,
+        vacacionesPorNino: tarifas.vacacionesPorNino,
+      }, actualizadoPor)
+      setDirty(false)
+      setGuardado(true)
+      setTimeout(() => setGuardado(false), 2500)
+    } catch (e: any) {
+      alert(e?.message ?? 'No se pudo guardar.')
+    } finally { setGuardando(false) }
+  }
+
+  if (cargando) return <div className="flex justify-center py-10"><Spinner /></div>
+  if (!tarifas) return (
+    <Card>
+      <p className="text-center text-sm text-white/60 py-6">
+        No hay tarifas cargadas. Ve a /admin y presiona "Sembrar catálogo".
+      </p>
+    </Card>
+  )
+
+  const fmtActualizado = tarifas.actualizadoEn
+    ? new Date(tarifas.actualizadoEn).toLocaleString('es-CO', { dateStyle: 'medium', timeStyle: 'short' })
+    : '—'
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <p className="text-sm text-white/60">Matriz de precios que consume el wizard del alumno.</p>
+          <p className="text-[10px] text-white/40 mt-1">
+            Versión {tarifas.version} · Actualizado: {fmtActualizado}
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          {guardado && <span className="text-xs text-[var(--color-success-emerald)]">Guardado ✓</span>}
+          {dirty && !guardando && <span className="text-xs text-yellow-400">Cambios sin guardar</span>}
+          <Button size="sm" onClick={guardarTodo} loading={guardando} disabled={!dirty}>
+            <span className="material-symbols-outlined text-[16px]">save</span>
+            Guardar cambios
+          </Button>
+        </div>
+      </div>
+
+      {/* Grupal */}
+      <Card>
+        <p className="label-caps text-[10px] text-[var(--color-primary-fixed)] mb-1">GRUPAL</p>
+        <p className="text-sm text-white/60 mb-5">Precio POR SESIÓN según frecuencia semanal.</p>
+        <div className="grid grid-cols-3 gap-4">
+          {[1, 2, 3].map((week) => (
+            <Field key={week} label={`${week}x / semana`}>
+              <InputPrecio
+                value={tarifas.grupoPorSesion[week] ?? null}
+                onChange={(v) => update((t) => ({ ...t, grupoPorSesion: { ...t.grupoPorSesion, [week]: v ?? 0 } }))}
+              />
+            </Field>
+          ))}
+        </div>
+      </Card>
+
+      {/* Personales */}
+      <Card>
+        <p className="label-caps text-[10px] text-[var(--color-primary-fixed)] mb-1">PERSONALES</p>
+        <p className="text-sm text-white/60 mb-5">Precio mensual según sesiones/mes (4=1x, 8=2x, 12=3x).</p>
+        <div className="space-y-6">
+          {Object.entries(tarifas.personales).map(([id, p]) => (
+            <div key={id} className="border-t border-white/5 pt-5 first:border-t-0 first:pt-0">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="font-display text-sm font-black text-white uppercase">{id}</p>
+                  <p className="text-[10px] text-white/40 mt-0.5">
+                    Categoría {p.categoria} · {p.porPersona ? `por persona (${p.personasMin}–${p.personasMax})` : 'monto único'}
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                {[4, 8, 12].map((mes) => (
+                  <Field key={mes} label={`x${mes} sesiones`}>
+                    <InputPrecio
+                      value={p.precios[mes] ?? null}
+                      onChange={(v) => update((t) => ({
+                        ...t,
+                        personales: {
+                          ...t.personales,
+                          [id]: { ...p, precios: { ...p.precios, [mes]: v } },
+                        },
+                      }))}
+                    />
+                  </Field>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* Conjuntos */}
+      <Card>
+        <p className="label-caps text-[10px] text-[var(--color-primary-fixed)] mb-1">CONJUNTOS</p>
+        <p className="text-sm text-white/60 mb-5">Precio mensual según frecuencia semanal (1 o 2).</p>
+        <div className="space-y-6">
+          {Object.entries(tarifas.conjuntos).map(([id, c]) => (
+            <div key={id} className="border-t border-white/5 pt-5 first:border-t-0 first:pt-0">
+              <p className="font-display text-sm font-black text-white uppercase mb-3">{id}</p>
+              <div className="grid grid-cols-2 gap-4">
+                {[1, 2].map((week) => (
+                  <Field key={week} label={`${week}x / semana`}>
+                    <InputPrecio
+                      value={c.precios[week] ?? null}
+                      onChange={(v) => update((t) => ({
+                        ...t,
+                        conjuntos: {
+                          ...t.conjuntos,
+                          [id]: { precios: { ...c.precios, [week]: v } },
+                        },
+                      }))}
+                    />
+                  </Field>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* Vacaciones */}
+      <Card>
+        <p className="label-caps text-[10px] text-[var(--color-primary-fixed)] mb-1">VACACIONES DEPORTIVAS</p>
+        <p className="text-sm text-white/60 mb-5">Programa intensivo de 2 semanas — precio por niño.</p>
+        <div className="max-w-xs">
+          <Field label="Por niño">
+            <InputPrecio
+              value={tarifas.vacacionesPorNino}
+              onChange={(v) => update((t) => ({ ...t, vacacionesPorNino: v ?? 0 }))}
+            />
+          </Field>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// TAB PLANTILLAS (planes/ legacy)
+// ─────────────────────────────────────────────────────────────
+
 const PLAN_VACIO: Omit<Plan, 'id' | 'planId' | 'creadoEn'> = {
   nombre: '',
   descripcion: '',
@@ -55,712 +744,184 @@ const PLAN_VACIO: Omit<Plan, 'id' | 'planId' | 'creadoEn'> = {
   estado: true,
 }
 
-// Campo numérico en pesos
-function CampoPrecio({ label, value, onChange }: {
-  label: string; value: number | null; onChange: (v: number | null) => void
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <label className="label-caps text-[10px] text-[var(--color-on-surface-variant)]">{label}</label>
-      <input
-        type="number"
-        min={0}
-        step={1000}
-        value={value ?? ''}
-        placeholder="Por confirmar"
-        onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
-        className="w-full bg-white/5 border border-white/5 rounded-2xl px-5 py-3.5 text-[var(--color-on-surface)] placeholder:text-[var(--color-on-surface-variant)]/30 focus:border-[rgba(230,255,0,0.5)] focus:outline-none transition-colors duration-300"
-      />
-      <span className="text-[10px] text-[var(--color-on-surface-variant)]/50">
-        {value != null ? fmtCOP(value) : 'Sin tarifa definida'}
-      </span>
-    </div>
-  )
-}
-
-// Cabecera de ítem con acciones
-function ItemHeader({ titulo, chips, editando, onToggle, extra }: {
-  titulo: string; chips?: React.ReactNode; editando: boolean; onToggle: () => void; extra?: React.ReactNode
-}) {
-  return (
-    <div className="flex flex-wrap items-start justify-between gap-4">
-      <div className="min-w-0">
-        <h3 className="font-display text-lg font-extrabold text-white uppercase tracking-tight">{titulo}</h3>
-        {chips && <div className="flex flex-wrap gap-2 mt-3">{chips}</div>}
-      </div>
-      <div className="flex items-center gap-2 shrink-0">
-        {extra}
-        <Button size="sm" variant={editando ? 'primary' : 'ghost'} onClick={onToggle}>
-          {editando ? 'Listo' : 'Editar'}
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-const chip = (t: string) => (
-  <span key={t} className="label-caps text-[9px] px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[var(--color-on-surface-variant)]/70">
-    {t}
-  </span>
-)
-
-export default function AdminPlanesPage() {
-  const { authorized, loading } = useRoleGuard(['admin'])
-  const [cat, setCat] = useState<Cat>('grupos')
-  const [editId, setEditId] = useState<string | null>(null)
-  const [guardado, setGuardado] = useState(false)
-
-  // Catálogo editable local
-  const [grupos, setGrupos] = useState<Grupo[]>(() => GRUPOS.map((g) => ({ ...g, horarios: [...g.horarios] })))
-  const [tarifas, setTarifas] = useState<Record<number, number>>({ ...GRUPO_POR_SESION })
-  const [personales, setPersonales] = useState<SubPersonal[]>(() => PERSONALES.map((p) => ({ ...p, precios: { ...p.precios } })))
-  const [conjuntos, setConjuntos] = useState<Conjunto[]>(() => CONJUNTOS.map((c) => ({ ...c, precios: { ...c.precios } })))
-  const [vacaciones, setVacaciones] = useState<number>(VACACIONES_POR_NINO)
-
-  // Planes Firestore
+function PlantillasTab() {
   const [planes, setPlanes] = useState<Plan[]>([])
-  const [cargandoPlanes, setCargandoPlanes] = useState(false)
-  const [nuevoForm, setNuevoForm] = useState<Omit<Plan, 'id' | 'planId' | 'creadoEn'> | null>(null)
-  const [guardandoPlan, setGuardandoPlan] = useState<string | null>(null)
-  const [planEditId, setPlanEditId] = useState<string | null>(null)
-  const [planEditData, setPlanEditData] = useState<Partial<Plan>>({})
+  const [cargando, setCargando] = useState(true)
+  const [nuevo, setNuevo] = useState<typeof PLAN_VACIO | null>(null)
+  const [editando, setEditando] = useState<string | null>(null)
+  const [draft, setDraft] = useState<Partial<Plan>>({})
+  const [procesando, setProcesando] = useState<string | null>(null)
 
   useEffect(() => {
-    if (cat !== 'firestore') return
-    setCargandoPlanes(true)
-    getPlanes(false)
-      .then(setPlanes)
-      .catch(console.error)
-      .finally(() => setCargandoPlanes(false))
-  }, [cat])
+    getPlanes(false).then(setPlanes).catch(console.error).finally(() => setCargando(false))
+  }, [])
 
-  async function guardarNuevoPlan() {
-    if (!nuevoForm) return
-    setGuardandoPlan('nuevo')
+  async function crear() {
+    if (!nuevo) return
+    setProcesando('nuevo')
     try {
-      const id = await crearPlan(nuevoForm)
-      const nuevo: Plan = { ...nuevoForm, id, planId: id, creadoEn: Date.now() }
-      setPlanes((prev) => [nuevo, ...prev])
-      setNuevoForm(null)
+      const id = await crearPlan(nuevo)
+      setPlanes((prev) => [{ ...nuevo, id, planId: id, creadoEn: Date.now() } as Plan, ...prev])
+      setNuevo(null)
     } catch (e: any) {
-      console.error(e)
       alert(e?.message ?? 'No se pudo crear el plan.')
-    } finally { setGuardandoPlan(null) }
+    } finally { setProcesando(null) }
   }
 
-  async function guardarEdicionPlan(planId: string) {
-    setGuardandoPlan(planId)
+  async function actualizar(id: string) {
+    setProcesando(id)
     try {
-      await actualizarPlan(planId, planEditData)
-      setPlanes((prev) => prev.map((p) => p.id === planId ? { ...p, ...planEditData } : p))
-      setPlanEditId(null)
-      setPlanEditData({})
+      await actualizarPlan(id, draft)
+      setPlanes((prev) => prev.map((p) => p.id === id ? { ...p, ...draft } : p))
+      setEditando(null); setDraft({})
     } catch (e: any) {
-      console.error(e)
-      alert(e?.message ?? 'No se pudo actualizar el plan.')
-    } finally { setGuardandoPlan(null) }
+      alert(e?.message ?? 'No se pudo actualizar.')
+    } finally { setProcesando(null) }
   }
 
-  async function archivar(planId: string) {
-    const plan = planes.find((p) => p.id === planId)
-    if (!window.confirm(`¿Archivar el plan "${plan?.nombre ?? planId}"?\n\nDejará de aparecer para los alumnos, pero las suscripciones activas siguen vigentes.`)) return
-    setGuardandoPlan(planId)
+  async function archivar(p: Plan) {
+    if (!window.confirm(`¿Archivar "${p.nombre}"?`)) return
+    setProcesando(p.id)
     try {
-      await archivarPlan(planId)
-      setPlanes((prev) => prev.map((p) => p.id === planId ? { ...p, estado: false } : p))
+      await archivarPlan(p.id)
+      setPlanes((prev) => prev.map((x) => x.id === p.id ? { ...x, estado: false } : x))
     } catch (e: any) {
-      console.error(e)
-      alert(e?.message ?? 'No se pudo archivar el plan.')
-    } finally { setGuardandoPlan(null) }
+      alert(e?.message ?? 'No se pudo archivar.')
+    } finally { setProcesando(null) }
   }
-
-  function marcarGuardado() {
-    setGuardado(true)
-    setTimeout(() => setGuardado(false), 2500)
-  }
-
-  const toggleEdit = (id: string) => {
-    setEditId((cur) => {
-      if (cur === id) { marcarGuardado(); return null }
-      return id
-    })
-  }
-
-  // ── Altas ──
-  function nuevoGrupo() {
-    const id = `grupo-${Date.now()}`
-    setGrupos((g) => [...g, {
-      id, nombre: 'Nuevo grupo', horarios: ['Lun · 6:00 PM'], disponible: false,
-      nivel: 'Por definir', cupos: 'Cupos por definir', coach: 'Por asignar',
-    }])
-    setEditId(id)
-  }
-  function nuevaPersonal() {
-    const id = `personal-${Date.now()}`
-    setPersonales((p) => [...p, {
-      id, nombre: 'Nueva modalidad', desc: 'Describe la modalidad.',
-      porPersona: false, personasMin: 1, personasMax: 1,
-      precios: { 4: 0, 8: 0, 12: 0 }, incluye: ['Beneficio 1'],
-    }])
-    setEditId(id)
-  }
-  function nuevoConjunto() {
-    const id = `conjunto-${Date.now()}`
-    setConjuntos((c) => [...c, {
-      id, nombre: 'Nuevo conjunto', desc: 'Describe la combinación.',
-      precios: { 1: null, 2: null }, incluye: ['Disciplina 1'],
-    }])
-    setEditId(id)
-  }
-
-  // ── Bajas ──
-  const eliminar = (tipo: Cat, id: string) => {
-    if (tipo === 'grupos') setGrupos((g) => g.filter((x) => x.id !== id))
-    if (tipo === 'personales') setPersonales((p) => p.filter((x) => x.id !== id))
-    if (tipo === 'conjuntos') setConjuntos((c) => c.filter((x) => x.id !== id))
-    setEditId(null)
-  }
-
-  const BotonEliminar = ({ tipo, id, nombre }: { tipo: Cat; id: string; nombre: string }) => (
-    <button
-      onClick={() => eliminar(tipo, id)}
-      aria-label={`Eliminar ${nombre}`}
-      className="w-9 h-9 flex items-center justify-center text-[var(--color-on-surface-variant)]/50 hover:text-[var(--color-danger-crimson)] hover:bg-[rgba(239,68,68,0.1)] rounded-xl transition-colors duration-200 active:scale-[0.94]"
-    >
-      <span className="material-symbols-outlined text-[20px]">delete</span>
-    </button>
-  )
 
   return (
-    <GuardedShell authorized={authorized} loading={loading} title="Planes">
-      <div className="space-y-8">
-
-        {/* ── Header ── */}
-        <Reveal>
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <p className="label-caps text-[var(--color-primary-fixed)] mb-3 tracking-[0.3em]">Catálogo del club</p>
-              <h2 className="font-display text-display-lg text-white leading-none tracking-tighter uppercase">
-                Planes
-              </h2>
-              <p className="text-sm text-[var(--color-on-surface-variant)]/70 mt-4 max-w-xl leading-relaxed">
-                Lo que definas aquí es lo que el atleta ve al armar su plan.
-                Las tarifas alimentan el cálculo automático del precio.
-              </p>
-            </div>
-            {guardado && (
-              <motion.span
-                initial={{ opacity: 0, y: -6 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="label-caps text-[10px] px-4 py-2.5 rounded-full bg-[rgba(16,185,129,0.15)] text-[var(--color-success-emerald)] flex items-center gap-2"
-              >
-                <span className="material-symbols-outlined text-[16px]">check_circle</span>
-                Cambios guardados
-              </motion.span>
-            )}
-          </div>
-        </Reveal>
-
-        {/* ── Categorías ── */}
-        <Reveal delay={0.06}>
-          <div className="flex flex-wrap gap-2">
-            {CATS.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => { setCat(c.id); setEditId(null) }}
-                aria-pressed={cat === c.id}
-                className={`flex items-center gap-2.5 px-5 py-3 rounded-2xl border label-caps text-[10px] transition-[background-color,border-color,color] duration-200 ${
-                  cat === c.id
-                    ? 'bg-[var(--color-primary-fixed)] text-black border-transparent'
-                    : 'bg-white/[0.03] text-[var(--color-on-surface-variant)] border-white/8 hover:text-white hover:border-white/20'
-                }`}
-              >
-                <span className="material-symbols-outlined text-[18px]">{c.icon}</span>
-                {c.label}
-              </button>
-            ))}
-          </div>
-        </Reveal>
-
-        {/* ══ GRUPOS ══ */}
-        {cat === 'grupos' && (
-          <div className="space-y-6">
-            {/* Tarifas por frecuencia */}
-            <Reveal delay={0.1}>
-              <Card padding="lg">
-                <div className="flex items-center gap-3 mb-2">
-                  <span className="material-symbols-outlined text-[var(--color-primary-fixed)]">payments</span>
-                  <h3 className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight">
-                    Tarifa por sesión
-                  </h3>
-                </div>
-                <p className="text-sm text-[var(--color-on-surface-variant)]/60 mb-7">
-                  A mayor frecuencia, menor precio por sesión. El total mensual se calcula
-                  multiplicando por las sesiones del mes.
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                  {[1, 2, 3].map((w) => (
-                    <div key={w}>
-                      <CampoPrecio
-                        label={`${w}× / semana`}
-                        value={tarifas[w]}
-                        onChange={(v) => { setTarifas((t) => ({ ...t, [w]: v ?? 0 })); }}
-                      />
-                      <p className="label-caps text-[9px] text-[var(--color-primary-fixed)]/80 mt-2">
-                        Mes: {fmtCOP((tarifas[w] ?? 0) * w * 4)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-                <div className="flex justify-end mt-7">
-                  <Button size="sm" onClick={marcarGuardado}>Guardar tarifas</Button>
-                </div>
-              </Card>
-            </Reveal>
-
-            {grupos.map((g, i) => {
-              const editando = editId === g.id
-              return (
-                <Reveal key={g.id} delay={0.12 + i * 0.04}>
-                  <Card padding="lg">
-                    <ItemHeader
-                      titulo={g.nombre}
-                      editando={editando}
-                      onToggle={() => toggleEdit(g.id)}
-                      extra={<BotonEliminar tipo="grupos" id={g.id} nombre={g.nombre} />}
-                      chips={
-                        <>
-                          {g.horarios.map(chip)}
-                          <Badge variant={g.disponible ? 'success' : 'danger'}>
-                            {g.disponible ? 'Con cupos' : 'Sin cupos'}
-                          </Badge>
-                        </>
-                      }
-                    />
-
-                    {editando && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.3, ease: EASE }}
-                        className="mt-7 pt-7 border-t border-white/8 space-y-5"
-                      >
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                          <Input
-                            label="Nombre del grupo"
-                            value={g.nombre}
-                            onChange={(e) => setGrupos((prev) => prev.map((x) => x.id === g.id ? { ...x, nombre: e.target.value } : x))}
-                          />
-                          <Input
-                            label="Entrenador asignado"
-                            value={g.coach}
-                            onChange={(e) => setGrupos((prev) => prev.map((x) => x.id === g.id ? { ...x, coach: e.target.value } : x))}
-                          />
-                          <Input
-                            label="Nivel"
-                            value={g.nivel}
-                            onChange={(e) => setGrupos((prev) => prev.map((x) => x.id === g.id ? { ...x, nivel: e.target.value } : x))}
-                          />
-                          <Input
-                            label="Cupos"
-                            value={g.cupos}
-                            onChange={(e) => setGrupos((prev) => prev.map((x) => x.id === g.id ? { ...x, cupos: e.target.value } : x))}
-                          />
-                        </div>
-
-                        <Input
-                          label="Horarios (separados por coma)"
-                          value={g.horarios.join(', ')}
-                          onChange={(e) => setGrupos((prev) => prev.map((x) => x.id === g.id
-                            ? { ...x, horarios: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) }
-                            : x))}
-                        />
-
-                        <label className="flex items-center justify-between p-5 rounded-2xl border border-white/8 bg-white/[0.03] cursor-pointer">
-                          <span>
-                            <span className="block text-sm font-bold text-white">Disponible para inscripción</span>
-                            <span className="block text-[11px] text-[var(--color-on-surface-variant)]/60 mt-1">
-                              Si lo apagas, el atleta lo verá como “cupos por confirmar”.
-                            </span>
-                          </span>
-                          <button
-                            type="button"
-                            role="switch"
-                            aria-checked={g.disponible}
-                            aria-label={`Disponibilidad de ${g.nombre}`}
-                            onClick={() => setGrupos((prev) => prev.map((x) => x.id === g.id ? { ...x, disponible: !x.disponible } : x))}
-                            className={`relative w-12 h-6 rounded-full shrink-0 transition-colors duration-300 ${
-                              g.disponible ? 'bg-[var(--color-primary-fixed)]' : 'bg-white/10'
-                            }`}
-                          >
-                            <span className={`absolute top-1 left-1 w-4 h-4 rounded-full transition-transform duration-300 ${
-                              g.disponible ? 'translate-x-6 bg-black' : 'translate-x-0 bg-white/40'
-                            }`} />
-                          </button>
-                        </label>
-                      </motion.div>
-                    )}
-                  </Card>
-                </Reveal>
-              )
-            })}
-
-            <Button variant="outline" fullWidth onClick={nuevoGrupo}>
-              <span className="material-symbols-outlined text-[18px]">add_circle</span>
-              Añadir grupo
-            </Button>
-          </div>
-        )}
-
-        {/* ══ PERSONALIZADOS ══ */}
-        {cat === 'personales' && (
-          <div className="space-y-6">
-            {personales.map((p, i) => {
-              const editando = editId === p.id
-              return (
-                <Reveal key={p.id} delay={0.08 + i * 0.04}>
-                  <Card padding="lg">
-                    <ItemHeader
-                      titulo={p.nombre}
-                      editando={editando}
-                      onToggle={() => toggleEdit(p.id)}
-                      extra={<BotonEliminar tipo="personales" id={p.id} nombre={p.nombre} />}
-                      chips={
-                        <>
-                          {chip(`4 ses. ${fmtCOP(p.precios[4] ?? 0)}`)}
-                          {chip(`8 ses. ${fmtCOP(p.precios[8] ?? 0)}`)}
-                          {chip(`12 ses. ${fmtCOP(p.precios[12] ?? 0)}`)}
-                          {p.porPersona && <Badge variant="primary">Por persona</Badge>}
-                        </>
-                      }
-                    />
-
-                    {editando && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.3, ease: EASE }}
-                        className="mt-7 pt-7 border-t border-white/8 space-y-5"
-                      >
-                        <Input
-                          label="Nombre"
-                          value={p.nombre}
-                          onChange={(e) => setPersonales((prev) => prev.map((x) => x.id === p.id ? { ...x, nombre: e.target.value } : x))}
-                        />
-                        <Input
-                          label="Descripción"
-                          value={p.desc}
-                          onChange={(e) => setPersonales((prev) => prev.map((x) => x.id === p.id ? { ...x, desc: e.target.value } : x))}
-                        />
-
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                          {[4, 8, 12].map((mes) => (
-                            <CampoPrecio
-                              key={mes}
-                              label={`${mes} sesiones / mes`}
-                              value={p.precios[mes] ?? 0}
-                              onChange={(v) => setPersonales((prev) => prev.map((x) => x.id === p.id
-                                ? { ...x, precios: { ...x.precios, [mes]: v ?? 0 } } : x))}
-                            />
-                          ))}
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 items-end">
-                          <Input
-                            label="Mínimo de personas"
-                            type="number" min={1}
-                            value={p.personasMin}
-                            onChange={(e) => setPersonales((prev) => prev.map((x) => x.id === p.id ? { ...x, personasMin: Number(e.target.value) } : x))}
-                          />
-                          <Input
-                            label="Máximo de personas"
-                            type="number" min={1}
-                            value={p.personasMax}
-                            onChange={(e) => setPersonales((prev) => prev.map((x) => x.id === p.id ? { ...x, personasMax: Number(e.target.value) } : x))}
-                          />
-                          <label className="flex items-center justify-between p-4 rounded-2xl border border-white/8 bg-white/[0.03] cursor-pointer">
-                            <span className="text-sm text-white">Precio por persona</span>
-                            <button
-                              type="button"
-                              role="switch"
-                              aria-checked={p.porPersona}
-                              aria-label={`Cobro por persona en ${p.nombre}`}
-                              onClick={() => setPersonales((prev) => prev.map((x) => x.id === p.id ? { ...x, porPersona: !x.porPersona } : x))}
-                              className={`relative w-12 h-6 rounded-full shrink-0 transition-colors duration-300 ${
-                                p.porPersona ? 'bg-[var(--color-primary-fixed)]' : 'bg-white/10'
-                              }`}
-                            >
-                              <span className={`absolute top-1 left-1 w-4 h-4 rounded-full transition-transform duration-300 ${
-                                p.porPersona ? 'translate-x-6 bg-black' : 'translate-x-0 bg-white/40'
-                              }`} />
-                            </button>
-                          </label>
-                        </div>
-                      </motion.div>
-                    )}
-                  </Card>
-                </Reveal>
-              )
-            })}
-
-            <Button variant="outline" fullWidth onClick={nuevaPersonal}>
-              <span className="material-symbols-outlined text-[18px]">add_circle</span>
-              Añadir modalidad
-            </Button>
-          </div>
-        )}
-
-        {/* ══ CONJUNTOS ══ */}
-        {cat === 'conjuntos' && (
-          <div className="space-y-6">
-            {conjuntos.map((c, i) => {
-              const editando = editId === c.id
-              return (
-                <Reveal key={c.id} delay={0.08 + i * 0.04}>
-                  <Card padding="lg">
-                    <ItemHeader
-                      titulo={c.nombre}
-                      editando={editando}
-                      onToggle={() => toggleEdit(c.id)}
-                      extra={<BotonEliminar tipo="conjuntos" id={c.id} nombre={c.nombre} />}
-                      chips={
-                        <>
-                          {chip(`1× ${c.precios[1] != null ? fmtCOP(c.precios[1]!) : 'por confirmar'}`)}
-                          {chip(`2× ${c.precios[2] != null ? fmtCOP(c.precios[2]!) : 'por confirmar'}`)}
-                        </>
-                      }
-                    />
-
-                    {editando && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.3, ease: EASE }}
-                        className="mt-7 pt-7 border-t border-white/8 space-y-5"
-                      >
-                        <Input
-                          label="Nombre"
-                          value={c.nombre}
-                          onChange={(e) => setConjuntos((prev) => prev.map((x) => x.id === c.id ? { ...x, nombre: e.target.value } : x))}
-                        />
-                        <Input
-                          label="Descripción"
-                          value={c.desc}
-                          onChange={(e) => setConjuntos((prev) => prev.map((x) => x.id === c.id ? { ...x, desc: e.target.value } : x))}
-                        />
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                          {[1, 2].map((w) => (
-                            <CampoPrecio
-                              key={w}
-                              label={`${w}× / semana (mensual)`}
-                              value={c.precios[w] ?? null}
-                              onChange={(v) => setConjuntos((prev) => prev.map((x) => x.id === c.id
-                                ? { ...x, precios: { ...x.precios, [w]: v } } : x))}
-                            />
-                          ))}
-                        </div>
-                        <p className="text-[11px] text-[var(--color-on-surface-variant)]/50">
-                          Deja el campo vacío para que el atleta vea “tarifa por confirmar”.
-                        </p>
-                      </motion.div>
-                    )}
-                  </Card>
-                </Reveal>
-              )
-            })}
-
-            <Button variant="outline" fullWidth onClick={nuevoConjunto}>
-              <span className="material-symbols-outlined text-[18px]">add_circle</span>
-              Añadir conjunto
-            </Button>
-          </div>
-        )}
-
-        {/* ══ VACACIONES ══ */}
-        {cat === 'vacaciones' && (
-          <Reveal delay={0.08}>
-            <Card padding="lg">
-              <div className="flex items-center gap-3 mb-2">
-                <span className="material-symbols-outlined text-[var(--color-primary-fixed)]">child_care</span>
-                <h3 className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight">
-                  Vacaciones deportivas
-                </h3>
-              </div>
-              <p className="text-sm text-[var(--color-on-surface-variant)]/60 mb-7">
-                Programa intensivo de 2 semanas. El total se multiplica por el número
-                de niños inscritos.
-              </p>
-              <div className="max-w-xs">
-                <CampoPrecio
-                  label="Precio por niño"
-                  value={vacaciones}
-                  onChange={(v) => setVacaciones(v ?? 0)}
-                />
-              </div>
-              <div className="flex items-center justify-between mt-7 pt-7 border-t border-white/8">
-                <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50">
-                  Ejemplo · 3 niños
-                </span>
-                <span className="font-display font-black text-[var(--color-primary-fixed)]">
-                  {fmtCOP(vacaciones * 3)}
-                </span>
-              </div>
-              <div className="flex justify-end mt-7">
-                <Button size="sm" onClick={marcarGuardado}>Guardar</Button>
-              </div>
-            </Card>
-          </Reveal>
-        )}
-
-        {/* ══ PLANES FIRESTORE ══ */}
-        {cat === 'firestore' && (
-          <div className="space-y-5">
-            <Reveal delay={0.08}>
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-[var(--color-on-surface-variant)]/60">
-                  Estos planes aparecen en el selector de aprobación de finanzas.
-                </p>
-                <Button size="sm" onClick={() => setNuevoForm({ ...PLAN_VACIO })}>
-                  <span className="material-symbols-outlined text-[18px]">add_circle</span>
-                  Nuevo plan
-                </Button>
-              </div>
-            </Reveal>
-
-            {/* Formulario nuevo plan */}
-            {nuevoForm && (
-              <Reveal>
-                <Card padding="lg">
-                  <h3 className="font-display text-base font-extrabold text-[var(--color-primary-fixed)] uppercase tracking-tight mb-5">
-                    Nuevo plan
-                  </h3>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <Input label="Nombre *" value={nuevoForm.nombre}
-                      onChange={(e) => setNuevoForm((f) => f && ({ ...f, nombre: e.target.value }))} />
-                    <Input label="Sede" value={nuevoForm.sede}
-                      onChange={(e) => setNuevoForm((f) => f && ({ ...f, sede: e.target.value }))} />
-                    <Input label="Sesiones incluidas" type="number" min={1} value={nuevoForm.sesiones_incluidas}
-                      onChange={(e) => setNuevoForm((f) => f && ({ ...f, sesiones_incluidas: Number(e.target.value) }))} />
-                    <Input label="Duración (días)" type="number" min={1} value={nuevoForm.duracion_dias}
-                      onChange={(e) => setNuevoForm((f) => f && ({ ...f, duracion_dias: Number(e.target.value) }))} />
-                    <div className="sm:col-span-2">
-                      <CampoPrecio label="Precio total (COP) *" value={nuevoForm.precio_total}
-                        onChange={(v) => setNuevoForm((f) => f && ({ ...f, precio_total: v ?? 0 }))} />
-                    </div>
-                    <div className="sm:col-span-2">
-                      <Input label="Descripción" value={nuevoForm.descripcion}
-                        onChange={(e) => setNuevoForm((f) => f && ({ ...f, descripcion: e.target.value }))} />
-                    </div>
-                  </div>
-                  <div className="flex gap-3 mt-5">
-                    <Button size="sm" loading={guardandoPlan === 'nuevo'}
-                      disabled={!nuevoForm.nombre || nuevoForm.precio_total <= 0}
-                      onClick={guardarNuevoPlan}>
-                      Crear plan
-                    </Button>
-                    <Button size="sm" variant="ghost" onClick={() => setNuevoForm(null)}>
-                      Cancelar
-                    </Button>
-                  </div>
-                </Card>
-              </Reveal>
-            )}
-
-            {cargandoPlanes ? (
-              <div className="flex justify-center py-12"><Spinner size="md" /></div>
-            ) : planes.length === 0 ? (
-              <Card>
-                <p className="text-sm text-[var(--color-on-surface-variant)]/60 text-center py-4">
-                  No hay planes en Firestore todavía. Crea el primero con el botón de arriba.
-                </p>
-              </Card>
-            ) : (
-              <Card padding="none" className="overflow-hidden">
-                <table className="w-full text-left min-w-[600px]">
-                  <thead className="bg-white/5">
-                    <tr>
-                      {['Nombre', 'Sesiones', 'Duración', 'Precio', 'Estado', ''].map((h) => (
-                        <th key={h} className="px-5 py-4 label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/5">
-                    {planes.map((p) => (
-                      <tr key={p.id} className="hover:bg-white/[0.03] transition-colors">
-                        {planEditId === p.id ? (
-                          <td colSpan={6} className="px-5 py-4">
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
-                              <Input label="Nombre" value={planEditData.nombre ?? p.nombre}
-                                onChange={(e) => setPlanEditData((d) => ({ ...d, nombre: e.target.value }))} />
-                              <Input label="Sesiones" type="number" min={1}
-                                value={planEditData.sesiones_incluidas ?? p.sesiones_incluidas}
-                                onChange={(e) => setPlanEditData((d) => ({ ...d, sesiones_incluidas: Number(e.target.value) }))} />
-                              <Input label="Días" type="number" min={1}
-                                value={planEditData.duracion_dias ?? p.duracion_dias}
-                                onChange={(e) => setPlanEditData((d) => ({ ...d, duracion_dias: Number(e.target.value) }))} />
-                              <CampoPrecio label="Precio (COP)"
-                                value={planEditData.precio_total ?? p.precio_total}
-                                onChange={(v) => setPlanEditData((d) => ({ ...d, precio_total: v ?? 0 }))} />
-                            </div>
-                            <div className="flex gap-2">
-                              <Button size="sm" loading={guardandoPlan === p.id}
-                                onClick={() => guardarEdicionPlan(p.id)}>Guardar</Button>
-                              <Button size="sm" variant="ghost"
-                                onClick={() => { setPlanEditId(null); setPlanEditData({}) }}>Cancelar</Button>
-                            </div>
-                          </td>
-                        ) : (
-                          <>
-                            <td className="px-5 py-4">
-                              <p className="text-sm font-bold text-white">{p.nombre}</p>
-                              {p.sede && <p className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/40 mt-0.5">{p.sede}</p>}
-                            </td>
-                            <td className="px-5 py-4 text-sm text-[var(--color-on-surface-variant)]/70">{p.sesiones_incluidas}</td>
-                            <td className="px-5 py-4 text-sm text-[var(--color-on-surface-variant)]/70">{p.duracion_dias} días</td>
-                            <td className="px-5 py-4 font-display font-black text-[var(--color-primary-fixed)] text-sm">
-                              {fmtCOP(p.precio_total)}
-                            </td>
-                            <td className="px-5 py-4">
-                              <Badge variant={p.estado ? 'success' : 'danger'}>
-                                {p.estado ? 'Activo' : 'Archivado'}
-                              </Badge>
-                            </td>
-                            <td className="px-5 py-4">
-                              <div className="flex items-center gap-1 justify-end">
-                                <button
-                                  onClick={() => { setPlanEditId(p.id); setPlanEditData({}) }}
-                                  className="p-2 rounded-lg text-[var(--color-on-surface-variant)]/40 hover:text-white hover:bg-white/5 transition-colors"
-                                  title="Editar">
-                                  <span className="material-symbols-outlined text-[18px]">edit</span>
-                                </button>
-                                {p.estado && (
-                                  <button
-                                    onClick={() => archivar(p.id)}
-                                    disabled={guardandoPlan === p.id}
-                                    className="p-2 rounded-lg text-[var(--color-on-surface-variant)]/40 hover:text-[var(--color-danger-crimson)] hover:bg-[rgba(239,68,68,0.1)] transition-colors"
-                                    title="Archivar">
-                                    <span className="material-symbols-outlined text-[18px]">archive</span>
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </Card>
-            )}
-          </div>
-        )}
-
-        {cat !== 'firestore' && (
-          <p className="text-[11px] text-[var(--color-on-surface-variant)]/40 text-center pt-2">
-            Catálogo visual del wizard. Para planes de suscripción usa la pestaña "Planes activos".
-          </p>
-        )}
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <p className="text-sm text-white/60 max-w-xl">
+          Plantillas nombradas para casos especiales (promos, descuentos, planes corporativos).
+          <strong className="text-white/80"> El wizard NO las usa</strong> — se piensan como
+          overrides manuales. Puedes ignorarlas si no las necesitas.
+        </p>
+        <Button size="sm" onClick={() => setNuevo(PLAN_VACIO)}>
+          <span className="material-symbols-outlined text-[16px]">add</span>
+          Nueva plantilla
+        </Button>
       </div>
-    </GuardedShell>
+
+      {cargando ? (
+        <div className="flex justify-center py-10"><Spinner /></div>
+      ) : (
+        <div className="space-y-3">
+          {planes.map((p) => (
+            <Card key={p.id}>
+              {editando === p.id ? (
+                <div>
+                  <PlanFormBody value={draft} onChange={setDraft} />
+                  <div className="flex gap-3 mt-5">
+                    <Button size="sm" onClick={() => actualizar(p.id)} loading={procesando === p.id}>Guardar</Button>
+                    <Button size="sm" variant="ghost" onClick={() => { setEditando(null); setDraft({}) }}>Cancelar</Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-start justify-between gap-4 flex-wrap">
+                  <div>
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <p className="font-display text-lg font-black text-white">{p.nombre}</p>
+                      <Badge variant={p.estado ? 'success' : 'default'}>{p.estado ? 'Activo' : 'Archivado'}</Badge>
+                      {p.sede_aplica && <Badge variant="primary">{p.sede_aplica}</Badge>}
+                      {p.sede && !p.sede_aplica && <Badge variant="primary">{p.sede}</Badge>}
+                    </div>
+                    <p className="text-sm text-white/70 mt-1">
+                      {p.sesiones_incluidas} sesiones · {fmtCOP(p.precio_total)}
+                      {p.duracion_dias ? ` · ${p.duracion_dias}d` : ''}
+                    </p>
+                    {p.descripcion && <p className="text-xs text-white/50 mt-1">{p.descripcion}</p>}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="ghost" onClick={() => { setDraft(p); setEditando(p.id) }}>Editar</Button>
+                    {p.estado && (
+                      <Button size="sm" variant="danger" onClick={() => archivar(p)} loading={procesando === p.id}>Archivar</Button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </Card>
+          ))}
+          {planes.length === 0 && !nuevo && (
+            <Card>
+              <p className="text-center text-sm text-white/50 py-8">No hay plantillas.</p>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {nuevo && (
+        <Card>
+          <p className="label-caps text-[10px] text-[var(--color-primary-fixed)] mb-4">Nueva plantilla</p>
+          <PlanFormBody value={nuevo} onChange={(v) => setNuevo(v as typeof PLAN_VACIO)} />
+          <div className="flex gap-3 mt-5">
+            <Button size="sm" onClick={crear} loading={procesando === 'nuevo'}>Crear</Button>
+            <Button size="sm" variant="ghost" onClick={() => setNuevo(null)}>Cancelar</Button>
+          </div>
+        </Card>
+      )}
+    </div>
+  )
+}
+
+function PlanFormBody({ value, onChange }: { value: Partial<Plan>; onChange: (v: Partial<Plan>) => void }) {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <Field label="Nombre *">
+        <InputText
+          value={value.nombre ?? ''}
+          onChange={(e) => onChange({ ...value, nombre: e.target.value })}
+          placeholder="Plan Black Friday 3x/sem"
+        />
+      </Field>
+      <Field label="Sede">
+        <InputText
+          value={value.sede_aplica ?? value.sede ?? ''}
+          onChange={(e) => onChange({ ...value, sede_aplica: e.target.value })}
+          placeholder="UTP"
+        />
+      </Field>
+      <Field label="Sesiones incluidas *">
+        <InputText
+          type="number"
+          value={String(value.sesiones_incluidas ?? 8)}
+          onChange={(e) => onChange({ ...value, sesiones_incluidas: Number(e.target.value) || 0 })}
+        />
+      </Field>
+      <Field label="Precio total (COP) *" hint={value.precio_total ? fmtCOP(value.precio_total) : '—'}>
+        <InputText
+          type="number"
+          value={String(value.precio_total ?? 0)}
+          onChange={(e) => onChange({ ...value, precio_total: Number(e.target.value) || 0 })}
+        />
+      </Field>
+      <Field label="Duración (días)">
+        <InputText
+          type="number"
+          value={String(value.duracion_dias ?? 30)}
+          onChange={(e) => onChange({ ...value, duracion_dias: Number(e.target.value) || 30 })}
+        />
+      </Field>
+      <Field label="Estado">
+        <select
+          value={value.estado === false ? 'false' : 'true'}
+          onChange={(e) => onChange({ ...value, estado: e.target.value === 'true' })}
+          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:border-[rgba(230,255,0,0.5)] focus:outline-none"
+        >
+          <option value="true" className="bg-[#0a0a0a]">Activo</option>
+          <option value="false" className="bg-[#0a0a0a]">Archivado</option>
+        </select>
+      </Field>
+      <div className="md:col-span-2">
+        <Field label="Descripción (opcional)">
+          <InputText
+            value={value.descripcion ?? ''}
+            onChange={(e) => onChange({ ...value, descripcion: e.target.value })}
+            placeholder="Detalle o notas del plan"
+          />
+        </Field>
+      </div>
+    </div>
   )
 }
