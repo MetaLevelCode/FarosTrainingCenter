@@ -28,6 +28,78 @@ import { useAuth } from '@/contexts/AuthContext'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
+// Serializa un error Firebase/JS a texto legible con code y mensaje.
+function errStr(e: any): string {
+  if (!e) return 'error sin info'
+  const parts: string[] = []
+  if (e.code) parts.push(`[${e.code}]`)
+  if (e.message) parts.push(e.message)
+  else parts.push(String(e))
+  return parts.join(' ')
+}
+
+function BannerError({ error, onDismiss }: { error: string | null; onDismiss: () => void }) {
+  if (!error) return null
+  return (
+    <div
+      role="alert"
+      className="rounded-xl border p-4 flex items-start gap-3"
+      style={{ borderColor: 'rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.08)' }}
+    >
+      <span className="material-symbols-outlined text-[20px] shrink-0" style={{ color: '#ef4444' }}>error</span>
+      <div className="flex-1 min-w-0">
+        <p className="font-display font-black text-white text-sm mb-1">Escritura fallida</p>
+        <p className="text-[11px] font-mono text-white/80 break-all">{error}</p>
+      </div>
+      <button onClick={onDismiss} className="text-white/60 hover:text-white text-lg leading-none">×</button>
+    </div>
+  )
+}
+
+async function probarFirestore(): Promise<{ ok: boolean; detalle: string }> {
+  try {
+    const { getAuth } = await import('firebase/auth')
+    const token = await getAuth().currentUser?.getIdToken()
+    if (!token) return { ok: false, detalle: 'No hay sesión activa' }
+    const res = await fetch('/api/health/firestore', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) return { ok: false, detalle: `HTTP ${res.status}: ${data.error ?? 'error'}` }
+    return { ok: true, detalle: `OK — write+read+delete en ${data.duration_ms}ms` }
+  } catch (e: any) {
+    return { ok: false, detalle: errStr(e) }
+  }
+}
+
+function BotonHealthCheck() {
+  const [estado, setEstado] = useState<'idle' | 'trabajando' | 'ok' | 'fail'>('idle')
+  const [detalle, setDetalle] = useState<string>('')
+  async function probar() {
+    setEstado('trabajando'); setDetalle('')
+    const r = await probarFirestore()
+    setEstado(r.ok ? 'ok' : 'fail')
+    setDetalle(r.detalle)
+  }
+  return (
+    <div className="flex items-center gap-3">
+      <button
+        onClick={probar}
+        disabled={estado === 'trabajando'}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-white/15 bg-white/[0.03] text-white text-[11px] font-semibold hover:bg-white/[0.08] disabled:opacity-50"
+      >
+        <span className="material-symbols-outlined text-[14px]">bug_report</span>
+        {estado === 'trabajando' ? 'Probando…' : 'Diagnóstico Firestore'}
+      </button>
+      {detalle && (
+        <span className={`text-[11px] font-mono ${estado === 'ok' ? 'text-[var(--color-success-emerald)]' : 'text-[var(--color-danger-crimson)]'}`}>
+          {detalle}
+        </span>
+      )}
+    </div>
+  )
+}
+
 function Reveal({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) {
   return (
     <motion.div
@@ -106,11 +178,14 @@ export default function CatalogoPage() {
     <GuardedShell authorized={authorized} loading={loading} title="Catálogo">
       <div className="space-y-8">
         <Reveal>
-          <div>
-            <p className="label-caps text-[var(--color-primary-fixed)] mb-3 tracking-[0.3em]">Configuración</p>
-            <h2 className="font-display text-display-lg text-white leading-none tracking-tighter uppercase">
-              Catálogo
-            </h2>
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="label-caps text-[var(--color-primary-fixed)] mb-3 tracking-[0.3em]">Configuración</p>
+              <h2 className="font-display text-display-lg text-white leading-none tracking-tighter uppercase">
+                Catálogo
+              </h2>
+            </div>
+            <BotonHealthCheck />
           </div>
         </Reveal>
 
@@ -155,19 +230,22 @@ function SedesTab() {
   const [cargando, setCargando] = useState(true)
   const [borrador, setBorrador] = useState<Partial<Sede> | null>(null)
   const [procesando, setProcesando] = useState<string | null>(null)
+  const [errorPersistente, setErrorPersistente] = useState<string | null>(null)
 
   useEffect(() => {
-    getSedes(false).then(setSedes).catch(console.error).finally(() => setCargando(false))
+    getSedes(false).then(setSedes).catch((e) => setErrorPersistente(`Lectura falló: ${errStr(e)}`)).finally(() => setCargando(false))
   }, [])
 
   async function guardar(s: Partial<Sede>) {
+    setErrorPersistente(null)
     const codigo = (s.codigo ?? '').trim().toUpperCase()
     const nombre = (s.nombre ?? '').trim()
-    if (!codigo || !nombre) { alert('Código y nombre son obligatorios.'); return }
-    if (!/^[A-Z0-9_-]+$/.test(codigo)) { alert('El código solo puede tener letras, números, guion y guion bajo.'); return }
+    if (!codigo || !nombre) { setErrorPersistente('Código y nombre son obligatorios.'); return }
+    if (!/^[A-Z0-9_-]+$/.test(codigo)) { setErrorPersistente('El código solo puede tener letras, números, guion y guion bajo.'); return }
     const id = s.id ?? codigo.toLowerCase()
     setProcesando(id)
     try {
+      console.log('[SEDE_SAVE] intentando escribir', id, s)
       await upsertSede(id, {
         codigo,
         nombre,
@@ -175,27 +253,32 @@ function SedesTab() {
         activo: s.activo ?? true,
         orden: Number.isFinite(s.orden) ? (s.orden as number) : sedes.length + 1,
       })
+      console.log('[SEDE_SAVE] escritura OK, releyendo')
       const fresh = await getSedes(false)
+      console.log('[SEDE_SAVE] releído', fresh.length, 'sedes')
       setSedes(fresh)
       setBorrador(null)
     } catch (e: any) {
-      alert(e?.message ?? 'No se pudo guardar la sede.')
+      console.error('[SEDE_SAVE] falló', e)
+      setErrorPersistente(`Guardar falló: ${errStr(e)}`)
     } finally { setProcesando(null) }
   }
 
   async function borrar(s: Sede) {
     if (!window.confirm(`¿Eliminar la sede "${s.nombre}"?\n\nLos grupos que la referencian quedarán huérfanos.`)) return
+    setErrorPersistente(null)
     setProcesando(s.id)
     try {
       await eliminarSede(s.id)
       setSedes((prev) => prev.filter((x) => x.id !== s.id))
     } catch (e: any) {
-      alert(e?.message ?? 'No se pudo eliminar.')
+      setErrorPersistente(`Eliminar falló: ${errStr(e)}`)
     } finally { setProcesando(null) }
   }
 
   return (
     <div className="space-y-6">
+      <BannerError error={errorPersistente} onDismiss={() => setErrorPersistente(null)} />
       <div className="flex items-center justify-between">
         <p className="text-sm text-white/60">
           Sedes físicas donde se dictan clases. El código corto (ej. UTP) se usa internamente.
@@ -335,21 +418,24 @@ function GruposTab() {
   const [cargando, setCargando] = useState(true)
   const [borrador, setBorrador] = useState<Partial<Grupo> | null>(null)
   const [procesando, setProcesando] = useState<string | null>(null)
+  const [errorPersistente, setErrorPersistente] = useState<string | null>(null)
 
   useEffect(() => {
     Promise.all([getGrupos(), getSedes(false)])
       .then(([g, s]) => { setGrupos(g); setSedes(s) })
-      .catch(console.error)
+      .catch((e) => setErrorPersistente(`Lectura falló: ${errStr(e)}`))
       .finally(() => setCargando(false))
   }, [])
 
   async function guardar(g: Partial<Grupo>) {
+    setErrorPersistente(null)
     const nombre = (g.nombre ?? '').trim()
     const sedeCodigo = (g.sedeCodigo ?? '').trim().toUpperCase()
-    if (!nombre || !sedeCodigo) { alert('Nombre y sede son obligatorios.'); return }
+    if (!nombre || !sedeCodigo) { setErrorPersistente('Nombre y sede son obligatorios.'); return }
     const id = g.id ?? nombre.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
     setProcesando(id)
     try {
+      console.log('[GRUPO_SAVE] escribiendo', id, g)
       await upsertGrupo(id, {
         nombre,
         sedeCodigo,
@@ -359,26 +445,30 @@ function GruposTab() {
         cupoMaximo: Number.isFinite(g.cupoMaximo) ? (g.cupoMaximo as number) : 12,
         disponible: g.disponible ?? true,
       })
+      console.log('[GRUPO_SAVE] escritura OK')
       setGrupos(await getGrupos())
       setBorrador(null)
     } catch (e: any) {
-      alert(e?.message ?? 'No se pudo guardar el grupo.')
+      console.error('[GRUPO_SAVE] falló', e)
+      setErrorPersistente(`Guardar falló: ${errStr(e)}`)
     } finally { setProcesando(null) }
   }
 
   async function borrar(g: Grupo) {
     if (!window.confirm(`¿Eliminar el grupo "${g.nombre}"?`)) return
+    setErrorPersistente(null)
     setProcesando(g.id)
     try {
       await eliminarGrupo(g.id)
       setGrupos((prev) => prev.filter((x) => x.id !== g.id))
     } catch (e: any) {
-      alert(e?.message ?? 'No se pudo eliminar.')
+      setErrorPersistente(`Eliminar falló: ${errStr(e)}`)
     } finally { setProcesando(null) }
   }
 
   return (
     <div className="space-y-6">
+      <BannerError error={errorPersistente} onDismiss={() => setErrorPersistente(null)} />
       <div className="flex items-center justify-between">
         <p className="text-sm text-white/60">
           Grupos grupales con horario fijo. Cada uno vive en una sede.
@@ -568,9 +658,13 @@ function TarifasTab({ actualizadoPor }: { actualizadoPor?: string }) {
   const [guardando, setGuardando] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [guardado, setGuardado] = useState(false)
+  const [errorPersistente, setErrorPersistente] = useState<string | null>(null)
 
   useEffect(() => {
-    getTarifas().then((t) => setTarifas(t)).catch(console.error).finally(() => setCargando(false))
+    getTarifas()
+      .then((t) => setTarifas(t))
+      .catch((e) => setErrorPersistente(`Lectura falló: ${errStr(e)}`))
+      .finally(() => setCargando(false))
   }, [])
 
   function update(fn: (t: Tarifas) => Tarifas) {
@@ -582,8 +676,10 @@ function TarifasTab({ actualizadoPor }: { actualizadoPor?: string }) {
 
   async function guardarTodo() {
     if (!tarifas) return
+    setErrorPersistente(null)
     setGuardando(true)
     try {
+      console.log('[TARIFAS_SAVE] escribiendo v' + ((tarifas.version ?? 0) + 1))
       await actualizarTarifas({
         version: (tarifas.version ?? 0) + 1,
         grupoPorSesion: tarifas.grupoPorSesion,
@@ -591,11 +687,13 @@ function TarifasTab({ actualizadoPor }: { actualizadoPor?: string }) {
         conjuntos: tarifas.conjuntos,
         vacacionesPorNino: tarifas.vacacionesPorNino,
       }, actualizadoPor)
+      console.log('[TARIFAS_SAVE] OK')
       setDirty(false)
       setGuardado(true)
       setTimeout(() => setGuardado(false), 2500)
     } catch (e: any) {
-      alert(e?.message ?? 'No se pudo guardar.')
+      console.error('[TARIFAS_SAVE] falló', e)
+      setErrorPersistente(`Guardar falló: ${errStr(e)}`)
     } finally { setGuardando(false) }
   }
 
@@ -614,6 +712,7 @@ function TarifasTab({ actualizadoPor }: { actualizadoPor?: string }) {
 
   return (
     <div className="space-y-6">
+      <BannerError error={errorPersistente} onDismiss={() => setErrorPersistente(null)} />
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <p className="text-sm text-white/60">Matriz de precios que consume el wizard del alumno.</p>
