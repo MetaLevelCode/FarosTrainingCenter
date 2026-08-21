@@ -289,19 +289,6 @@ function SedesTab() {
         </Button>
       </div>
 
-      {cargando ? (
-        <div className="flex justify-center py-10"><Spinner /></div>
-      ) : (
-        <div className="space-y-3">
-          {sedes.map((s) => (
-            <SedeRow key={s.id} sede={s} onGuardar={guardar} onBorrar={borrar} procesando={procesando === s.id} />
-          ))}
-          {sedes.length === 0 && !borrador && (
-            <Card><p className="text-center text-sm text-white/50 py-8">No hay sedes. Crea la primera.</p></Card>
-          )}
-        </div>
-      )}
-
       {borrador && (
         <Card>
           <p className="label-caps text-[10px] text-[var(--color-primary-fixed)] mb-4">Nueva sede</p>
@@ -313,6 +300,19 @@ function SedesTab() {
             <Button size="sm" variant="ghost" onClick={() => setBorrador(null)}>Cancelar</Button>
           </div>
         </Card>
+      )}
+
+      {cargando ? (
+        <div className="flex justify-center py-10"><Spinner /></div>
+      ) : (
+        <div className="space-y-3">
+          {sedes.map((s) => (
+            <SedeRow key={s.id} sede={s} onGuardar={guardar} onBorrar={borrar} procesando={procesando === s.id} />
+          ))}
+          {sedes.length === 0 && !borrador && (
+            <Card><p className="text-center text-sm text-white/50 py-8">No hay sedes. Crea la primera.</p></Card>
+          )}
+        </div>
       )}
     </div>
   )
@@ -490,19 +490,6 @@ function GruposTab() {
         </Button>
       </div>
 
-      {cargando ? (
-        <div className="flex justify-center py-10"><Spinner /></div>
-      ) : (
-        <div className="space-y-3">
-          {grupos.map((g) => (
-            <GrupoRow key={g.id} grupo={g} sedes={sedes} onGuardar={guardar} onBorrar={borrar} procesando={procesando === g.id} />
-          ))}
-          {grupos.length === 0 && !borrador && (
-            <Card><p className="text-center text-sm text-white/50 py-8">No hay grupos.</p></Card>
-          )}
-        </div>
-      )}
-
       {borrador && (
         <Card>
           <p className="label-caps text-[10px] text-[var(--color-primary-fixed)] mb-4">Nuevo grupo</p>
@@ -514,6 +501,19 @@ function GruposTab() {
             <Button size="sm" variant="ghost" onClick={() => setBorrador(null)}>Cancelar</Button>
           </div>
         </Card>
+      )}
+
+      {cargando ? (
+        <div className="flex justify-center py-10"><Spinner /></div>
+      ) : (
+        <div className="space-y-3">
+          {grupos.map((g) => (
+            <GrupoRow key={g.id} grupo={g} sedes={sedes} onGuardar={guardar} onBorrar={borrar} procesando={procesando === g.id} />
+          ))}
+          {grupos.length === 0 && !borrador && (
+            <Card><p className="text-center text-sm text-white/50 py-8">No hay grupos.</p></Card>
+          )}
+        </div>
       )}
     </div>
   )
@@ -920,6 +920,17 @@ function PlantillasTab() {
         </Button>
       </div>
 
+      {nuevo && (
+        <Card>
+          <p className="label-caps text-[10px] text-[var(--color-primary-fixed)] mb-4">Nueva plantilla</p>
+          <PlanFormBody value={nuevo} onChange={(v) => setNuevo(v as typeof PLAN_VACIO)} />
+          <div className="flex gap-3 mt-5">
+            <Button size="sm" onClick={crear} loading={procesando === 'nuevo'}>Crear</Button>
+            <Button size="sm" variant="ghost" onClick={() => setNuevo(null)}>Cancelar</Button>
+          </div>
+        </Card>
+      )}
+
       {cargando ? (
         <div className="flex justify-center py-10"><Spinner /></div>
       ) : (
@@ -965,17 +976,6 @@ function PlantillasTab() {
             </Card>
           )}
         </div>
-      )}
-
-      {nuevo && (
-        <Card>
-          <p className="label-caps text-[10px] text-[var(--color-primary-fixed)] mb-4">Nueva plantilla</p>
-          <PlanFormBody value={nuevo} onChange={(v) => setNuevo(v as typeof PLAN_VACIO)} />
-          <div className="flex gap-3 mt-5">
-            <Button size="sm" onClick={crear} loading={procesando === 'nuevo'}>Crear</Button>
-            <Button size="sm" variant="ghost" onClick={() => setNuevo(null)}>Cancelar</Button>
-          </div>
-        </Card>
       )}
     </div>
   )
