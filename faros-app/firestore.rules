@@ -122,6 +122,28 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // ── sedes ───────────────────────────────────────────────
+
+    match /sedes/{sedeId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // ── grupos (grupales con horario) ───────────────────────
+
+    match /grupos/{grupoId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // ── tarifas ─────────────────────────────────────────────
+    // Solo existe el doc 'actual' — matriz de precios que consume el wizard.
+
+    match /tarifas/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
     // ── suscripciones ────────────────────────────────────────
 
     match /suscripciones/{suscId} {

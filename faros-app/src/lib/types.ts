@@ -200,3 +200,72 @@ export interface Categoria {
   tipo: 'ingreso' | 'egreso'
   color: string
 }
+
+// ── sedes/{sedeId} ──────────────────────────────────────────
+// Sede física donde se dictan clases. El código corto (UTP/TULCAN) es
+// el que se guarda en usuarios.sede y grupos.sedeCodigo — evita romper
+// referencias si cambia el nombre visible.
+
+export interface Sede {
+  id: string
+  codigo: string         // "UTP" | "TULCAN" | ...
+  nombre: string         // "UTP" | "Tulcán II"
+  direccion?: string
+  activo: boolean
+  orden: number          // orden de aparición en selectores
+  creadoEn: number
+  actualizadoEn?: number
+}
+
+// ── grupos/{grupoId} ─────────────────────────────────────────
+// Grupo grupal con horario fijo. Vive en una sede. El wizard "grupal"
+// carga los grupos disponibles según la sede que elija el alumno.
+
+export interface Grupo {
+  id: string
+  nombre: string
+  sedeCodigo: string
+  horarios: string[]     // ["Lun · 6:00 PM", "Mié · 6:00 PM"]
+  nivel: string
+  coach?: string
+  cupoMaximo: number
+  disponible: boolean
+  creadoEn: number
+  actualizadoEn?: number
+}
+
+// ── tarifas/actual ──────────────────────────────────────────
+// UN SOLO DOC. Contiene toda la matriz de precios. El wizard la lee
+// para calcular el monto y lo congela en la transacción.
+//
+// Estructura por sesionesPorMes:
+//   4  = 1x/semana × 4 semanas
+//   8  = 2x/semana × 4 semanas
+//   12 = 3x/semana × 4 semanas
+
+export type CategoriaPersonal = 'NP' | 'AFP'
+
+export interface TarifaPersonal {
+  categoria: CategoriaPersonal
+  porPersona: boolean
+  personasMin: number
+  personasMax: number
+  precios: Record<number, number | null>  // { 4: 150000, 8: 280000, 12: 390000 }
+}
+
+export interface TarifaConjunto {
+  precios: Record<number, number | null>  // por frecuencia semanal (1 o 2)
+}
+
+export interface Tarifas {
+  version: number
+  actualizadoEn: number
+  actualizadoPor?: string
+  // Grupal: precio POR SESIÓN según frecuencia semanal
+  grupoPorSesion: Record<number, number>  // { 1: 15000, 2: 12000, 3: 10000 }
+  // Personales: precio mensual según sesionesPorMes
+  personales: Record<string, TarifaPersonal>
+  // Conjuntos: precio mensual según frecuencia semanal (1 o 2)
+  conjuntos: Record<string, TarifaConjunto>
+  vacacionesPorNino: number
+}
