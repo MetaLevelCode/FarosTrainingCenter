@@ -356,7 +356,15 @@ function SedeRow({ sede, onGuardar, onBorrar, procesando }: {
     <Card>
       <SedeFormBody value={draft} onChange={(d) => setDraft(d as Sede)} />
       <div className="flex gap-3 mt-5">
-        <Button size="sm" onClick={async () => { await onGuardar(draft); setEditando(false) }} loading={procesando}>
+        <Button
+          size="sm"
+          loading={procesando}
+          onClick={async () => {
+            // Forzar id original — protege contra derivarlo del código editado.
+            await onGuardar({ ...draft, id: sede.id })
+            setEditando(false)
+          }}
+        >
           Guardar
         </Button>
         <Button size="sm" variant="ghost" onClick={() => setEditando(false)}>Cancelar</Button>
@@ -555,7 +563,16 @@ function GrupoRow({ grupo, sedes, onGuardar, onBorrar, procesando }: {
     <Card>
       <GrupoFormBody value={draft} sedes={sedes} onChange={(d) => setDraft(d as Grupo)} />
       <div className="flex gap-3 mt-5">
-        <Button size="sm" onClick={async () => { await onGuardar(draft); setEditando(false) }} loading={procesando}>
+        <Button
+          size="sm"
+          loading={procesando}
+          onClick={async () => {
+            // Forzar el id original del grupo — protege contra derivar
+            // un id nuevo desde el nombre editado y crear un doc duplicado.
+            await onGuardar({ ...draft, id: grupo.id })
+            setEditando(false)
+          }}
+        >
           Guardar
         </Button>
         <Button size="sm" variant="ghost" onClick={() => setEditando(false)}>Cancelar</Button>
