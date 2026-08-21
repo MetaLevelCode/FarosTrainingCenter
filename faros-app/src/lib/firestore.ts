@@ -529,6 +529,13 @@ export async function getCategorias(): Promise<Categoria[]> {
 
 // ── sedes ────────────────────────────────────────────────────
 
+/** Firestore SDK rechaza undefined; los strippeo antes de escribir. */
+function stripUndefined<T extends object>(obj: T): T {
+  const out: any = {}
+  for (const [k, v] of Object.entries(obj)) if (v !== undefined) out[k] = v
+  return out
+}
+
 export async function getSedes(soloActivas = true): Promise<Sede[]> {
   const [{ db }, { collection, query, where, orderBy, getDocs }] = await Promise.all([
     getFirebase(), import('firebase/firestore'),
@@ -542,12 +549,19 @@ export async function getSedes(soloActivas = true): Promise<Sede[]> {
 }
 
 export async function upsertSede(id: string, data: Omit<Sede, 'id' | 'creadoEn' | 'actualizadoEn'>): Promise<void> {
-  const [{ db }, { doc, setDoc, serverTimestamp }] = await Promise.all([
+  const [{ db }, { doc, setDoc, getDoc }] = await Promise.all([
     getFirebase(), import('firebase/firestore'),
   ])
+  const ref = doc(db, 'sedes', id)
+  const existente = await getDoc(ref)
   const now = Date.now()
-  await setDoc(doc(db, 'sedes', id), { ...data, actualizadoEn: now, creadoEn: now }, { merge: true })
-  void serverTimestamp
+  const payload = stripUndefined({
+    ...data,
+    actualizadoEn: now,
+    // creadoEn solo en la primera escritura
+    ...(existente.exists() ? {} : { creadoEn: now }),
+  })
+  await setDoc(ref, payload, { merge: true })
 }
 
 export async function eliminarSede(id: string): Promise<void> {
@@ -570,11 +584,18 @@ export async function getGrupos(sedeCodigo?: string): Promise<Grupo[]> {
 }
 
 export async function upsertGrupo(id: string, data: Omit<Grupo, 'id' | 'creadoEn' | 'actualizadoEn'>): Promise<void> {
-  const [{ db }, { doc, setDoc }] = await Promise.all([
+  const [{ db }, { doc, setDoc, getDoc }] = await Promise.all([
     getFirebase(), import('firebase/firestore'),
   ])
+  const ref = doc(db, 'grupos', id)
+  const existente = await getDoc(ref)
   const now = Date.now()
-  await setDoc(doc(db, 'grupos', id), { ...data, actualizadoEn: now, creadoEn: now }, { merge: true })
+  const payload = stripUndefined({
+    ...data,
+    actualizadoEn: now,
+    ...(existente.exists() ? {} : { creadoEn: now }),
+  })
+  await setDoc(ref, payload, { merge: true })
 }
 
 export async function eliminarGrupo(id: string): Promise<void> {
@@ -598,9 +619,10 @@ export async function actualizarTarifas(data: Omit<Tarifas, 'actualizadoEn'>, ac
   const [{ db }, { doc, setDoc }] = await Promise.all([
     getFirebase(), import('firebase/firestore'),
   ])
-  await setDoc(doc(db, 'tarifas', 'actual'), {
+  const payload = stripUndefined({
     ...data,
     actualizadoEn: Date.now(),
     ...(actualizadoPor ? { actualizadoPor } : {}),
   })
+  await setDoc(doc(db, 'tarifas', 'actual'), payload)
 }
