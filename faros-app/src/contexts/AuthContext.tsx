@@ -31,7 +31,8 @@ const MOCK_USERS: Record<string, Usuario & { password: string }> =
     cedula: '1088301457', rol: 'estudiante',
     telefono: '+57 310 842 5567', telefonoEmergencia: '+57 312 559 0148',
     eps: 'Nueva EPS', sede: 'UTP', nivel: 'Tiburones',
-    estadisticas: { clasesReservadas: 8, clasesAsistidas: 7, tasaAsistencia: 87 },
+    // tasaAsistencia se guarda como fracción (0-1), igual que en Firestore real.
+    estadisticas: { clasesReservadas: 8, clasesAsistidas: 7, tasaAsistencia: 0.87 },
     suscripcionActiva: null,
     password: '123456',
   },
