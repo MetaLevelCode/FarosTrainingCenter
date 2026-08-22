@@ -6,7 +6,7 @@
 // Solo escribe los campos del whitelist de firestore.rules.
 // ============================================================
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'motion/react'
@@ -14,10 +14,15 @@ import { useAuth } from '@/contexts/AuthContext'
 import { Button, Input, FarosWordmark } from '@/components/ui'
 import { WaterBackground } from '@/components/shared/WaterBackground'
 import { comprimirImagen } from '@/lib/imagen'
-import { updateFotoPerfil } from '@/lib/firestore'
+import { updateFotoPerfil, getSedes } from '@/lib/firestore'
 import { getFirebase } from '@/lib/firebase'
+import type { Sede } from '@/lib/types'
 
-const SEDES = ['UTP', 'Comfamiliar', 'Otra']
+// Fallback si Firestore no cargó (sin conexión, o el catálogo aún no se sembró).
+const SEDES_FALLBACK: Sede[] = [
+  { id: 'utp', codigo: 'UTP', nombre: 'UTP', activo: true, orden: 1, creadoEn: 0 },
+  { id: 'tulcan', codigo: 'TULCAN', nombre: 'Tulcán II', activo: true, orden: 2, creadoEn: 0 },
+]
 const TIPO_DOC = [
   { value: 'CC', label: 'Cédula de ciudadanía' },
   { value: 'TI', label: 'Tarjeta de identidad' },
@@ -65,6 +70,13 @@ export default function RegistroPage() {
   const [telefono, setTelefono] = useState('')
   const [telefonoEmergencia, setTelefonoEmergencia] = useState('')
   const [sede, setSede] = useState('')
+  const [sedes, setSedes] = useState<Sede[]>([])
+
+  useEffect(() => {
+    getSedes(true)
+      .then((s) => setSedes(s.length > 0 ? s : SEDES_FALLBACK))
+      .catch(() => setSedes(SEDES_FALLBACK))
+  }, [])
 
   // Salud
   const [eps, setEps] = useState('')
@@ -273,8 +285,8 @@ export default function RegistroPage() {
                 className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-[rgba(230,255,0,0.5)] focus:outline-none transition-colors"
               >
                 <option value="" className="bg-[#0a0a0a]">Selecciona tu sede</option>
-                {SEDES.map((s) => (
-                  <option key={s} value={s} className="bg-[#0a0a0a]">{s}</option>
+                {sedes.map((s) => (
+                  <option key={s.id} value={s.codigo} className="bg-[#0a0a0a]">{s.nombre}</option>
                 ))}
               </select>
               <FieldError msg={errores.sede} />
