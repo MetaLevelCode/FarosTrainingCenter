@@ -11,8 +11,8 @@
 // es justo lo que la hacía inconsistente cuando vivía dentro de
 // GuardedShell):
 //   1. El faro se dibuja y el haz empieza a girar (ambiente).
-//   2. El haz "encuentra" al espectador: un destello cubre toda la
-//      pantalla (la luz pegando de frente) y al apagarse revela la app.
+//   2. El haz se lanza hacia la cámara: crece desde el punto del farol
+//      hasta cubrir toda la pantalla y al apagarse revela la app.
 // ============================================================
 
 import { useEffect, useState } from 'react'
@@ -41,54 +41,67 @@ export function BootSplash() {
           exit={{ opacity: 0 }}
           transition={{ duration: 0.2 }}
         >
-          {/* Resplandor ambiental — llena toda la pantalla, no solo un punto */}
-          <motion.div
-            className="absolute inset-0"
-            style={{ background: 'radial-gradient(ellipse 70% 60% at 50% 34%, rgba(230,255,0,0.2), transparent 65%)' }}
-            animate={{ opacity: destello ? 0 : [0.3, 0.85, 0.3] }}
-            transition={destello ? { duration: 0.3 } : { duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
-          />
-
-          {/* Haz doble girando — cubre toda la pantalla desde el punto del farol */}
-          <motion.div
-            className="absolute"
-            style={{
-              left: '50%',
-              top: '30%',
-              width: '260vmax',
-              height: '260vmax',
-              marginLeft: '-130vmax',
-              marginTop: '-130vmax',
-              background:
-                'conic-gradient(from 0deg, transparent 0deg, rgba(230,255,0,0.28) 14deg, transparent 42deg, transparent 180deg, rgba(230,255,0,0.28) 194deg, transparent 222deg, transparent 360deg)',
-              filter: 'blur(10px)',
-            }}
-            animate={{ rotate: 360, opacity: destello ? 0 : 1 }}
-            transition={{
-              rotate: { duration: 3, repeat: Infinity, ease: 'linear' },
-              opacity: { duration: 0.25 },
-            }}
-          />
-
-          {/* El destello: la luz pega de frente y cubre toda la pantalla */}
-          <motion.div
-            className="absolute inset-0"
-            style={{
-              background: 'radial-gradient(circle at 50% 30%, #ffffff 0%, #f2ff99 22%, #e6ff00 45%, rgba(230,255,0,0) 78%)',
-            }}
-            initial={{ opacity: 0, scale: 0.15 }}
-            animate={destello ? { opacity: [0, 1, 1, 0], scale: [0.15, 2.2, 2.6, 2.8] } : {}}
-            transition={{ duration: 0.62, times: [0, 0.4, 0.75, 1], ease: 'easeIn' }}
-          />
-
           {/* Contenido: torre del faro + wordmark */}
           <motion.div
-            className="relative z-10 h-full flex flex-col items-center justify-center gap-10 px-6"
+            className="relative z-10 h-full flex flex-col items-center justify-center gap-8 px-6"
             animate={{ opacity: destello ? 0 : 1 }}
-            transition={{ duration: 0.35, delay: destello ? 0.1 : 0 }}
+            transition={{ duration: 0.35, delay: destello ? 0.15 : 0 }}
           >
+            {/* Torre + haz: el haz cuelga del mismo contenedor posicionado
+                relative para que su origen (left/top en %) quede exacto
+                sobre el punto del farol (cx=60,cy=42 de un viewBox 120x200
+                → 50%, 21%) sin importar el tamaño de pantalla. */}
             <div className="relative" style={{ width: 190, height: 285, filter: 'drop-shadow(0 8px 24px rgba(0,0,0,0.5))' }}>
-              <svg width={190} height={285} viewBox="0 0 120 200" fill="none">
+              {/* Resplandor ambiental, centrado en el farol */}
+              <motion.div
+                className="absolute"
+                style={{
+                  left: '50%', top: '21%', width: '120vmax', height: '120vmax',
+                  marginLeft: '-60vmax', marginTop: '-60vmax',
+                  background: 'radial-gradient(circle, rgba(230,255,0,0.22), transparent 60%)',
+                }}
+                animate={{ opacity: destello ? 0 : [0.3, 0.85, 0.3] }}
+                transition={destello ? { duration: 0.3 } : { duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+              />
+
+              {/* Haz girando, centrado en el farol. Un conic-gradient es
+                  angular — escalar el contenedor no lo agranda a los ojos
+                  del espectador (el ángulo desde el centro no cambia), así
+                  que en vez de eso acelera su giro al final, como si
+                  tomara impulso antes del núcleo de luz. */}
+              <motion.div
+                className="absolute"
+                style={{
+                  left: '50%', top: '21%', width: '260vmax', height: '260vmax',
+                  marginLeft: '-130vmax', marginTop: '-130vmax',
+                  background:
+                    'conic-gradient(from 0deg, transparent 0deg, rgba(230,255,0,0.28) 14deg, transparent 42deg, transparent 180deg, rgba(230,255,0,0.28) 194deg, transparent 222deg, transparent 360deg)',
+                  filter: 'blur(10px)',
+                }}
+                animate={{ rotate: 360, opacity: destello ? 0 : 1 }}
+                transition={{
+                  rotate: { duration: destello ? 0.35 : 3, repeat: Infinity, ease: 'linear' },
+                  opacity: { duration: 0.3, delay: destello ? 0.15 : 0 },
+                }}
+              />
+
+              {/* Núcleo de luz: esto sí es lo que "se acerca a cámara" — un
+                  burst radial (sensible a scale, a diferencia del cónico de
+                  arriba) que nace del farol y crece hasta tragarse la
+                  pantalla. */}
+              <motion.div
+                className="absolute rounded-full"
+                style={{
+                  left: '50%', top: '21%', width: '14vmax', height: '14vmax',
+                  marginLeft: '-7vmax', marginTop: '-7vmax',
+                  background: 'radial-gradient(circle, #ffffff 0%, #f2ff99 30%, #e6ff00 55%, rgba(230,255,0,0) 78%)',
+                }}
+                initial={{ opacity: 0, scale: 0.3 }}
+                animate={destello ? { opacity: [0, 1, 1, 0], scale: [0.3, 1, 15, 19] } : { opacity: 0 }}
+                transition={{ duration: 0.62, times: [0, 0.18, 0.78, 1], ease: 'easeIn' }}
+              />
+
+              <svg width={190} height={285} viewBox="0 0 120 200" fill="none" className="relative">
                 <defs>
                   <linearGradient id="torreGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#3a3f05" />
@@ -227,12 +240,13 @@ export function BootSplash() {
             </div>
 
             <motion.span
-              className="label-caps text-[13px] text-white/70 tracking-[0.4em]"
+              className="font-display text-4xl font-black uppercase tracking-[0.25em]"
+              style={{ color: '#e6ff00' }}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: destello ? 0 : 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.7 }}
             >
-              FAROS TRAINING
+              FAROS
             </motion.span>
           </motion.div>
         </motion.div>
