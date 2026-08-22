@@ -28,7 +28,7 @@ Snapshot de qué está terminado vs. qué falta para poder desplegar en producci
 | Cloud Functions | 🔴 No existen | Sin directorio `functions/`; lógica sensible corre en API Routes (decisión ya tomada, ver Fase 1) |
 | PWA / Service Worker | 🟡 Parcial | `sw.js` presente, sin precache completo ni background sync |
 | Firestore Rules | ✅ Hardened | whitelist create, `activoOk()`, cross-check precio, validación instructor |
-| Landing + Login | ⚪ Sin auditar | Nunca se revisó con el mismo nivel de detalle que el resto (ver 7) |
+| Landing + Login | ✅ Auditado | Sin bugs de fondo — contenido de marketing estático, guard de open-redirect en `?next=` bien hecho, suspensión de cuenta confirmada como diseño intencional (ver 6.9) |
 | Deploy config | 🟡 Funcional pero manual | `apphosting.yaml` OK, pero `ABIU: Disabled` — sin auto-deploy al hacer push, cada fix requiere rollout manual (ver 7) |
 | Dependencias (GitHub Dependabot) | 🟡 Parcial | De 14 bajado a 8 (ver 6.8). Las 8 restantes solo se resuelven con un upgrade mayor (Next 15→16) o no tienen fix real disponible aún (`firebase-admin`) |
 
@@ -210,6 +210,9 @@ Corregido con `docToUsuario`, que fuerza `uid: snap.id` siempre.
 - `docToId` (usado por sedes/grupos/etc.) dejaba que un campo `id` corrupto dentro del
   documento pisara el id real del path — causaba duplicados al editar en
   `admin/planes`. Corregido invirtiendo el orden del spread.
+- `/portal/alumnos` mostraba TODOS los estudiantes del club a cualquier profesor —
+  acotado a "mis alumnos" (inscritos en clases donde el profesor es `instructor_id`);
+  el admin sigue viendo a todos.
 
 ### 6.8 — Dependencias vulnerables (Dependabot): 14 → 8
 `npm audit fix` (sin `--force`) resolvió `brace-expansion`, `js-yaml`, `nanoid` y
@@ -228,6 +231,18 @@ un upgrade mayor real:
   cambio de una vulnerabilidad de `uuid` (buffer manual) que no aplica a cómo la
   usamos. No hay versión más nueva disponible todavía que lo resuelva.
 
+### 6.9 — Landing + Login auditados
+Sin bugs de fondo. La landing (`page.tsx`) es 100% contenido de marketing estático
+(hero, misión, "+500 atletas", media, testimonios) — sin lógica de datos que pudiera
+romperse. `login/page.tsx`: el guard de `?next=` contra open-redirect está bien hecho
+(solo acepta rutas internas). Se verificó que `signIn()` no chequea `activo` antes de
+dejar entrar, pero es diseño intencional — `CuentaSuspendida` envuelve todas las
+rutas autenticadas y bloquea el contenido si `activo === false`, y las reglas de
+Firestore rechazan cualquier escritura igual. Único hallazgo real: el usuario mock
+de desarrollo (`estudiante@faros.com`) tenía `tasaAsistencia: 87` (entero) en vez de
+`0.87` (fracción) — efecto colateral del fix de 6.7, solo visible en modo demo local
+— corregido.
+
 ---
 
 ## 7. Pendientes actuales (post-auditoría 2026-08-21)
@@ -240,8 +255,8 @@ un upgrade mayor real:
   "mis alumnos" (inscritos en clases donde el profesor es `instructor_id`); el admin
   sigue viendo a todos. No existe campo "profesor asignado" en `Usuario`, así que la
   relación se deriva de `Clase.estudiantes_inscritos`.
-- [ ] **Auditar landing page + login** con el mismo nivel de detalle que el resto —
-  nunca se revisaron en esta ronda.
+- [x] ~~Auditar landing page + login~~ — resuelto 2026-08-21, ver 6.9. Sin bugs de
+  fondo; se corrigió el mock de desarrollo con `tasaAsistencia` mal formateada.
 - [ ] **Deploy manual**: `apphosting.yaml` está bien, pero `ABIU: Disabled` — no hay
   auto-deploy al hacer push a GitHub. Cada fix requiere correr el rollout a mano
   (`firebase apphosting:rollouts:create`); ya nos mordió una vez esta sesión (un fix
