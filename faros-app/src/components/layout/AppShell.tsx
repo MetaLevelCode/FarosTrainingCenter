@@ -11,9 +11,10 @@ import { useRouter, usePathname } from 'next/navigation'
 import { motion, AnimatePresence } from 'motion/react'
 import { useAuth } from '@/contexts/AuthContext'
 import { WaterBackground } from '@/components/shared/WaterBackground'
-import { FarosWordmark, Spinner } from '@/components/ui'
+import { FarosWordmark } from '@/components/ui'
 import { CuentaSuspendida } from '@/components/shared/CuentaSuspendida'
 import { PendienteSync } from '@/components/shared/PendienteSync'
+import { LighthouseLoader } from '@/components/shared/LighthouseLoader'
 import type { UserRole } from '@/lib/types'
 
 interface NavItem { label: string; href: string; icon: string }
@@ -109,38 +110,50 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
 
       <PendienteSync />
 
-      {/* Top bar */}
-      <header className="sticky top-0 z-40 h-20 px-5 md:px-10 flex items-center justify-between backdrop-blur-xl bg-[rgba(5,5,5,0.55)] border-b border-[var(--color-surface-stroke)]">
-        <div className="flex items-center gap-6">
-          <FarosWordmark size="sm" />
-          <span className="hidden md:block w-px h-6 bg-white/10" />
-          <h1 className="hidden md:block font-display text-headline-md font-extrabold text-white uppercase tracking-tighter">
-            {title}
-          </h1>
-        </div>
-        <div className="flex items-center gap-4">
-          {/* min-h/w 44px: área táctil mínima (antes 37×18 → fallaba el toque) */}
-          <button
-            onClick={() => signOut()}
-            className="label-caps text-[10px] min-h-[44px] min-w-[44px] px-3 flex items-center justify-center rounded-xl text-[var(--color-on-surface-variant)] hover:text-[var(--color-danger-crimson)] hover:bg-white/5 active:scale-[0.96] transition-[color,background-color,transform] duration-200"
-          >
-            Salir
-          </button>
-          <div className="relative w-9 h-9 rounded-full overflow-hidden bg-[rgba(230,255,0,0.1)] border border-[rgba(230,255,0,0.25)] flex items-center justify-center">
-            {user?.foto_perfil ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={user.foto_perfil} alt="" className="absolute inset-0 w-full h-full object-cover" />
-            ) : (
-              <span className="font-display text-xs font-black text-[var(--color-primary-fixed)]">
-                {user?.nombres?.charAt(0) ?? 'A'}
-              </span>
-            )}
+      {/* Top bar — pt con safe-area: en iOS el contenido chocaba con el
+          reloj/batería/notch porque el header ignoraba ese inset. El
+          padding va en el contenedor sticky (para teñir esa franja con
+          el mismo fondo) y la fila de 80px de siempre queda adentro,
+          sin achicarse. */}
+      <header
+        className="sticky top-0 z-40 backdrop-blur-xl bg-[rgba(5,5,5,0.55)] border-b border-[var(--color-surface-stroke)]"
+        style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+      >
+        <div className="h-20 px-5 md:px-10 flex items-center justify-between">
+          <div className="flex items-center gap-6">
+            <FarosWordmark size="sm" />
+            <span className="hidden md:block w-px h-6 bg-white/10" />
+            <h1 className="hidden md:block font-display text-headline-md font-extrabold text-white uppercase tracking-tighter">
+              {title}
+            </h1>
+          </div>
+          <div className="flex items-center gap-4">
+            {/* min-h/w 44px: área táctil mínima (antes 37×18 → fallaba el toque) */}
+            <button
+              onClick={() => signOut()}
+              className="label-caps text-[10px] min-h-[44px] min-w-[44px] px-3 flex items-center justify-center rounded-xl text-[var(--color-on-surface-variant)] hover:text-[var(--color-danger-crimson)] hover:bg-white/5 active:scale-[0.96] transition-[color,background-color,transform] duration-200"
+            >
+              Salir
+            </button>
+            <div className="relative w-9 h-9 rounded-full overflow-hidden bg-[rgba(230,255,0,0.1)] border border-[rgba(230,255,0,0.25)] flex items-center justify-center">
+              {user?.foto_perfil ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={user.foto_perfil} alt="" className="absolute inset-0 w-full h-full object-cover" />
+              ) : (
+                <span className="font-display text-xs font-black text-[var(--color-primary-fixed)]">
+                  {user?.nombres?.charAt(0) ?? 'A'}
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </header>
 
       {offline && (
-        <div className="sticky top-20 z-30 px-4 py-2 flex items-center justify-center gap-2 bg-amber-500/10 border-b border-amber-500/20">
+        <div
+          className="sticky z-30 px-4 py-2 flex items-center justify-center gap-2 bg-amber-500/10 border-b border-amber-500/20"
+          style={{ top: 'calc(env(safe-area-inset-top, 0px) + 80px)' }}
+        >
           <span className="material-symbols-outlined text-amber-400 text-[15px]">cloud_off</span>
           <span className="label-caps text-[9px] text-amber-200">Sin conexión — viendo tus últimos datos guardados</span>
         </div>
@@ -230,16 +243,26 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
 export function GuardedShell({ authorized, loading, title, children }: {
   authorized: boolean; loading: boolean; title: string; children: ReactNode
 }) {
-  if (loading || !authorized) {
-    return (
-      <div className="min-h-dvh flex items-center justify-center" style={{ background: '#050505' }}>
-        <Spinner size="lg" />
-      </div>
-    )
-  }
+  const ready = !loading && authorized
+  // La app solo se monta cuando el loader terminó su animación de salida
+  // (onExitComplete) — si aparecieran a la vez, el zoom del faro se
+  // vería solapado con el contenido en vez de revelarlo.
+  const [showApp, setShowApp] = useState(false)
+
+  useEffect(() => {
+    if (!ready) setShowApp(false)
+  }, [ready])
+
   return (
-    <CuentaSuspendida>
-      <AppShell title={title}>{children}</AppShell>
-    </CuentaSuspendida>
+    <>
+      <AnimatePresence mode="wait" onExitComplete={() => { if (ready) setShowApp(true) }}>
+        {!ready && <LighthouseLoader key="lighthouse-loader" />}
+      </AnimatePresence>
+      {showApp && (
+        <CuentaSuspendida>
+          <AppShell title={title}>{children}</AppShell>
+        </CuentaSuspendida>
+      )}
+    </>
   )
 }
