@@ -52,7 +52,8 @@ export default function DashboardPage() {
   const [txCargada, setTxCargada] = useState(false)
 
   const susc = user?.suscripcionActiva
-  const tasa = user?.estadisticas?.tasaAsistencia ?? 0
+  // tasaAsistencia se guarda como fracción (0-1) — a porcentaje para mostrar.
+  const tasa = Math.round((user?.estadisticas?.tasaAsistencia ?? 0) * 100)
   const asistidas = user?.estadisticas?.clasesAsistidas ?? 0
 
   // Fase del ciclo de matrícula, derivada de la suscripción + transacción pendiente.
@@ -91,7 +92,8 @@ export default function DashboardPage() {
             return {
               uid: d.id,
               nombre: `${u.nombres} ${u.apellidos}`,
-              tasa: u.estadisticas?.tasaAsistencia ?? 0,
+              // tasaAsistencia se guarda como fracción (0-1) — a porcentaje para mostrar.
+              tasa: Math.round((u.estadisticas?.tasaAsistencia ?? 0) * 100),
               pos: 0,
               esYo: d.id === user.uid,
             }

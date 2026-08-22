@@ -157,7 +157,8 @@ export default function EstudiantesPage() {
                   ) : visibles.map((u) => {
                     const susc = u.suscripcionActiva
                     const estado = estadoSuscripcion(u)
-                    const tasa = u.estadisticas?.tasaAsistencia ?? 0
+                    // tasaAsistencia se guarda como fracción (0-1) — a porcentaje para mostrar.
+                    const tasa = Math.round((u.estadisticas?.tasaAsistencia ?? 0) * 100)
                     return (
                       <tr key={u.uid} className="hover:bg-white/[0.03] transition-colors duration-200">
                         <td className="px-6 py-4">
