@@ -275,6 +275,30 @@ dominio de Storage. Corregido; de paso se conectó `foto_perfil` en los dos
 avatares que aún mostraban solo iniciales: el header de `AppShell` y la tabla
 de `admin/usuarios`.
 
+### 6.11 — Cupos disponibles reales + índice faltante tumbaba todo el catálogo
+El wizard mostraba `"Cupo máximo N"` (la capacidad total del grupo, fija) en vez
+de cupos disponibles reales. Se agregó `GET /api/grupos/cupos` (Admin SDK):
+cuenta suscripciones activas y no vencidas por `grupoId` — no se puede hacer
+desde el cliente porque `firestore.rules` no deja que un alumno lea las
+suscripciones de otros. El wizard ahora muestra "N cupos disponibles" y
+bloquea la selección de un grupo lleno.
+
+**Bug más grave descubierto al verificarlo:** los números seguían siendo los
+viejos hardcodeados (4, 6...) pese al fix. Causa: `getSedes()` no tenía el
+índice compuesto (`activo`+`orden`) que su propia query necesita, y estaba
+metido en un `Promise.all([getSedes(), getGrupos(), getTarifas()])` — al
+fallar sedes, **rechaza el `Promise.all` completo**, así que grupos y tarifas
+también caían al catálogo hardcodeado de `lib/planes.ts` aunque esas dos
+consultas sí hubieran funcionado solas. Corregido: se agregó el índice a
+`firestore.indexes.json` (desplegado), y las tres llamadas se separaron con su
+propio `.catch()` cada una, para que una futura falla aislada no vuelva a
+arrastrar a las otras dos.
+
+**Hallazgo aparte, sin tocar:** `sedes`/`grupos`/`tarifas` requieren
+`isAuthenticated()` para leerse, pero el wizard dice estar "abierto a
+invitados" — un visitante sin cuenta caería siempre al catálogo hardcodeado
+sin darse cuenta, incluyendo precios viejos. Ver pendiente en sección 7.
+
 ---
 
 ## 7. Pendientes actuales (post-auditoría 2026-08-21)
@@ -299,6 +323,10 @@ de `admin/usuarios`.
 - [ ] Fase 5 (Mensajería), Fase 6 (PWA hardening) y Fase 7 (QA + staging) siguen
   como se describen abajo — no se tocaron en esta auditoría por ser features nuevas,
   no bugs de algo ya construido.
+- [ ] **`sedes`/`grupos`/`tarifas` exigen login para leerse** pese a que el wizard
+  de planes dice estar "abierto a invitados" (ver 6.11) — decidir si se relaja la
+  regla a lectura pública (son catálogo/precios, no datos sensibles) o si el
+  wizard deja de prometer soporte a invitados.
 
 ---
 
