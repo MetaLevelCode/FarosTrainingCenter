@@ -2,26 +2,22 @@
 
 // ============================================================
 // FAROS — Semanario del alumno (acción principal del dashboard)
-// El alumno arma su semana eligiendo los DÍAS en que entrena (según
-// los cupos de su plan). El plan pasa por: solicitud → confirmación
-// del club → pago → activo. Hasta estar activo, el acceso es limitado.
+// Muestra los días fijos en que el alumno entrena (según su grupo o
+// plan) y la fase de su matrícula. Es de solo lectura — el cambio de
+// días no tiene flujo propio: para gestionar horario, el alumno usa
+// la inscripción por clase en /dashboard/asistencia.
 // ============================================================
 
-import { useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { motion, AnimatePresence } from 'motion/react'
 import { Button } from '@/components/ui'
 import {
-  SEMANA, HORAS, PASOS, pasosCompletados, type Fase,
+  SEMANA, PASOS, pasosCompletados, type Fase,
 } from '@/lib/matricula'
-
-const EASE = [0.22, 1, 0.36, 1] as const
 
 // Estilo del estado de cada día reservado según la fase.
 function estadoDia(fase: Fase): { label: string; cls: string } {
   switch (fase) {
     case 'activo': return { label: 'Reservado', cls: 'text-[var(--color-success-emerald)]' }
-    case 'por_pagar': return { label: 'Confirmado', cls: 'text-[var(--color-primary-fixed)]' }
     case 'pendiente': return { label: 'En revisión', cls: 'text-amber-400' }
     default: return { label: '', cls: '' }
   }
@@ -30,7 +26,6 @@ function estadoDia(fase: Fase): { label: string; cls: string } {
 export function Semanario({
   fase, cupos, nombrePlan, recurrente = false, proximoPago,
   diasIniciales = [], horaInicial = '6:00 PM',
-  onPagar, onSolicitar,
 }: {
   fase: Fase
   /** Sesiones que le quedan por reservar (viene de la suscripción). */
@@ -42,45 +37,8 @@ export function Semanario({
   proximoPago?: string
   diasIniciales?: number[]
   horaInicial?: string
-  onPagar: () => void
-  onSolicitar: (dias: number[], hora: string) => void
 }) {
   const hayPlan = Boolean(nombrePlan)
-
-  const [editando, setEditando] = useState(false)
-  const [dias, setDias] = useState<number[]>(diasIniciales)
-  const [hora, setHora] = useState<string>(horaInicial)
-  // Instantánea para restaurar si el alumno cancela la edición.
-  const snapshot = useRef<{ dias: number[]; hora: string }>({ dias, hora })
-
-  const activos = dias
-  const completo = dias.length === cupos
-
-  function editar() {
-    snapshot.current = { dias, hora }
-    setEditando(true)
-  }
-
-  function cancelar() {
-    setDias(snapshot.current.dias)
-    setHora(snapshot.current.hora)
-    setEditando(false)
-  }
-
-  function toggleDia(dow: number) {
-    if (!editando) return
-    setDias((prev) => {
-      if (prev.includes(dow)) return prev.filter((d) => d !== dow)
-      if (prev.length >= cupos) return prev  // no exceder los cupos del plan
-      return [...prev, dow].sort((a, b) => a - b)
-    })
-  }
-
-  function enviar() {
-    onSolicitar(dias, hora)
-    setEditando(false)
-  }
-
   const est = estadoDia(fase)
   const pasos = pasosCompletados(fase)
 
@@ -100,9 +58,9 @@ export function Semanario({
             </h2>
             <p className="text-[var(--color-on-surface-variant)]/70 mt-3 max-w-md text-sm">
               {!hayPlan
-                ? 'Cuando tengas un plan activo podrás elegir aquí los días en que entrenas.'
+                ? 'Cuando tengas un plan activo podrás ver aquí los días en que entrenas.'
                 : recurrente
-                  ? `Elige ${cupos} ${cupos === 1 ? 'día' : 'días'}: tu profesor queda reservado para ti en ese horario.`
+                  ? `Tienes ${cupos} ${cupos === 1 ? 'día' : 'días'}: tu profesor queda reservado para ti en ese horario.`
                   : `Tu plan ${nombrePlan} te deja ${cupos} ${cupos === 1 ? 'sesión' : 'sesiones'} por reservar.`}
             </p>
           </div>
@@ -143,28 +101,17 @@ export function Semanario({
           )}
         </div>
 
-        {/* ── Semanario: los 6 días ── */}
+        {/* ── Semanario: los 6 días (solo lectura) ── */}
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-6">
           {SEMANA.map((d) => {
-            const sel = activos.includes(d.dow)
-            const editable = editando && (sel || dias.length < cupos)
+            const sel = diasIniciales.includes(d.dow)
             return (
-              <motion.button
+              <div
                 key={d.dow}
-                type="button"
-                onClick={() => toggleDia(d.dow)}
-                disabled={!editando}
-                whileTap={editando ? { scale: 0.96 } : undefined}
-                transition={{ duration: 0.12, ease: EASE }}
-                aria-pressed={sel}
                 className={`flex flex-col items-center gap-2 py-5 rounded-2xl border transition-colors duration-200 ${
                   sel
                     ? 'border-[var(--color-primary-fixed)] bg-[rgba(230,255,0,0.1)]'
-                    : editando
-                      ? editable
-                        ? 'border-white/10 bg-white/[0.03] hover:border-[rgba(230,255,0,0.5)] cursor-pointer'
-                        : 'border-white/5 bg-white/[0.02] opacity-40 cursor-not-allowed'
-                      : 'border-white/5 bg-white/[0.02] opacity-50'
+                    : 'border-white/5 bg-white/[0.02] opacity-50'
                 }`}
               >
                 <span className={`label-caps text-[10px] ${sel ? 'text-[var(--color-primary-fixed)]' : 'text-[var(--color-on-surface-variant)]/50'}`}>
@@ -175,82 +122,25 @@ export function Semanario({
                     <span className="material-symbols-outlined text-[20px] text-[var(--color-primary-fixed)]">
                       {fase === 'activo' ? 'check_circle' : 'schedule'}
                     </span>
-                    <span className="font-display text-[11px] font-black text-white">{hora}</span>
-                    {!editando && est.label && (
+                    <span className="font-display text-[11px] font-black text-white">{horaInicial}</span>
+                    {est.label && (
                       <span className={`label-caps text-[8px] ${est.cls}`}>{est.label}</span>
                     )}
                   </>
                 ) : (
-                  <span className="material-symbols-outlined text-[20px] text-white/15">
-                    {editando ? 'add' : 'remove'}
-                  </span>
+                  <span className="material-symbols-outlined text-[20px] text-white/15">remove</span>
                 )}
-              </motion.button>
+              </div>
             )
           })}
         </div>
 
-        {/* ── Selector de hora (solo en edición) ── */}
-        <AnimatePresence initial={false}>
-          {editando && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.25, ease: EASE }}
-              className="overflow-hidden mb-6"
-            >
-              <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/60 mb-3">
-                Hora preferida · aplica a los días elegidos
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {HORAS.map((h) => (
-                  <button
-                    key={h}
-                    type="button"
-                    onClick={() => setHora(h)}
-                    className={`px-4 py-2 rounded-full label-caps text-[10px] border transition-colors duration-200 ${
-                      hora === h
-                        ? 'bg-[var(--color-primary-fixed)] text-black border-transparent'
-                        : 'border-white/10 text-[var(--color-on-surface-variant)]/70 hover:border-[rgba(230,255,0,0.5)]'
-                    }`}
-                  >
-                    {h}
-                  </button>
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* ── Banner de fase / acciones ── */}
-        {editando ? (
-          <div className="flex flex-col sm:flex-row items-center gap-4 rounded-2xl border border-white/10 bg-black/30 p-5">
-            <p className="flex-1 text-sm text-[var(--color-on-surface-variant)]/80 text-center sm:text-left">
-              {completo
-                ? `Elegiste ${cupos} ${cupos === 1 ? 'día' : 'días'}. Envía tu solicitud para que el club confirme con tu profesor.`
-                : `Elige ${cupos - dias.length} ${cupos - dias.length === 1 ? 'día más' : 'días más'} para completar tu plan.`}
-            </p>
-            <div className="flex gap-3 shrink-0 w-full sm:w-auto">
-              <Button variant="ghost" size="md" onClick={cancelar}>
-                Cancelar
-              </Button>
-              <Button size="md" disabled={!completo} onClick={enviar}>
-                Enviar solicitud
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <BannerFase
-            fase={fase}
-            hayPlan={hayPlan}
-            nombrePlan={nombrePlan}
-            proximoPago={proximoPago}
-            recurrente={recurrente}
-            onPagar={onPagar}
-            onEditar={editar}
-          />
-        )}
+        <BannerFase
+          fase={fase}
+          hayPlan={hayPlan}
+          proximoPago={proximoPago}
+          recurrente={recurrente}
+        />
       </div>
     </section>
   )
@@ -258,15 +148,12 @@ export function Semanario({
 
 // ── Banner según la fase del plan ──
 function BannerFase({
-  fase, hayPlan, nombrePlan, proximoPago, recurrente, onPagar, onEditar,
+  fase, hayPlan, proximoPago, recurrente,
 }: {
   fase: Fase
   hayPlan: boolean
-  nombrePlan?: string
   proximoPago?: string
   recurrente: boolean
-  onPagar: () => void
-  onEditar: () => void
 }) {
   if (fase === 'pendiente') {
     return (
@@ -277,30 +164,10 @@ function BannerFase({
             Solicitud en revisión
           </h3>
           <p className="text-sm text-[var(--color-on-surface-variant)]/70">
-            El club está coordinando con tu profesor la disponibilidad para los días que pediste.
-            Te avisaremos cuando puedas pagar y activar tu plan.
+            Ya recibimos tu solicitud y tu comprobante de pago. El equipo administrativo lo está
+            revisando — te avisaremos apenas quede activo tu plan.
           </p>
         </div>
-      </div>
-    )
-  }
-
-  if (fase === 'por_pagar') {
-    return (
-      <div className="flex flex-col sm:flex-row items-center gap-5 rounded-2xl border border-[rgba(230,255,0,0.35)] bg-[rgba(230,255,0,0.07)] p-6 text-center sm:text-left">
-        <span className="material-symbols-outlined text-[var(--color-primary-fixed)] text-4xl shrink-0">verified</span>
-        <div className="flex-1">
-          <h3 className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight mb-1">
-            ¡Tu plan fue confirmado!
-          </h3>
-          <p className="text-sm text-[var(--color-on-surface-variant)]/70">
-            {recurrente ? 'Tu profesor está disponible en esos días.' : 'Hay cupo en el horario que elegiste.'}{' '}
-            Paga para activar {nombrePlan} y reservar tu lugar.
-          </p>
-        </div>
-        <Button size="lg" onClick={onPagar} className="shrink-0 w-full sm:w-auto">
-          Pagar y activar
-        </Button>
       </div>
     )
   }
@@ -341,9 +208,6 @@ function BannerFase({
           {proximoPago ? ` Vence: ${proximoPago}.` : ''}
         </p>
       </div>
-      <Button variant="ghost" size="md" onClick={onEditar} className="shrink-0 w-full sm:w-auto">
-        Solicitar cambio de días
-      </Button>
     </div>
   )
 }

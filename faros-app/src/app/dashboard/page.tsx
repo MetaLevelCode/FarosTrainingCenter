@@ -199,8 +199,6 @@ export default function DashboardPage() {
               cupos={cuposDisponibles(susc)}
               nombrePlan={susc?.nombrePlan}
               proximoPago={vencimiento}
-              onPagar={() => { /* pendiente: abrir el flujo de pago */ }}
-              onSolicitar={() => { /* pendiente: crear la transacción en Firestore */ }}
             />
           </Reveal>
         )}
