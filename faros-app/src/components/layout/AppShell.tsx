@@ -48,6 +48,13 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
 
   const navItems = user ? NAV[user.rol] : []
 
+  // El navegador a veces reusa la posición de scroll de una visita anterior
+  // a esta misma ruta (ej. tras login con router.replace) — forzamos arriba
+  // en cada cambio de página en vez de confiar en la restauración nativa.
+  useEffect(() => {
+    window.scrollTo(0, 0)
+  }, [pathname])
+
   // Magnetic hover for FAB — rAF-throttled, rect cached, fine pointers only.
   // (The old version called getBoundingClientRect on EVERY mousemove,
   //  forcing constant layout recalc across the app.)
