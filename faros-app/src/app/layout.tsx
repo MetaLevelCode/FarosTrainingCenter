@@ -3,6 +3,7 @@ import { Montserrat, Hanken_Grotesk } from 'next/font/google'
 import { AuthProvider } from '@/contexts/AuthContext'
 import { ServiceWorkerRegister } from '@/components/shared/ServiceWorkerRegister'
 import { InstallPrompt } from '@/components/shared/InstallPrompt'
+import { BootSplash } from '@/components/shared/BootSplash'
 import './globals.css'
 
 // Self-hosted via next/font: zero render-blocking requests, no CLS.
@@ -109,6 +110,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         ))}
       </head>
       <body style={{ backgroundColor: '#050505', color: '#f5f5f5' }}>
+        <BootSplash />
         <AuthProvider>{children}</AuthProvider>
         <InstallPrompt />
         <ServiceWorkerRegister />

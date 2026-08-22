@@ -11,10 +11,9 @@ import { useRouter, usePathname } from 'next/navigation'
 import { motion, AnimatePresence } from 'motion/react'
 import { useAuth } from '@/contexts/AuthContext'
 import { WaterBackground } from '@/components/shared/WaterBackground'
-import { FarosWordmark } from '@/components/ui'
+import { FarosWordmark, Spinner } from '@/components/ui'
 import { CuentaSuspendida } from '@/components/shared/CuentaSuspendida'
 import { PendienteSync } from '@/components/shared/PendienteSync'
-import { LighthouseLoader } from '@/components/shared/LighthouseLoader'
 import type { UserRole } from '@/lib/types'
 
 interface NavItem { label: string; href: string; icon: string }
@@ -240,41 +239,25 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
 }
 
 // Loading guard wrapper
+// La animación de entrada vive en BootSplash (montado una sola vez en
+// el layout raíz) — este loader por-página se queda deliberadamente
+// simple: cada página monta su propia instancia y `ready` puede llegar
+// en true desde el primer render (navegación entre pantallas ya
+// autenticadas), así que no puede depender de una animación de salida
+// para revelar el contenido sin arriesgarse a quedar pegado en negro.
 export function GuardedShell({ authorized, loading, title, children }: {
   authorized: boolean; loading: boolean; title: string; children: ReactNode
 }) {
-  const ready = !loading && authorized
-  // Cada página monta su propia instancia de GuardedShell (no hay un
-  // layout compartido), así que al navegar entre pantallas ya
-  // autenticadas `ready` llega en true desde el primer render: el
-  // loader nunca se monta y por lo tanto nunca dispara su animación de
-  // salida. Si showApp dependiera solo de ese onExitComplete, la app se
-  // quedaba en negro para siempre en cualquier navegación después de la
-  // primera. Por eso arranca ya reflejando el estado real, y el
-  // onExitComplete solo entra en juego cuando el loader sí llegó a
-  // mostrarse (carga inicial real).
-  const [showApp, setShowApp] = useState(ready)
-  const loaderMostradoRef = useRef(!ready)
-
-  useEffect(() => {
-    if (!ready) {
-      loaderMostradoRef.current = true
-      setShowApp(false)
-    } else if (!loaderMostradoRef.current) {
-      setShowApp(true)
-    }
-  }, [ready])
-
+  if (loading || !authorized) {
+    return (
+      <div className="min-h-dvh flex items-center justify-center" style={{ background: '#050505' }}>
+        <Spinner size="lg" />
+      </div>
+    )
+  }
   return (
-    <>
-      <AnimatePresence mode="wait" onExitComplete={() => { if (ready) setShowApp(true) }}>
-        {!ready && <LighthouseLoader key="lighthouse-loader" />}
-      </AnimatePresence>
-      {showApp && (
-        <CuentaSuspendida>
-          <AppShell title={title}>{children}</AppShell>
-        </CuentaSuspendida>
-      )}
-    </>
+    <CuentaSuspendida>
+      <AppShell title={title}>{children}</AppShell>
+    </CuentaSuspendida>
   )
 }
