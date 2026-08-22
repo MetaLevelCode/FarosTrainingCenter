@@ -9,20 +9,26 @@
 //
 // El objeto central es el logo real (public/farosWordmark/logo-
 // amarillo.png), estático — el espacio negro de la silueta del faro
-// nunca se mueve. Por encima, 4 ondas (el mismo trazo redondeado que
-// forman los anillos del logo) nacen del centro y viajan hacia afuera
-// en cascada, creciendo y perdiendo opacidad, como ondas en el agua.
+// nunca se mueve. Por encima, 4 anillos —cada uno su propio elemento,
+// con su propio radio de reposo, igual que los 4 anillos reales
+// anidados— nacen del centro y se propagan hacia afuera en cascada,
+// creciendo y perdiendo opacidad, como ondas en el agua.
 //
-// El trazo se re-escala en JS (no con transform-origin de CSS, que es
-// ambiguo en SVG entre navegadores) generando el mismo "d" a distintos
-// factores desde un origen fijo — así cada onda conserva exactamente
-// la misma geometría en cualquier tamaño.
+// El "d" del path se recalcula a mano en cada frame (ver useMotionValue
+// + animate() más abajo) en vez de dejar que la librería intente
+// interpolar dos strings de path completos: motion no interpola el
+// contenido de un "d" arbitrario (son strings opacos para ella), así
+// que animar `d: [stringA, stringB]` directamente saltaba entre
+// valores en vez de crecer — por eso se veía "colapsar" en lugar de
+// expandirse. Animando un número (el factor de escala) con motion y
+// aplicándolo nosotros mismos al "d" en cada tick, la geometría se
+// re-escala de verdad, con cada anillo conservando su forma exacta.
 // ============================================================
 
-import { useEffect, useMemo, useState } from 'react'
-import { AnimatePresence, motion } from 'motion/react'
+import { useEffect, useRef, useState } from 'react'
+import { AnimatePresence, animate, motion, useMotionValue } from 'motion/react'
 
-const T_FINAL = 2450
+const T_FINAL = 2600
 const T_OCULTAR = T_FINAL + 650
 
 // Puntos del trazo base (M + 2 curvas cúbicas) en un viewBox 200x160.
@@ -42,22 +48,54 @@ function trazoAnillo(factor: number): string {
   return `M${p0[0]},${p0[1]} C${p1[0]},${p1[1]} ${p2[0]},${p2[1]} ${p3[0]},${p3[1]} C${p4[0]},${p4[1]} ${p5[0]},${p5[1]} ${p6[0]},${p6[1]}`
 }
 
-function OndaRipple({ stagger, destello }: { stagger: number; destello: boolean }) {
-  const dReposo = useMemo(() => [trazoAnillo(0.42), trazoAnillo(0.42), trazoAnillo(1.55)], [])
-  const dClimax = useMemo(() => trazoAnillo(2.7), [])
+// Cada anillo es un elemento independiente con su propio radio de
+// reposo (como los 4 anillos reales, anidados) — no son 4 copias
+// idénticas con solo un desfase de tiempo.
+const ANILLOS = [
+  { base: 0.32, crecimiento: 2.2 },
+  { base: 0.48, crecimiento: 2.05 },
+  { base: 0.64, crecimiento: 1.9 },
+  { base: 0.8, crecimiento: 1.8 },
+]
+
+function OndaRipple({ base, crecimiento, stagger, destello }: {
+  base: number; crecimiento: number; stagger: number; destello: boolean
+}) {
+  const pathRef = useRef<SVGPathElement>(null)
+  const factor = useMotionValue(base)
+
+  useEffect(() => {
+    const el = pathRef.current
+    if (!el) return
+    el.setAttribute('d', trazoAnillo(factor.get()))
+    const unsub = factor.on('change', (v) => el.setAttribute('d', trazoAnillo(v)))
+
+    // El anillo interno arranca primero; los de afuera se suman con
+    // retraso — así se ve la onda propagándose en vez de "parpadear"
+    // los 4 a la vez.
+    const controls = destello
+      ? animate(factor, base * 3.4, { duration: 0.6, ease: 'easeIn', delay: stagger * 0.05 })
+      : animate(factor, [base, base, base * crecimiento], {
+          duration: 1.15, times: [0, 0.15, 1], ease: 'easeOut',
+          repeat: Infinity, repeatDelay: 0.45, delay: stagger * 0.3,
+        })
+
+    return () => { unsub(); controls.stop() }
+  }, [destello, base, crecimiento, stagger, factor])
 
   return (
     <motion.path
+      ref={pathRef}
       fill="none"
       stroke="#e6ff00"
       strokeLinecap="round"
-      initial={{ d: dReposo[0], opacity: 0, strokeWidth: 9 }}
+      initial={{ opacity: 0, strokeWidth: 9 }}
       animate={destello
-        ? { d: dClimax, opacity: [0.95, 1, 0], strokeWidth: [9, 210, 210] }
-        : { d: dReposo, opacity: [0, 0.85, 0], strokeWidth: 9 }}
+        ? { opacity: [0.95, 1, 0], strokeWidth: [9, 180, 180] }
+        : { opacity: [0, 0.85, 0], strokeWidth: 9 }}
       transition={destello
-        ? { duration: 0.6, times: [0, 0.4, 1], ease: 'easeIn', delay: stagger * 0.25 }
-        : { duration: 1.1, times: [0, 0.15, 1], ease: 'easeOut', repeat: Infinity, repeatDelay: 0.5, delay: stagger * 0.28 }}
+        ? { duration: 0.6, times: [0, 0.4, 1], ease: 'easeIn', delay: stagger * 0.05 }
+        : { duration: 1.15, times: [0, 0.15, 1], ease: 'easeOut', repeat: Infinity, repeatDelay: 0.45, delay: stagger * 0.3 }}
     />
   )
 }
@@ -105,10 +143,10 @@ export function BootSplash() {
               style={{ filter: 'drop-shadow(0 0 18px rgba(230,255,0,0.35))' }}
             />
 
-            {/* Las ondas: mismo trazo redondeado de los anillos, en cascada */}
+            {/* Los anillos: cada uno un elemento propio, con su radio de reposo */}
             <svg viewBox="0 0 200 160" className="absolute inset-0 w-full h-full" style={{ overflow: 'visible' }}>
-              {[0, 1, 2, 3].map((i) => (
-                <OndaRipple key={i} stagger={i} destello={destello} />
+              {ANILLOS.map((a, i) => (
+                <OndaRipple key={i} base={a.base} crecimiento={a.crecimiento} stagger={i} destello={destello} />
               ))}
             </svg>
           </motion.div>
