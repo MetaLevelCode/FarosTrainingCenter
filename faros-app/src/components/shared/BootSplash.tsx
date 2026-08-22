@@ -7,33 +7,34 @@
 // ícono del PWA) y nunca en navegaciones internas (el layout raíz no
 // se remonta al cambiar de página).
 //
-// No hay imagen estática de fondo: los 4 anillos SON el logo, y los 4
-// se mueven todo el tiempo (nada se queda quieto). El "hueco" que se
-// lee como la silueta del faro no es un dibujo aparte — es el propio
+// No hay imagen estática de fondo: los 4 <path> SON el logo (SVG en
+// línea, no <img>) y los 4 se mueven todo el tiempo. El "hueco" que
+// se lee como la silueta del faro no es un dibujo aparte — es el
 // espacio negativo que dejan los arcos abiertos por abajo, igual que
 // en el archivo real (logo-amarillo.png no tiene ni un solo píxel
 // negro: se verificó con un histograma de color del PNG).
 //
 // La geometría de cada anillo se midió directamente del PNG real
-// (escaneando filas de píxeles para encontrar los bordes de cada
-// arco) en vez de calcarla a ojo — de ahí que "quedaran mal" en el
-// primer intento. Los 4 anillos resultaron ser el mismo trazo
+// (escaneo de filas de píxeles buscando los bordes de cada arco) en
+// vez de calcarla a ojo. Los 4 anillos resultaron ser el mismo trazo
 // reescalado uniformemente desde un origen común (144.5, 144 en el
 // espacio del PNG de 289x233), con factores medidos de 0.552, 1.0,
-// 1.441 y 1.883 — eso es lo que anima ANILLOS[].escalaReal más abajo.
+// 1.441 y 1.883 — cada <path> se genera UNA vez con su "d" ya
+// correcto a esa escala real (nada se recalcula por frame).
 //
-// El "d" se recalcula a mano en cada frame (useMotionValue + animate()
-// + onChange → setAttribute) en vez de dejar que motion interpole dos
-// strings de path completos — motion trata "d" como un string opaco,
-// no com números, así que animarlo directo saltaba/colapsaba en vez
-// de crecer.
+// La animación es CSS puro (@keyframes en globals.css: .faros-anillo
+// / .faros-anillo--climax), no JS por frame — cada anillo anima la
+// propiedad `scale` (no `transform: scale()`) con
+// vector-effect="non-scaling-stroke" en el <path>, así el trazo
+// conserva su grosor exacto sin engordar al crecer. Los delays
+// (animationDelay inline, escalonados por anillo) son los que crean
+// la onda propagándose de adentro hacia afuera.
 // ============================================================
 
-import { useEffect, useRef, useState } from 'react'
-import { AnimatePresence, animate, motion, useMotionValue } from 'motion/react'
+import { useEffect, useMemo, useState } from 'react'
 
 const T_FINAL = 2700
-const T_OCULTAR = T_FINAL + 650
+const T_OCULTAR = T_FINAL + 780
 
 // Puntos medidos del arco de referencia (el anillo 2 de 4, sin
 // escalar) en el espacio de píxeles del PNG real: desde la punta
@@ -46,7 +47,8 @@ const PUNTOS_REFERENCIA: [number, number][] = [
   [208.5, 160], [192.5, 176], [183, 192], [181.5, 197],
 ]
 // Origen de escalado medido — los 4 anillos reales son este mismo
-// trazo reescalado uniformemente desde este punto.
+// trazo reescalado uniformemente desde este punto. Debe coincidir con
+// el transform-origin en px que usan las animaciones CSS.
 const ORIGEN: [number, number] = [144.5, 144]
 
 function escalarPunto([x, y]: [number, number], factor: number): [number, number] {
@@ -76,58 +78,15 @@ function trazoAnillo(factor: number): string {
 }
 
 // Los 4 anillos reales, de adentro hacia afuera — factores de escala
-// medidos del PNG (ver comentario de arriba). El interno arranca
-// primero y los de afuera se suman con retraso: así se ve la onda
-// propagándose en vez de los 4 "parpadeando" juntos.
-const ANILLOS = [
-  { escalaReal: 0.552 },
-  { escalaReal: 1.0 },
-  { escalaReal: 1.441 },
-  { escalaReal: 1.883 },
-]
-
-function OndaRipple({ escalaReal, stagger, destello }: {
-  escalaReal: number; stagger: number; destello: boolean
-}) {
-  const pathRef = useRef<SVGPathElement>(null)
-  const factor = useMotionValue(escalaReal * 0.6)
-
-  useEffect(() => {
-    const el = pathRef.current
-    if (!el) return
-    el.setAttribute('d', trazoAnillo(factor.get()))
-    const unsub = factor.on('change', (v) => el.setAttribute('d', trazoAnillo(v)))
-
-    const controls = destello
-      ? animate(factor, escalaReal * 3.6, { duration: 0.6, ease: 'easeIn', delay: stagger * 0.05 })
-      : animate(factor, [escalaReal * 0.6, escalaReal, escalaReal * 1.7], {
-          duration: 1.3, times: [0, 0.35, 1], ease: 'easeOut',
-          repeat: Infinity, repeatDelay: 0.4, delay: stagger * 0.32,
-        })
-
-    return () => { unsub(); controls.stop() }
-  }, [destello, escalaReal, stagger, factor])
-
-  return (
-    <motion.path
-      ref={pathRef}
-      fill="none"
-      stroke="#e6ff00"
-      strokeLinecap="round"
-      initial={{ opacity: 0.5, strokeWidth: 15 }}
-      animate={destello
-        ? { opacity: [0.95, 1, 0], strokeWidth: [15, 190, 190] }
-        : { opacity: [0.4, 0.95, 0], strokeWidth: 15 }}
-      transition={destello
-        ? { duration: 0.6, times: [0, 0.4, 1], ease: 'easeIn', delay: stagger * 0.05 }
-        : { duration: 1.3, times: [0, 0.35, 1], ease: 'easeOut', repeat: Infinity, repeatDelay: 0.4, delay: stagger * 0.32 }}
-    />
-  )
-}
+// medidos del PNG real. El interno arranca primero (delay 0) y los de
+// afuera se suman con retraso creciente: eso es lo que se lee como la
+// onda propagándose, no un solo bloque escalando.
+const ANILLOS = [0.552, 1.0, 1.441, 1.883]
 
 export function BootSplash() {
   const [visible, setVisible] = useState(true)
   const [destello, setDestello] = useState(false)
+  const trazos = useMemo(() => ANILLOS.map((f) => trazoAnillo(f)), [])
 
   useEffect(() => {
     const t1 = setTimeout(() => setDestello(true), T_FINAL)
@@ -135,36 +94,50 @@ export function BootSplash() {
     return () => { clearTimeout(t1); clearTimeout(t2) }
   }, [])
 
-  return (
-    <AnimatePresence>
-      {visible && (
-        <motion.div
-          className="fixed inset-0 z-[300] overflow-hidden flex items-center justify-center"
-          style={{ background: '#050505' }}
-          initial={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
-        >
-          {/* Resplandor ambiental — centrado en el mismo origen que los anillos */}
-          <motion.div
-            className="absolute inset-0"
-            style={{ background: 'radial-gradient(ellipse 60% 55% at 50% 62%, rgba(230,255,0,0.16), transparent 65%)' }}
-            animate={{ opacity: destello ? [0.3, 1, 0] : [0.25, 0.6, 0.25] }}
-            transition={destello ? { duration: 0.6 } : { duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
-          />
+  if (!visible) return null
 
-          {/* Los 4 anillos — todos en movimiento, ninguno queda quieto */}
-          <svg
-            viewBox="0 0 289 233"
-            className="relative"
-            style={{ width: 260, height: 260 * (233 / 289), overflow: 'visible' }}
-          >
-            {ANILLOS.map((a, i) => (
-              <OndaRipple key={i} escalaReal={a.escalaReal} stagger={i} destello={destello} />
-            ))}
-          </svg>
-        </motion.div>
-      )}
-    </AnimatePresence>
+  return (
+    <div
+      className="fixed inset-0 z-[300] overflow-hidden flex items-center justify-center"
+      style={{
+        background: '#050505',
+        opacity: destello ? 0 : 1,
+        transition: 'opacity 0.7s ease',
+      }}
+    >
+      {/* Resplandor ambiental — centrado en el mismo origen que los anillos.
+          Se apaga con el fundido del contenedor entero, no por su cuenta. */}
+      <div
+        className="absolute inset-0"
+        style={{
+          background: 'radial-gradient(ellipse 60% 55% at 50% 62%, rgba(230,255,0,0.16), transparent 65%)',
+          animation: destello ? 'none' : 'farosGlow 1.6s ease-in-out infinite',
+          opacity: destello ? 1 : undefined,
+        }}
+      />
+
+      {/* Los 4 anillos — SVG en línea, cada <path> independiente y en movimiento */}
+      <svg
+        viewBox="0 0 289 233"
+        style={{ width: 260, height: 260 * (233 / 289), overflow: 'visible' }}
+      >
+        {trazos.map((d, i) => (
+          <path
+            key={i}
+            d={d}
+            fill="none"
+            stroke="#e6ff00"
+            strokeWidth={15}
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+            className={destello ? 'faros-anillo faros-anillo--climax' : 'faros-anillo'}
+            style={{
+              transformOrigin: `${ORIGEN[0]}px ${ORIGEN[1]}px`,
+              animationDelay: destello ? `${i * 0.05}s` : `${i * 0.32}s`,
+            }}
+          />
+        ))}
+      </svg>
+    </div>
   )
 }
