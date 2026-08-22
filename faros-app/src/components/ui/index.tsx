@@ -140,28 +140,31 @@ export function Spinner({ size = 'md' }: { size?: 'sm' | 'md' | 'lg' }) {
   )
 }
 
-// ── FAROS LOGO (concentric diamond lighthouse) ──
+// ── FAROS LOGO (marca real, ver public/farosWordmark) ──
 export function FarosLogo({ size = 32 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" fill="none" aria-label="Faros">
-      <path d="M16 2 L28 11 L28 24 L16 30 L4 24 L4 11 Z" stroke="#e6ff00" strokeWidth="1.5" strokeLinejoin="round" fill="none" opacity="0.35" />
-      <path d="M16 6 L25 13 L25 22 L16 27 L7 22 L7 13 Z" stroke="#e6ff00" strokeWidth="1.2" strokeLinejoin="round" fill="none" opacity="0.6" />
-      <path d="M16 10 L22 15 L22 21 L16 24 L10 21 L10 15 Z" stroke="#e6ff00" strokeWidth="1" strokeLinejoin="round" fill="none" opacity="0.9" />
-      <ellipse cx="16" cy="19" rx="3.5" ry="6" fill="#e6ff00" opacity="0.95" />
-      <ellipse cx="16" cy="16" rx="2.5" ry="2.5" fill="#050505" />
-    </svg>
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src="/farosWordmark/logo-amarillo.png"
+      alt="Faros"
+      style={{ width: size, height: 'auto' }}
+    />
   )
 }
 
 // ── WORDMARK ──
 export function FarosWordmark({ size = 'md' }: { size?: 'sm' | 'md' }) {
-  const textSize = size === 'sm' ? 'text-base' : 'text-lg'
+  const iconSize = size === 'sm' ? 24 : 30
+  const wordmarkHeight = size === 'sm' ? 18 : 24
   return (
     <div className="flex items-center gap-2.5">
-      <FarosLogo size={size === 'sm' ? 22 : 28} />
-      <span className={`font-display font-extrabold tracking-tighter text-white uppercase ${textSize}`}>
-        Faros <span className="text-[var(--color-primary-fixed)]">Training</span>
-      </span>
+      <FarosLogo size={iconSize} />
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/farosWordmark/letras-blancas.png"
+        alt="Faros Training"
+        style={{ height: wordmarkHeight, width: 'auto' }}
+      />
     </div>
   )
 }

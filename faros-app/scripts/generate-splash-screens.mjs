@@ -41,7 +41,11 @@ const DEVICES = [
 
 async function generarUna(pxW, pxH, outPath) {
   const markSide = Math.round(Math.min(pxW, pxH) * 0.32)
-  const mark = await sharp(ICON).resize(markSide, markSide).toBuffer()
+  // fit:'contain' — el logo real no es cuadrado; un resize a secas lo
+  // deformaría para llenar el cuadro.
+  const mark = await sharp(ICON)
+    .resize(markSide, markSide, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .toBuffer()
   await sharp({
     create: { width: pxW, height: pxH, channels: 3, background: BG },
   })
