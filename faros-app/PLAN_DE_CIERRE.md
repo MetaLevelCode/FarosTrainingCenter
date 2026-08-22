@@ -264,6 +264,17 @@ toda la sesión de hoy. Esto significa que varios cambios de reglas de días
 anteriores (ej. remover `codigos_invitacion` de 6.4) tampoco estaban desplegados
 hasta ahora. Ya se corrió ese deploy y quedó al día.
 
+**Segundo bug encontrado (usuario, en pruebas manuales):** la foto se subía bien,
+pero al recargar la página se veía como ícono roto (fondo amarillo del botón
+asomando detrás). Causa: el CSP (`next.config.mjs`) tiene `img-src` — la
+directiva que rige un `<img src>` — separada de `connect-src` (la que rige
+fetch/XHR, usada por el SDK al subir). `connect-src` ya permitía
+`firebasestorage.googleapis.com`, pero `img-src` solo tenía
+`googleusercontent.com` (para avatares de Google Sign-In) — nunca se agregó el
+dominio de Storage. Corregido; de paso se conectó `foto_perfil` en los dos
+avatares que aún mostraban solo iniciales: el header de `AppShell` y la tabla
+de `admin/usuarios`.
+
 ---
 
 ## 7. Pendientes actuales (post-auditoría 2026-08-21)
