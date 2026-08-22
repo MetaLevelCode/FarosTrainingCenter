@@ -72,6 +72,11 @@ export function getFirebase() {
 
       return { auth: getAuth(app), db, storage: getStorage(app) }
     })()
+    // Si falla (ej. sin señal y el chunk de firebase/* nunca se había
+    // descargado), no dejar el cache envenenado para siempre — sin esto,
+    // UNA falla transitoria rompía todas las llamadas a Firestore de toda
+    // la sesión, incluso después de recuperar la conexión.
+    cache.catch(() => { cache = null })
   }
   return cache
 }

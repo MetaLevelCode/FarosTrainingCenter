@@ -291,33 +291,32 @@ body {
   100% { transform: scale(11); opacity: 0; }
 }
 
-/* ── Splash de entrada — anillos del logo (BootSplash) ──
-   El logo base (4 <path> normales) queda siempre visible, estático —
-   es el ancla. Las "ondas" son copias de esos mismos <path> puestas
-   encima, que nacen de su tamaño real y crecen/se diluyen — nunca se
-   anima el logo en sí, solo sus clones.
-   scale (no transform:scale) + transform-box:view-box en el propio
-   <path> respeta el vector-effect="non-scaling-stroke": el trazo
-   nunca engorda al crecer, solo la geometría se expande. */
-.faros-onda {
-  transform-box: view-box;
-  animation: farosRipple 1.6s ease-out infinite;
+/* ── Splash de entrada — marea (BootSplash) ──
+   Franja de agua calma en la base, con la superficie ondulando sin
+   parar (.faros-ola, loop horizontal sin fin — dos copias del mismo
+   trazo, tamaño 200%, al trasladar -50% queda perfecto porque el
+   patrón se repite cada 50% del ancho). Al final, la marea entera
+   (.faros-marea) sube y se traga la pantalla. */
+.faros-marea {
+  animation: farosMareaIdle 3.2s ease-in-out infinite;
 }
-.faros-onda--climax {
-  animation: farosClimax 0.6s ease-in forwards;
+.faros-marea--sube {
+  animation: farosMareaSube 0.75s cubic-bezier(0.6, 0, 0.4, 1) forwards;
 }
-@keyframes farosRipple {
-  0%   { scale: 1; opacity: 0.5; }
-  100% { scale: 1.6; opacity: 0; }
+@keyframes farosMareaIdle {
+  0%, 100% { transform: translateY(90%); }
+  50%      { transform: translateY(87%); }
 }
-@keyframes farosClimax {
-  0%   { scale: 1; opacity: 0.95; stroke-width: 15px; }
-  40%  { opacity: 1; }
-  100% { scale: 4.8; opacity: 0; stroke-width: 130px; }
+@keyframes farosMareaSube {
+  from { transform: translateY(90%); }
+  to   { transform: translateY(44%); }
 }
-@keyframes farosGlow {
-  0%, 100% { opacity: 0.25; }
-  50%      { opacity: 0.6; }
+.faros-ola {
+  animation: farosOlaScroll 7s linear infinite;
+}
+@keyframes farosOlaScroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
 }
 
 @media (prefers-reduced-motion: reduce) {
