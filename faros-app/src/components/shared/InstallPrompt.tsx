@@ -2,9 +2,11 @@
 
 // ============================================================
 // FAROS — PWA Install Prompt
-// Captures `beforeinstallprompt` and surfaces a discreet chip.
-// Rare, first-time interaction → subtle entrance animation is
-// appropriate (Emil framework). Dismissal persists 14 days.
+// Android/Chrome: captura `beforeinstallprompt` y ofrece el prompt
+// nativo. iOS Safari NUNCA dispara ese evento (Apple no lo soporta) —
+// ahí no hay forma programática de instalar, así que se muestran
+// instrucciones manuales (Compartir → Agregar a inicio).
+// Dismissal persiste 14 días, por plataforma.
 // ============================================================
 
 import { useEffect, useState } from 'react'
@@ -15,49 +17,79 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>
 }
 
-const DISMISS_KEY = 'faros-install-dismissed'
 const DISMISS_DAYS = 14
+
+function dismissed(key: string): boolean {
+  try {
+    const v = localStorage.getItem(key)
+    return !!v && Date.now() - Number(v) < DISMISS_DAYS * 86_400_000
+  } catch { return false }
+}
+
+function setDismissed(key: string) {
+  try { localStorage.setItem(key, String(Date.now())) } catch {}
+}
+
+function esStandalone(): boolean {
+  return window.matchMedia('(display-mode: standalone)').matches
+    || (window.navigator as any).standalone === true
+}
+
+// iPhone/iPod, o iPad (en iPadOS 13+ el user agent se reporta como Mac
+// de escritorio — se distingue por soportar touch).
+function esIOS(): boolean {
+  const ua = navigator.userAgent
+  if (/iPad|iPhone|iPod/.test(ua)) return true
+  return /Macintosh/.test(ua) && navigator.maxTouchPoints > 1
+}
 
 export function InstallPrompt() {
   const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null)
-  const [visible, setVisible] = useState(false)
+  const [visibleAndroid, setVisibleAndroid] = useState(false)
+  const [visibleIOS, setVisibleIOS] = useState(false)
 
   useEffect(() => {
-    // Already installed → never show.
-    if (window.matchMedia('(display-mode: standalone)').matches) return
+    if (esStandalone()) return
 
-    try {
-      const dismissed = localStorage.getItem(DISMISS_KEY)
-      if (dismissed && Date.now() - Number(dismissed) < DISMISS_DAYS * 86_400_000) return
-    } catch {}
+    if (esIOS()) {
+      if (dismissed('faros-install-dismissed-ios')) return
+      const t = setTimeout(() => setVisibleIOS(true), 4000)
+      return () => clearTimeout(t)
+    }
 
+    if (dismissed('faros-install-dismissed-android')) return
     const onPrompt = (e: Event) => {
       e.preventDefault()
       setDeferred(e as BeforeInstallPromptEvent)
       // Delay so it never competes with first paint / first interaction.
-      setTimeout(() => setVisible(true), 4000)
+      setTimeout(() => setVisibleAndroid(true), 4000)
     }
-
     window.addEventListener('beforeinstallprompt', onPrompt)
     return () => window.removeEventListener('beforeinstallprompt', onPrompt)
   }, [])
 
   async function install() {
     if (!deferred) return
-    setVisible(false)
+    setVisibleAndroid(false)
     await deferred.prompt()
     setDeferred(null)
   }
 
-  function dismiss() {
-    setVisible(false)
-    try { localStorage.setItem(DISMISS_KEY, String(Date.now())) } catch {}
+  function dismissAndroid() {
+    setVisibleAndroid(false)
+    setDismissed('faros-install-dismissed-android')
+  }
+
+  function dismissIOS() {
+    setVisibleIOS(false)
+    setDismissed('faros-install-dismissed-ios')
   }
 
   return (
     <AnimatePresence>
-      {visible && deferred && (
+      {visibleAndroid && deferred && (
         <motion.div
+          key="android"
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 24 }}
@@ -78,7 +110,7 @@ export function InstallPrompt() {
             </div>
             <div className="flex items-center gap-1 shrink-0">
               <button
-                onClick={dismiss}
+                onClick={dismissAndroid}
                 aria-label="Descartar"
                 className="w-9 h-9 rounded-xl text-[var(--color-on-surface-variant)]/60 hover:text-white hover:bg-white/5 flex items-center justify-center transition-colors duration-200"
               >
@@ -89,6 +121,42 @@ export function InstallPrompt() {
                 className="px-4 py-2.5 rounded-xl bg-[var(--color-primary-fixed)] text-black label-caps text-[10px] active:scale-[0.97] transition-transform duration-150"
               >
                 Instalar
+              </button>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {visibleIOS && (
+        <motion.div
+          key="ios"
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 24 }}
+          transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
+          className="fixed bottom-24 md:bottom-6 left-1/2 -translate-x-1/2 z-[200] w-[calc(100%-2.5rem)] max-w-sm"
+          style={{ marginBottom: 'env(safe-area-inset-bottom, 0)' }}
+          role="dialog"
+          aria-label="Instalar aplicación"
+        >
+          <div className="liquid-glass rounded-2xl p-4 !bg-[rgba(10,10,10,0.85)]">
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 rounded-xl bg-[rgba(230,255,0,0.12)] border border-[rgba(230,255,0,0.25)] flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-[var(--color-primary-fixed)] text-[22px]">install_mobile</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-white leading-tight">Instala Faros en tu iPhone</p>
+                <p className="text-[11px] text-[var(--color-on-surface-variant)] leading-snug mt-1.5">
+                  Toca <span className="material-symbols-outlined text-[13px] align-text-bottom text-white">ios_share</span> abajo
+                  y luego <span className="font-bold text-white">&ldquo;Agregar a inicio&rdquo;</span>.
+                </p>
+              </div>
+              <button
+                onClick={dismissIOS}
+                aria-label="Descartar"
+                className="w-9 h-9 rounded-xl text-[var(--color-on-surface-variant)]/60 hover:text-white hover:bg-white/5 flex items-center justify-center transition-colors duration-200 shrink-0 -mt-1 -mr-1"
+              >
+                <span className="material-symbols-outlined text-[18px]">close</span>
               </button>
             </div>
           </div>
