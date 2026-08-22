@@ -24,12 +24,13 @@ Snapshot de qué está terminado vs. qué falta para poder desplegar en producci
 | Admin — finanzas (aprobar/rechazar) | ✅ Listo | `aprobarTransaccion()` crea suscripción + movimiento en tx atómica |
 | Admin — planes CRUD | ✅ Listo | Sedes/Grupos/Tarifas/Plantillas persisten a Firestore de verdad |
 | Admin — usuarios CRUD | ✅ Listo | Rol, suspensión; bug crítico de `uid` en cambio de rol corregido (ver 6.6) |
+| Foto de perfil | ✅ Listo | Comprimida en el navegador (`lib/imagen.ts`, Canvas, ~18 KB por foto) antes de subir a Storage; Firestore solo guarda el link. En `/registro` (opcional) y en ambos perfiles (ver 6.10) |
 | Mensajería | 🔴 Falta | Tipos y helpers listos (`lib/mensajes.ts`), UI (`Conversacion.tsx`) no consume Firestore — sigue siendo demo local a propósito dentro del calendario del profesor |
 | Cloud Functions | 🔴 No existen | Sin directorio `functions/`; lógica sensible corre en API Routes (decisión ya tomada, ver Fase 1) |
 | PWA / Service Worker | 🟡 Parcial | `sw.js` presente, sin precache completo ni background sync |
 | Firestore Rules | ✅ Hardened | whitelist create, `activoOk()`, cross-check precio, validación instructor |
 | Landing + Login | ✅ Auditado | Sin bugs de fondo — contenido de marketing estático, guard de open-redirect en `?next=` bien hecho, suspensión de cuenta confirmada como diseño intencional (ver 6.9) |
-| Deploy config | 🟡 Funcional pero manual | `apphosting.yaml` OK, pero `ABIU: Disabled` — sin auto-deploy al hacer push, cada fix requiere rollout manual (ver 7) |
+| Deploy config | 🟡 Funcional pero manual | `apphosting.yaml` OK, pero `ABIU: Disabled` — sin auto-deploy al hacer push, cada fix requiere rollout manual. Además, `apphosting:rollouts:create` NO despliega `firestore.rules`/`storage.rules` — es un paso aparte (`firebase deploy --only firestore:rules,storage`) que se venía olvidando (ver 6.10 y 7) |
 | Dependencias (GitHub Dependabot) | 🟡 Parcial | De 14 bajado a 8 (ver 6.8). Las 8 restantes solo se resuelven con un upgrade mayor (Next 15→16) o no tienen fix real disponible aún (`firebase-admin`) |
 
 ---
@@ -243,12 +244,35 @@ de desarrollo (`estudiante@faros.com`) tenía `tasaAsistencia: 87` (entero) en v
 `0.87` (fracción) — efecto colateral del fix de 6.7, solo visible en modo demo local
 — corregido.
 
+### 6.10 — Feature: foto de perfil + hallazgo de proceso en deploy
+Se agregó subida de foto de perfil (`/registro` opcional, y editable en
+`/dashboard/perfil` y `/portal/perfil`). El usuario sube la imagen que sea; se
+comprime en el navegador con `<canvas>` (`lib/imagen.ts` — redimensiona a máx.
+512px de lado, JPEG calidad ~0.82, sin librerías nuevas) antes de subirla a
+Storage (`perfiles/{uid}/avatar.jpg`, sobreescribe en vez de acumular). Firestore
+solo guarda el link (`foto_perfil`), nunca el binario — una foto comprimida pesa
+~18 KB, prácticamente nada frente al límite de 1 MB por documento (que de todas
+formas no aplica: ahí solo va el link).
+
+**Hallazgo de proceso importante:** al probarlo salió `Missing or insufficient
+permissions` en Firestore pese a que la regla de `usuarios/{uid}` ya permitía el
+campo. La causa: `firebase apphosting:rollouts:create` (el comando que usamos
+para TODOS los deploys de esta sesión) **solo despliega el código de la app —
+nunca `firestore.rules` ni `storage.rules`**. Esos requieren su propio comando
+(`firebase deploy --only firestore:rules,storage`), que no se había corrido en
+toda la sesión de hoy. Esto significa que varios cambios de reglas de días
+anteriores (ej. remover `codigos_invitacion` de 6.4) tampoco estaban desplegados
+hasta ahora. Ya se corrió ese deploy y quedó al día.
+
 ---
 
 ## 7. Pendientes actuales (post-auditoría 2026-08-21)
 
 - [ ] **Verificar en producción** que el commit desplegado se comporta igual que en
   las pruebas locales — todo se probó en `localhost`, no en producción.
+- [ ] **Incluir `firestore:rules,storage` en el checklist de deploy**: no se
+  despliegan con `apphosting:rollouts:create` (ver 6.10) — hay que acordarse de
+  correrlo aparte cada vez que se toque `firestore.rules` o `storage.rules`.
 - [x] ~~Revisar las 14 vulnerabilidades de Dependabot~~ — bajado a 8, ver 6.8. Las
   8 restantes quedan pendientes de un upgrade mayor de Next (decisión aparte).
 - [x] ~~Decidir el alcance de `/portal/alumnos`~~ — resuelto 2026-08-21: se acotó a
