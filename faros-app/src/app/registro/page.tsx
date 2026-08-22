@@ -6,13 +6,16 @@
 // Solo escribe los campos del whitelist de firestore.rules.
 // ============================================================
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { motion, AnimatePresence } from 'motion/react'
 import { useAuth } from '@/contexts/AuthContext'
 import { Button, Input, FarosWordmark } from '@/components/ui'
 import { WaterBackground } from '@/components/shared/WaterBackground'
+import { comprimirImagen } from '@/lib/imagen'
+import { updateFotoPerfil } from '@/lib/firestore'
+import { getFirebase } from '@/lib/firebase'
 
 const SEDES = ['UTP', 'Comfamiliar', 'Otra']
 const TIPO_DOC = [
@@ -72,9 +75,19 @@ export default function RegistroPage() {
   const [password, setPassword] = useState('')
   const [confirmar, setConfirmar] = useState('')
 
+  // Foto de perfil (opcional) — se sube después de crear la cuenta.
+  const fotoInputRef = useRef<HTMLInputElement>(null)
+  const [fotoFile, setFotoFile] = useState<File | null>(null)
+  const [fotoPreview, setFotoPreview] = useState<string | null>(null)
+
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [errores, setErrores] = useState<Record<string, string>>({})
+
+  function elegirFoto(file: File) {
+    setFotoFile(file)
+    setFotoPreview(URL.createObjectURL(file))
+  }
 
   function validar(): boolean {
     const e: Record<string, string> = {}
@@ -114,6 +127,26 @@ export default function RegistroPage() {
         dificultades: dificultadesArr.length ? dificultadesArr : undefined,
       },
     )
+    if (res.ok && fotoFile) {
+      // Best-effort: si falla, la cuenta ya quedó creada — el alumno
+      // puede subir la foto después desde su perfil.
+      try {
+        const [{ auth, storage }, { ref, uploadBytes, getDownloadURL }] = await Promise.all([
+          getFirebase(), import('firebase/storage'),
+        ])
+        const uid = auth.currentUser?.uid
+        if (uid) {
+          const blob = await comprimirImagen(fotoFile)
+          const storageRef = ref(storage, `perfiles/${uid}/avatar.jpg`)
+          await uploadBytes(storageRef, blob, { contentType: 'image/jpeg' })
+          const url = await getDownloadURL(storageRef)
+          await updateFotoPerfil(uid, url)
+        }
+      } catch (err) {
+        console.error('No se pudo subir la foto de perfil:', err)
+      }
+    }
+
     setLoading(false)
 
     if (res.ok) {
@@ -159,6 +192,32 @@ export default function RegistroPage() {
           {/* ── Datos personales ── */}
           <div className="space-y-4">
             <SectionLabel>Datos personales</SectionLabel>
+
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                onClick={() => fotoInputRef.current?.click()}
+                className="relative w-16 h-16 rounded-2xl overflow-hidden bg-white/5 border border-dashed border-white/15 hover:border-[rgba(230,255,0,0.4)] transition-colors flex items-center justify-center shrink-0"
+              >
+                {fotoPreview ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={fotoPreview} alt="" className="absolute inset-0 w-full h-full object-cover" />
+                ) : (
+                  <span className="material-symbols-outlined text-white/30 text-[24px]">add_a_photo</span>
+                )}
+              </button>
+              <input
+                ref={fotoInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) elegirFoto(f) }}
+              />
+              <div>
+                <p className="text-sm text-white font-semibold">Foto de perfil</p>
+                <p className="text-[10px] text-[var(--color-on-surface-variant)]/50">Opcional — puedes agregarla después</p>
+              </div>
+            </div>
 
             <div className="grid grid-cols-2 gap-4">
               <div>

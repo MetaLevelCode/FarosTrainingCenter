@@ -61,6 +61,14 @@ export async function setUsuarioActivo(uid: string, activo: boolean): Promise<vo
   await updateDoc(doc(db, 'usuarios', uid), { activo })
 }
 
+/** Guarda solo el link de Storage — la imagen ya vive comprimida ahí, nunca en Firestore. */
+export async function updateFotoPerfil(uid: string, url: string): Promise<void> {
+  const [{ db }, { doc, updateDoc }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  await updateDoc(doc(db, 'usuarios', uid), { foto_perfil: url })
+}
+
 // ── catalogo ─────────────────────────────────────────────────
 
 export async function getCatalogo(): Promise<Catalogo[]> {

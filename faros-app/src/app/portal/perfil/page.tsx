@@ -12,6 +12,7 @@ import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button } from '@/components/ui'
+import { AvatarFoto } from '@/components/shared/AvatarFoto'
 import { useAuth } from '@/contexts/AuthContext'
 
 const EASE = [0.22, 1, 0.36, 1] as const
@@ -31,6 +32,7 @@ export default function PerfilProfesorPage() {
   const { user, signOut } = useAuth()
   const router = useRouter()
   const [cerrando, setCerrando] = useState(false)
+  const [fotoLocal, setFotoLocal] = useState<string | null>(null)
 
   const nombre = user ? `${user.nombres} ${user.apellidos}` : 'Profesor'
   const iniciales = user ? `${user.nombres.charAt(0)}${user.apellidos.charAt(0)}`.toUpperCase() : 'P'
@@ -68,9 +70,14 @@ export default function PerfilProfesorPage() {
             <Reveal delay={0.06}>
               <Card padding="lg" className="h-full">
                 <div className="flex items-center gap-5 mb-8">
-                  <span className="w-20 h-20 rounded-3xl bg-[var(--color-primary-fixed)] text-black flex items-center justify-center font-display text-2xl font-black shrink-0">
-                    {iniciales}
-                  </span>
+                  {user && (
+                    <AvatarFoto
+                      uid={user.uid}
+                      fotoUrl={fotoLocal ?? user.foto_perfil}
+                      iniciales={iniciales}
+                      onSubida={setFotoLocal}
+                    />
+                  )}
                   <div className="min-w-0">
                     <h3 className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight truncate">
                       {nombre}
