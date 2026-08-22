@@ -192,14 +192,19 @@ export default function UsuariosPage() {
                       <tr key={u.uid} className="hover:bg-white/[0.03] transition-colors duration-200">
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
-                            <span className={`w-10 h-10 rounded-full flex items-center justify-center text-[11px] font-black shrink-0 border ${
+                            <span className={`relative w-10 h-10 rounded-full overflow-hidden flex items-center justify-center text-[11px] font-black shrink-0 border ${
                               u.rol === 'profesor'
                                 ? 'bg-[rgba(230,255,0,0.12)] text-[var(--color-primary-fixed)] border-[rgba(230,255,0,0.3)]'
                                 : u.rol === 'admin'
                                   ? 'bg-white/20 text-white border-white/20'
                                   : 'bg-white/10 text-white border-white/10'
                             }`}>
-                              {ini(u)}
+                              {u.foto_perfil ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={u.foto_perfil} alt="" className="absolute inset-0 w-full h-full object-cover" />
+                              ) : (
+                                ini(u)
+                              )}
                             </span>
                             <div>
                               <p className="text-sm font-bold text-white">{nombreCompleto(u)}</p>

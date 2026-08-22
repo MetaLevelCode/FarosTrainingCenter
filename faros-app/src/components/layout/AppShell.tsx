@@ -116,10 +116,15 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
           >
             Salir
           </button>
-          <div className="w-9 h-9 rounded-full bg-[rgba(230,255,0,0.1)] border border-[rgba(230,255,0,0.25)] flex items-center justify-center">
-            <span className="font-display text-xs font-black text-[var(--color-primary-fixed)]">
-              {user?.nombres?.charAt(0) ?? 'A'}
-            </span>
+          <div className="relative w-9 h-9 rounded-full overflow-hidden bg-[rgba(230,255,0,0.1)] border border-[rgba(230,255,0,0.25)] flex items-center justify-center">
+            {user?.foto_perfil ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={user.foto_perfil} alt="" className="absolute inset-0 w-full h-full object-cover" />
+            ) : (
+              <span className="font-display text-xs font-black text-[var(--color-primary-fixed)]">
+                {user?.nombres?.charAt(0) ?? 'A'}
+              </span>
+            )}
           </div>
         </div>
       </header>

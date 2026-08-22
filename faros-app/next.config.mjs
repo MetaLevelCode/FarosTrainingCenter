@@ -23,7 +23,8 @@ const CSP = [
   `script-src 'self' 'unsafe-inline'${ES_DEV ? " 'unsafe-eval'" : ''}`,
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com data:",
-  "img-src 'self' data: blob: https://*.googleusercontent.com",
+  // firebasestorage.googleapis.com: fotos de comprobantes y de perfil.
+  "img-src 'self' data: blob: https://*.googleusercontent.com https://firebasestorage.googleapis.com",
   "media-src 'self'",
   `connect-src 'self' ${FIREBASE_ENDPOINTS}${ES_DEV ? ' ws://localhost:* http://localhost:*' : ''}`,
   "worker-src 'self'",
