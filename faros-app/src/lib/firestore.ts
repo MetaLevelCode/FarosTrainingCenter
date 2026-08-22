@@ -21,12 +21,24 @@ function docToId<T extends object>(snap: any): T {
 
 // ── usuarios ─────────────────────────────────────────────────
 
+/**
+ * Usuario usa `uid` (no `id`) como su campo de identidad, y el whitelist
+ * de creación en firestore.rules NO permite guardar `uid` dentro de los
+ * datos del doc — solo vive como el path (usuarios/{uid}). docToId no lo
+ * sabe (solo fija `id`), así que sin esto `uid` queda undefined para
+ * TODO usuario real, y cualquier .find(x => x.uid === uid) hace match
+ * con el primer usuario de la lista en vez del correcto.
+ */
+function docToUsuario(snap: any): Usuario {
+  return { ...snap.data(), uid: snap.id } as Usuario
+}
+
 export async function getUsuario(uid: string): Promise<Usuario | null> {
   const [{ db }, { doc, getDoc }] = await Promise.all([
     getFirebase(), import('firebase/firestore'),
   ])
   const snap = await getDoc(doc(db, 'usuarios', uid))
-  return snap.exists() ? docToId<Usuario>(snap) : null
+  return snap.exists() ? docToUsuario(snap) : null
 }
 
 export async function getUsuarios(filtroRol?: UserRole): Promise<Usuario[]> {
@@ -38,7 +50,7 @@ export async function getUsuarios(filtroRol?: UserRole): Promise<Usuario[]> {
     ? query(col, where('rol', '==', filtroRol), orderBy('apellidos'))
     : query(col, orderBy('apellidos'))
   const snap = await getDocs(q)
-  return snap.docs.map(docToId<Usuario>)
+  return snap.docs.map(docToUsuario)
 }
 
 export async function setUsuarioActivo(uid: string, activo: boolean): Promise<void> {
@@ -242,13 +254,30 @@ export async function getClasesDisponibles(sede: string): Promise<Clase[]> {
   return snap.docs.map(docToId<Clase>)
 }
 
-export async function updateObservacionesClase(claseId: string, observaciones: string): Promise<void> {
+export async function updateObservacionesClase(
+  claseId: string, observaciones: string, instructorId: string,
+): Promise<void> {
+  const [{ db }, { doc, writeBatch, increment }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  const batch = writeBatch(db)
+  batch.update(doc(db, 'clases', claseId), {
+    observaciones_profesor: observaciones,
+    estado: 'finalizada',
+    actualizadoEn: Date.now(),
+  })
+  // Acumulado histórico del profesor (perfil: "Clases dictadas").
+  batch.update(doc(db, 'usuarios', instructorId), { clasesDadas: increment(1) })
+  await batch.commit()
+}
+
+/** Guarda el plan de clase (lo ve el alumno). Rules ya permiten este campo. */
+export async function updateClasePlan(claseId: string, plan: string[]): Promise<void> {
   const [{ db }, { doc, updateDoc }] = await Promise.all([
     getFirebase(), import('firebase/firestore'),
   ])
   await updateDoc(doc(db, 'clases', claseId), {
-    observaciones_profesor: observaciones,
-    estado: 'finalizada',
+    plan,
     actualizadoEn: Date.now(),
   })
 }
