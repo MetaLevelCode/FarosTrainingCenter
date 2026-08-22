@@ -123,9 +123,10 @@ export default function ClasesPage() {
   }
 
   async function guardarObservaciones(claseId: string) {
+    if (!user) return
     setGuardando(claseId)
     try {
-      await updateObservacionesClase(claseId, observaciones[claseId] ?? '')
+      await updateObservacionesClase(claseId, observaciones[claseId] ?? '', user.uid)
       setClases((prev) => prev.map((c) =>
         c.id === claseId ? { ...c, estado: 'finalizada', observaciones_profesor: observaciones[claseId] } : c,
       ))

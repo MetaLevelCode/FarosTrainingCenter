@@ -3,18 +3,28 @@
 // ============================================================
 // FAROS — Calendario del entrenador
 // El portal del coach es un gran calendario. Cada día muestra sus
-// clases; al abrir una clase, el coach ve o sube el PLAN DE CLASE
-// (que verá el alumno) y registra la ASISTENCIA de ese día.
+// clases reales (Firestore: clases donde instructor_id == uid); al
+// abrir una clase, el coach ve/sube el PLAN DE CLASE (campo `plan` en
+// el doc, ya habilitado en firestore.rules) y registra la ASISTENCIA
+// real de ese día (registrarAsistencia — la misma función que usa
+// /portal/clases).
+//
+// Los mensajes siguen siendo locales/demo: no existe todavía una
+// colección de mensajería en Firestore (esa es una feature aparte,
+// no un simple "conectar lo que ya existe").
 // ============================================================
 
 import { useEffect, useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'motion/react'
-import { Card, Button, Badge } from '@/components/ui'
+import { Card, Button, Badge, Spinner } from '@/components/ui'
 import { Conversacion } from '@/components/shared/Conversacion'
+import { useAuth } from '@/contexts/AuthContext'
 import {
-  mallaDelMes, clasesDelDia, planSemilla, isoDe, grupoDeClase,
-  MESES, DIAS_CORTOS, type Clase, type PlanClase,
-} from '@/lib/agenda'
+  getClasesProfesor, getAsistenciasClase, registrarAsistencia,
+  updateClasePlan, updateObservacionesClase, getUsuarios,
+} from '@/lib/firestore'
+import { displayName } from '@/lib/types'
+import type { Clase, Asistencia, Usuario } from '@/lib/types'
 import {
   mensajesSemilla, delCanal, nuevoMensaje, canalGrupo, canalPrivado,
   COACH_ID, COACH_NOMBRE, type Mensaje,
@@ -22,28 +32,84 @@ import {
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
+const MESES = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+]
+const DIAS_CORTOS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+
+const ESTADO_LABEL: Record<Clase['estado'], string> = {
+  programada: 'Programada',
+  en_curso: 'En curso',
+  finalizada: 'Finalizada',
+  cancelada: 'Cancelada',
+}
+const ESTADO_BADGE: Record<Clase['estado'], 'default' | 'primary' | 'success' | 'danger'> = {
+  programada: 'default',
+  en_curso: 'primary',
+  finalizada: 'success',
+  cancelada: 'danger',
+}
+
+const pad = (n: number) => String(n).padStart(2, '0')
+const isoDe = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 function parseIso(iso: string): Date {
   const [y, m, d] = iso.split('-').map(Number)
   return new Date(y, m - 1, d)
 }
+function horaAmPm(ts: number): { hora: string; ampm: 'AM' | 'PM' } {
+  const d = new Date(ts)
+  const ampm = d.getHours() >= 12 ? 'PM' : 'AM'
+  const h12 = d.getHours() % 12 || 12
+  return { hora: `${h12}:${pad(d.getMinutes())}`, ampm }
+}
+
+// ── Rejilla del mes (semanas lunes a domingo) ──
+interface Celda { fecha: Date | null; iso: string; clases: Clase[] }
+const aDow = (jsDay: number) => (jsDay === 0 ? 7 : jsDay)
+
+function mallaDelMes(anio: number, mes: number, clasesPorDia: Map<string, Clase[]>): Celda[][] {
+  const primero = new Date(anio, mes, 1)
+  const offset = aDow(primero.getDay()) - 1
+  const diasEnMes = new Date(anio, mes + 1, 0).getDate()
+
+  const celdas: Celda[] = []
+  for (let i = 0; i < offset; i++) celdas.push({ fecha: null, iso: `pad-${i}`, clases: [] })
+  for (let d = 1; d <= diasEnMes; d++) {
+    const fecha = new Date(anio, mes, d)
+    const iso = isoDe(fecha)
+    celdas.push({ fecha, iso, clases: clasesPorDia.get(iso) ?? [] })
+  }
+  while (celdas.length % 7 !== 0) celdas.push({ fecha: null, iso: `pad-fin-${celdas.length}`, clases: [] })
+
+  const semanas: Celda[][] = []
+  for (let i = 0; i < celdas.length; i += 7) semanas.push(celdas.slice(i, i + 7))
+  return semanas
+}
+
+/** Id del muro de mensajes de una clase (demo local — sin backend real todavía). */
+function grupoDeClase(clase: Clase): string {
+  return clase.nombre_clase.toLowerCase().split(' ')[0].replace(/[^a-z0-9]/g, '') || clase.id
+}
 
 export function CalendarioEntrenador() {
+  const { user } = useAuth()
   const [mounted, setMounted] = useState(false)
   const [cursor, setCursor] = useState({ anio: 2026, mes: 6 })
   const [selIso, setSelIso] = useState<string | null>(null)
   const [hoyIso, setHoyIso] = useState<string | null>(null)
 
-  // Planes subidos y asistencia registrada (se conectan a Firestore).
-  const [planes, setPlanes] = useState<Record<string, PlanClase>>({})
-  const [asistencia, setAsistencia] = useState<Record<string, string[]>>({})
-  // Los mensajes viven aquí para no perderse al cambiar de día/clase.
-  const [mensajes, setMensajes] = useState<Mensaje[]>(() => mensajesSemilla())
+  const [cargando, setCargando] = useState(true)
+  const [clases, setClases] = useState<Clase[]>([])
+  const [alumnosMap, setAlumnosMap] = useState<Map<string, Usuario>>(new Map())
+  const [asistenciasPorClase, setAsistenciasPorClase] = useState<Record<string, Asistencia[]>>({})
 
+  // Mensajes: demo local, sin backend real (ver comentario del archivo).
+  const [mensajes, setMensajes] = useState<Mensaje[]>(() => mensajesSemilla())
   function enviarMensaje(canalId: string, texto: string) {
     setMensajes((prev) => [...prev, nuevoMensaje(canalId, COACH_ID, COACH_NOMBRE, 'entrenador', texto)])
   }
 
-  // Fechas → en cliente para no romper la hidratación.
   useEffect(() => {
     const hoy = new Date()
     setCursor({ anio: hoy.getFullYear(), mes: hoy.getMonth() })
@@ -52,11 +118,31 @@ export function CalendarioEntrenador() {
     setMounted(true)
   }, [])
 
-  const semanas = useMemo(() => mallaDelMes(cursor.anio, cursor.mes), [cursor])
-  const clasesSel = useMemo(
-    () => (selIso ? clasesDelDia(parseIso(selIso)) : []),
-    [selIso],
-  )
+  useEffect(() => {
+    if (!user?.uid) return
+    Promise.all([getClasesProfesor(user.uid), getUsuarios('estudiante')])
+      .then(([cs, estudiantes]) => {
+        setClases(cs)
+        setAlumnosMap(new Map(estudiantes.map((u) => [u.uid, u])))
+      })
+      .catch(console.error)
+      .finally(() => setCargando(false))
+  }, [user?.uid])
+
+  const clasesPorDia = useMemo(() => {
+    const m = new Map<string, Clase[]>()
+    for (const c of clases) {
+      const iso = isoDe(new Date(c.fecha_hora_inicio))
+      const arr = m.get(iso) ?? []
+      arr.push(c)
+      m.set(iso, arr)
+    }
+    for (const arr of m.values()) arr.sort((a, b) => a.fecha_hora_inicio - b.fecha_hora_inicio)
+    return m
+  }, [clases])
+
+  const semanas = useMemo(() => mallaDelMes(cursor.anio, cursor.mes, clasesPorDia), [cursor, clasesPorDia])
+  const clasesSel = selIso ? (clasesPorDia.get(selIso) ?? []) : []
 
   function cambiarMes(delta: number) {
     setCursor((c) => {
@@ -65,11 +151,52 @@ export function CalendarioEntrenador() {
     })
   }
 
-  function guardarPlan(id: string, plan: PlanClase) {
-    setPlanes((prev) => ({ ...prev, [id]: plan }))
+  async function abrirClase(claseId: string) {
+    if (asistenciasPorClase[claseId]) return
+    try {
+      const as = await getAsistenciasClase(claseId)
+      setAsistenciasPorClase((prev) => ({ ...prev, [claseId]: as }))
+    } catch (err) { console.error(err) }
   }
-  function guardarAsistencia(id: string, ids: string[]) {
-    setAsistencia((prev) => ({ ...prev, [id]: ids }))
+
+  async function marcarAsistencia(claseId: string, usuarioId: string, asistio: boolean) {
+    if (!user) return
+    setAsistenciasPorClase((prev) => {
+      const lista = prev[claseId] ?? []
+      const idx = lista.findIndex((a) => a.usuarioId === usuarioId)
+      const copia = [...lista]
+      if (idx >= 0) {
+        copia[idx] = { ...copia[idx], asistio }
+      } else {
+        copia.push({
+          id: `temp-${usuarioId}`, asistenciaId: '', claseId, usuarioId, asistio,
+          fecha_registro: Date.now(), registradoPor: user.uid, creadoEn: Date.now(),
+        })
+      }
+      return { ...prev, [claseId]: copia }
+    })
+    try {
+      await registrarAsistencia(claseId, usuarioId, asistio, user.uid)
+    } catch (err) {
+      console.error(err)
+      // Revertir releyendo el estado real desde Firestore.
+      getAsistenciasClase(claseId)
+        .then((as) => setAsistenciasPorClase((prev) => ({ ...prev, [claseId]: as })))
+        .catch(() => {})
+    }
+  }
+
+  async function guardarPlanClase(claseId: string, bloques: string[]) {
+    await updateClasePlan(claseId, bloques)
+    setClases((prev) => prev.map((c) => (c.id === claseId ? { ...c, plan: bloques } : c)))
+  }
+
+  async function finalizarClase(claseId: string, observaciones: string) {
+    if (!user) return
+    await updateObservacionesClase(claseId, observaciones, user.uid)
+    setClases((prev) => prev.map((c) => (
+      c.id === claseId ? { ...c, estado: 'finalizada', observaciones_profesor: observaciones } : c
+    )))
   }
 
   const labelDiaSel = selIso
@@ -77,8 +204,8 @@ export function CalendarioEntrenador() {
         .format(parseIso(selIso))
     : ''
 
-  if (!mounted) {
-    return <div className="h-[520px] rounded-[2rem] bg-white/[0.03] border border-white/5 animate-pulse" />
+  if (!mounted || cargando) {
+    return <div className="h-[520px] rounded-[2rem] bg-white/[0.03] border border-white/5 animate-pulse flex items-center justify-center"><Spinner /></div>
   }
 
   return (
@@ -149,13 +276,9 @@ export function CalendarioEntrenador() {
                         {celda.clases.slice(0, 2).map((c) => (
                           <span
                             key={c.id}
-                            className={`label-caps text-[8px] px-1.5 py-0.5 rounded truncate ${
-                              c.tipo === 'Personal'
-                                ? 'bg-[rgba(230,255,0,0.15)] text-[var(--color-primary-fixed)]'
-                                : 'bg-white/8 text-[var(--color-on-surface-variant)]/80'
-                            }`}
+                            className="label-caps text-[8px] px-1.5 py-0.5 rounded truncate bg-white/8 text-[var(--color-on-surface-variant)]/80"
                           >
-                            {c.hora}
+                            {horaAmPm(c.fecha_hora_inicio).hora}
                           </span>
                         ))}
                         {celda.clases.length > 2 && (
@@ -201,12 +324,14 @@ export function CalendarioEntrenador() {
                 <ClaseCard
                   key={clase.id}
                   clase={clase}
-                  plan={planes[clase.id] ?? planSemilla(clase)}
-                  presentes={asistencia[clase.id] ?? null}
+                  alumnosMap={alumnosMap}
+                  asistencias={asistenciasPorClase[clase.id] ?? null}
                   mensajes={mensajes}
+                  onAbrir={() => abrirClase(clase.id)}
                   onEnviarMensaje={enviarMensaje}
-                  onGuardarPlan={(p) => guardarPlan(clase.id, p)}
-                  onGuardarAsistencia={(ids) => guardarAsistencia(clase.id, ids)}
+                  onGuardarPlan={(bloques) => guardarPlanClase(clase.id, bloques)}
+                  onMarcarAsistencia={(uid, asistio) => marcarAsistencia(clase.id, uid, asistio)}
+                  onFinalizar={(observaciones) => finalizarClase(clase.id, observaciones)}
                 />
               ))}
             </div>
@@ -219,71 +344,77 @@ export function CalendarioEntrenador() {
 
 // ── Tarjeta de una clase: plan + asistencia ──
 function ClaseCard({
-  clase, plan, presentes, mensajes, onEnviarMensaje, onGuardarPlan, onGuardarAsistencia,
+  clase, alumnosMap, asistencias, mensajes, onAbrir, onEnviarMensaje, onGuardarPlan, onMarcarAsistencia, onFinalizar,
 }: {
   clase: Clase
-  plan: PlanClase | null
-  presentes: string[] | null
+  alumnosMap: Map<string, Usuario>
+  asistencias: Asistencia[] | null
   mensajes: Mensaje[]
+  onAbrir: () => void
   onEnviarMensaje: (canalId: string, texto: string) => void
-  onGuardarPlan: (p: PlanClase) => void
-  onGuardarAsistencia: (ids: string[]) => void
+  onGuardarPlan: (bloques: string[]) => Promise<void>
+  onMarcarAsistencia: (usuarioId: string, asistio: boolean) => void
+  onFinalizar: (observaciones: string) => Promise<void>
 }) {
   const [abierta, setAbierta] = useState(false)
   const [editandoPlan, setEditandoPlan] = useState(false)
-  // Canal abierto en la sección de mensajes: el muro o un privado.
+  const [guardandoPlan, setGuardandoPlan] = useState(false)
   const [chatCon, setChatCon] = useState<string | null>(null)
-  const [titulo, setTitulo] = useState(plan?.titulo ?? '')
-  const [bloquesText, setBloquesText] = useState(plan?.bloques.join('\n') ?? '')
+  const [bloquesText, setBloquesText] = useState((clase.plan ?? []).join('\n'))
+  const [observaciones, setObservaciones] = useState(clase.observaciones_profesor ?? '')
+  const [finalizando, setFinalizando] = useState(false)
 
-  const [draft, setDraft] = useState<Set<string>>(() => new Set(presentes ?? []))
-  const [guardada, setGuardada] = useState(presentes !== null)
+  const { hora, ampm } = horaAmPm(clase.fecha_hora_inicio)
+  const alumnos = clase.estudiantes_inscritos
+    .map((uid) => alumnosMap.get(uid))
+    .filter((u): u is Usuario => !!u)
 
-  const tienePlan = !!plan
-  const asistenciaTomada = presentes !== null
+  const tienePlan = (clase.plan ?? []).length > 0
+  const asistenciaTomada = (asistencias?.length ?? 0) > 0
+  const finalizada = clase.estado === 'finalizada'
 
-  function togglePresente(id: string) {
-    setGuardada(false)
-    setDraft((prev) => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
-  }
-
-  function guardarPlan() {
+  async function guardarPlan() {
     const bloques = bloquesText.split('\n').map((l) => l.trim()).filter(Boolean)
-    if (!titulo.trim() || bloques.length === 0) return
-    onGuardarPlan({ titulo: titulo.trim(), bloques })
-    setEditandoPlan(false)
+    if (bloques.length === 0) return
+    setGuardandoPlan(true)
+    try {
+      await onGuardarPlan(bloques)
+      setEditandoPlan(false)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setGuardandoPlan(false)
+    }
   }
 
-  function guardarAsistencia() {
-    onGuardarAsistencia([...draft])
-    setGuardada(true)
+  async function finalizar() {
+    setFinalizando(true)
+    try {
+      await onFinalizar(observaciones)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setFinalizando(false)
+    }
   }
 
   return (
     <Card padding="none" className="overflow-hidden">
       {/* Cabecera de la clase */}
       <button
-        onClick={() => setAbierta((v) => !v)}
+        onClick={() => { setAbierta((v) => !v); if (!abierta) onAbrir() }}
         className="w-full flex items-center gap-4 p-5 text-left hover:bg-white/[0.02] transition-colors"
       >
         <div className="flex flex-col items-center justify-center w-14 shrink-0">
-          <span className="font-display text-lg font-black text-[var(--color-primary-fixed)] leading-none">
-            {clase.hora.replace(/ (AM|PM)/, '')}
-          </span>
-          <span className="label-caps text-[8px] text-[var(--color-on-surface-variant)]/50 mt-0.5">
-            {clase.hora.includes('AM') ? 'AM' : 'PM'}
-          </span>
+          <span className="font-display text-lg font-black text-[var(--color-primary-fixed)] leading-none">{hora}</span>
+          <span className="label-caps text-[8px] text-[var(--color-on-surface-variant)]/50 mt-0.5">{ampm}</span>
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <Badge variant={clase.tipo === 'Personal' ? 'primary' : 'default'}>{clase.tipo}</Badge>
+            <Badge variant={ESTADO_BADGE[clase.estado]}>{ESTADO_LABEL[clase.estado]}</Badge>
           </div>
-          <p className="font-display text-sm font-extrabold text-white uppercase tracking-tight truncate">{clase.titulo}</p>
-          <p className="text-[11px] text-[var(--color-on-surface-variant)]/60 mt-0.5">{clase.sede} · {clase.alumnos.length} alumnos</p>
+          <p className="font-display text-sm font-extrabold text-white uppercase tracking-tight truncate">{clase.nombre_clase}</p>
+          <p className="text-[11px] text-[var(--color-on-surface-variant)]/60 mt-0.5">{clase.sede} · {clase.estudiantes_inscritos.length} alumnos</p>
         </div>
         <div className="flex flex-col items-end gap-1 shrink-0">
           <span className={`material-symbols-outlined text-[16px] ${tienePlan ? 'text-[var(--color-success-emerald)]' : 'text-white/20'}`} title={tienePlan ? 'Plan cargado' : 'Sin plan'}>
@@ -320,9 +451,8 @@ function ClaseCard({
 
                 {tienePlan && !editandoPlan ? (
                   <div className="rounded-2xl border border-white/5 bg-white/[0.02] p-4">
-                    <p className="font-display text-sm font-extrabold text-white uppercase tracking-tight mb-3">{plan!.titulo}</p>
                     <ul className="space-y-2">
-                      {plan!.bloques.map((b, i) => (
+                      {(clase.plan ?? []).map((b, i) => (
                         <li key={i} className="flex items-baseline gap-3">
                           <span className="text-[10px] font-black text-[rgba(230,255,0,0.5)]">{String(i + 1).padStart(2, '0')}</span>
                           <span className="text-[13px] text-[var(--color-on-surface)]/80">{b}</span>
@@ -347,12 +477,6 @@ function ClaseCard({
                     )}
                     {editandoPlan && (
                       <div className="space-y-3">
-                        <input
-                          value={titulo}
-                          onChange={(e) => setTitulo(e.target.value)}
-                          placeholder="Título del plan (ej. Técnica y resistencia)"
-                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/25 focus:border-[rgba(230,255,0,0.5)] focus:outline-none transition-colors"
-                        />
                         <textarea
                           value={bloquesText}
                           onChange={(e) => setBloquesText(e.target.value)}
@@ -362,7 +486,7 @@ function ClaseCard({
                         />
                         <div className="flex gap-2">
                           <Button variant="ghost" size="sm" onClick={() => setEditandoPlan(false)}>Cancelar</Button>
-                          <Button size="sm" onClick={guardarPlan}>Guardar plan</Button>
+                          <Button size="sm" loading={guardandoPlan} onClick={guardarPlan}>Guardar plan</Button>
                         </div>
                       </div>
                     )}
@@ -375,34 +499,57 @@ function ClaseCard({
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="label-caps text-[10px] text-[var(--color-primary-fixed)]">Registrar asistencia</h4>
                   <span className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">
-                    {draft.size} / {clase.alumnos.length}
+                    {asistencias?.filter((a) => a.asistio).length ?? 0} / {alumnos.length}
                   </span>
                 </div>
-                <div className="space-y-2">
-                  {clase.alumnos.map((a) => {
-                    const presente = draft.has(a.id)
-                    return (
-                      <button
-                        key={a.id}
-                        onClick={() => togglePresente(a.id)}
-                        className={`w-full flex items-center justify-between gap-3 p-3 rounded-xl border transition-colors ${
-                          presente ? 'border-[rgba(230,255,0,0.35)] bg-[rgba(230,255,0,0.05)]' : 'border-white/5 bg-white/[0.02]'
-                        }`}
-                      >
-                        <span className="text-[13px] font-bold text-white truncate">{a.nombre}</span>
-                        <span className={`material-symbols-outlined text-[20px] ${presente ? 'text-[var(--color-primary-fixed)]' : 'text-white/20'}`}>
-                          {presente ? 'check_circle' : 'radio_button_unchecked'}
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-                <Button size="sm" fullWidth className="mt-4" onClick={guardarAsistencia} disabled={guardada}>
-                  {guardada ? 'Asistencia guardada ✓' : 'Guardar asistencia'}
-                </Button>
+                {asistencias === null ? (
+                  <div className="flex justify-center py-6"><Spinner size="sm" /></div>
+                ) : alumnos.length === 0 ? (
+                  <p className="text-sm text-[var(--color-on-surface-variant)]/50">No hay alumnos inscritos.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {alumnos.map((a) => {
+                      const presente = asistencias.find((x) => x.usuarioId === a.uid)?.asistio ?? false
+                      return (
+                        <button
+                          key={a.uid}
+                          onClick={() => onMarcarAsistencia(a.uid, !presente)}
+                          className={`w-full flex items-center justify-between gap-3 p-3 rounded-xl border transition-colors ${
+                            presente ? 'border-[rgba(230,255,0,0.35)] bg-[rgba(230,255,0,0.05)]' : 'border-white/5 bg-white/[0.02]'
+                          }`}
+                        >
+                          <span className="text-[13px] font-bold text-white truncate">{displayName(a)}</span>
+                          <span className={`material-symbols-outlined text-[20px] ${presente ? 'text-[var(--color-primary-fixed)]' : 'text-white/20'}`}>
+                            {presente ? 'check_circle' : 'radio_button_unchecked'}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
 
-              {/* ── Mensajes: muro de la clase + privados ── */}
+              {/* ── Observaciones + finalizar clase ── */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="label-caps text-[10px] text-[var(--color-primary-fixed)]">Observaciones</h4>
+                  {finalizada && <Badge variant="success">Finalizada</Badge>}
+                </div>
+                <textarea
+                  value={observaciones}
+                  onChange={(e) => setObservaciones(e.target.value)}
+                  placeholder="Escribe tus observaciones de la clase..."
+                  rows={4}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/25 focus:border-[rgba(230,255,0,0.5)] focus:outline-none transition-colors resize-none"
+                />
+                <div className="flex justify-end mt-3">
+                  <Button size="sm" loading={finalizando} onClick={finalizar}>
+                    {finalizada ? 'Actualizar observaciones' : 'Guardar y finalizar clase'}
+                  </Button>
+                </div>
+              </div>
+
+              {/* ── Mensajes: muro de la clase + privados (demo, sin backend real) ── */}
               <div>
                 <h4 className="label-caps text-[10px] text-[var(--color-primary-fixed)] mb-3">Mensajes</h4>
 
@@ -419,18 +566,18 @@ function ClaseCard({
                     <span className="material-symbols-outlined text-[14px]">forum</span>
                     Muro
                   </button>
-                  {clase.alumnos.map((a) => (
+                  {alumnos.map((a) => (
                     <button
-                      key={a.id}
-                      onClick={() => setChatCon(a.id)}
-                      aria-pressed={chatCon === a.id}
+                      key={a.uid}
+                      onClick={() => setChatCon(a.uid)}
+                      aria-pressed={chatCon === a.uid}
                       className={`px-3 py-1.5 rounded-full label-caps text-[9px] transition-colors ${
-                        chatCon === a.id
+                        chatCon === a.uid
                           ? 'bg-[var(--color-primary-fixed)] text-black'
                           : 'bg-white/5 text-[var(--color-on-surface-variant)]/60 hover:text-white'
                       }`}
                     >
-                      {a.nombre.split(' ')[0]}
+                      {a.nombres}
                     </button>
                   ))}
                 </div>
@@ -441,7 +588,7 @@ function ClaseCard({
                     : canalPrivado(chatCon, COACH_ID)
                   const conQuien = chatCon === null
                     ? null
-                    : clase.alumnos.find((a) => a.id === chatCon)?.nombre.split(' ')[0]
+                    : alumnos.find((a) => a.uid === chatCon)?.nombres
                   return (
                     <Conversacion
                       mensajes={delCanal(mensajes, canalId)}
