@@ -244,13 +244,25 @@ export function GuardedShell({ authorized, loading, title, children }: {
   authorized: boolean; loading: boolean; title: string; children: ReactNode
 }) {
   const ready = !loading && authorized
-  // La app solo se monta cuando el loader terminó su animación de salida
-  // (onExitComplete) — si aparecieran a la vez, el zoom del faro se
-  // vería solapado con el contenido en vez de revelarlo.
-  const [showApp, setShowApp] = useState(false)
+  // Cada página monta su propia instancia de GuardedShell (no hay un
+  // layout compartido), así que al navegar entre pantallas ya
+  // autenticadas `ready` llega en true desde el primer render: el
+  // loader nunca se monta y por lo tanto nunca dispara su animación de
+  // salida. Si showApp dependiera solo de ese onExitComplete, la app se
+  // quedaba en negro para siempre en cualquier navegación después de la
+  // primera. Por eso arranca ya reflejando el estado real, y el
+  // onExitComplete solo entra en juego cuando el loader sí llegó a
+  // mostrarse (carga inicial real).
+  const [showApp, setShowApp] = useState(ready)
+  const loaderMostradoRef = useRef(!ready)
 
   useEffect(() => {
-    if (!ready) setShowApp(false)
+    if (!ready) {
+      loaderMostradoRef.current = true
+      setShowApp(false)
+    } else if (!loaderMostradoRef.current) {
+      setShowApp(true)
+    }
   }, [ready])
 
   return (

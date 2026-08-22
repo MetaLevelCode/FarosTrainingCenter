@@ -8,7 +8,7 @@
 //   · Firebase / APIs ............ never intercepted
 // Bump VERSION on every deploy that should invalidate caches.
 // ============================================================
-const VERSION = 'faros-v6'
+const VERSION = 'faros-v7'
 const PRECACHE = `${VERSION}-precache`
 const RUNTIME = `${VERSION}-runtime`
 const MEDIA = `${VERSION}-media`
