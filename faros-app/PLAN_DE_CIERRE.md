@@ -236,9 +236,10 @@ un upgrade mayor real:
   las pruebas locales — todo se probó en `localhost`, no en producción.
 - [x] ~~Revisar las 14 vulnerabilidades de Dependabot~~ — bajado a 8, ver 6.8. Las
   8 restantes quedan pendientes de un upgrade mayor de Next (decisión aparte).
-- [ ] **Decidir el alcance de `/portal/alumnos`**: hoy un profesor ve a TODOS los
-  estudiantes del club, no solo los suyos. ¿Es intencional (club chico) o hay que
-  acotarlo por grupo/instructor?
+- [x] ~~Decidir el alcance de `/portal/alumnos`~~ — resuelto 2026-08-21: se acotó a
+  "mis alumnos" (inscritos en clases donde el profesor es `instructor_id`); el admin
+  sigue viendo a todos. No existe campo "profesor asignado" en `Usuario`, así que la
+  relación se deriva de `Clase.estudiantes_inscritos`.
 - [ ] **Auditar landing page + login** con el mismo nivel de detalle que el resto —
   nunca se revisaron en esta ronda.
 - [ ] **Deploy manual**: `apphosting.yaml` está bien, pero `ABIU: Disabled` — no hay
