@@ -101,6 +101,10 @@ export interface Suscripcion {
   fecha_vencimiento: number
   estado: 'activa' | 'vencida' | 'cancelada'
   creadoEn: number
+  monto_pagado?: number
+  // Selección congelada del wizard — permite saber, ej., a qué grupo
+  // pertenece esta suscripción (para contar cupos ocupados por grupo).
+  seleccion?: import('./planes').SeleccionPlan
 }
 
 // ── transacciones/{transaccionId} ────────────────────────────

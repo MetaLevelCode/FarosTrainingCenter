@@ -67,18 +67,21 @@ function Bullets({ items }: { items: string[] }) {
 }
 
 // ── Tarjeta de opción: se expande al seleccionarse (grid-rows 0fr→1fr) ──
-function ChoiceCard({ selected, onClick, icon, title, desc, meta, expand }: {
+function ChoiceCard({ selected, onClick, icon, title, desc, meta, expand, disabled }: {
   selected: boolean; onClick: () => void; icon?: string; title: string
-  desc?: string; meta?: React.ReactNode; expand?: React.ReactNode
+  desc?: string; meta?: React.ReactNode; expand?: React.ReactNode; disabled?: boolean
 }) {
   return (
     <button
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
       aria-pressed={selected}
       className={`w-full text-left rounded-3xl border overflow-hidden transition-[border-color,background-color,box-shadow,transform] duration-300 active:scale-[0.99] ${
-        selected
-          ? 'border-[var(--color-primary-fixed)] bg-[rgba(230,255,0,0.05)] shadow-[0_0_36px_rgba(230,255,0,0.1)]'
-          : 'border-white/8 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.05]'
+        disabled
+          ? 'border-white/5 bg-white/[0.015] opacity-50 cursor-not-allowed'
+          : selected
+            ? 'border-[var(--color-primary-fixed)] bg-[rgba(230,255,0,0.05)] shadow-[0_0_36px_rgba(230,255,0,0.1)]'
+            : 'border-white/8 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.05]'
       }`}
     >
       <div className="flex items-start gap-5 p-7 md:p-8">
@@ -182,26 +185,38 @@ export default function PlanesFlowPage() {
   const [sedes, setSedes] = useState<Sede[]>([])
   const [gruposFS, setGruposFS] = useState<GrupoFS[]>([])
   const [tarifas, setTarifas] = useState<Tarifas | null>(null)
+  // Cuántos alumnos ya ocupan cada grupo (suscripciones activas) — para
+  // mostrar cupos disponibles reales, no solo la capacidad máxima.
+  const [inscritosPorGrupo, setInscritosPorGrupo] = useState<Record<string, number>>({})
 
   useEffect(() => {
     Promise.all([getSedes(), getGrupos(), getTarifas()])
       .then(([s, g, t]) => { setSedes(s); setGruposFS(g); if (t) setTarifas(t) })
       .catch(() => {}) // silencioso — usamos fallback
+    fetch('/api/grupos/cupos')
+      .then((r) => r.json())
+      .then((d) => setInscritosPorGrupo(d.inscritosPorGrupo ?? {}))
+      .catch(() => {}) // silencioso — sin conteo, se asume el grupo abierto
   }, [])
 
   // Grupos a mostrar: los de Firestore si el seed corrió, si no el fallback estático.
   const gruposEfectivos = useMemo(() => {
-    if (gruposFS.length === 0) return GRUPOS_FALLBACK
-    return gruposFS.map((g) => ({
-      id: g.id,
-      nombre: g.nombre,
-      horarios: g.horarios,
-      disponible: g.disponible,
-      nivel: g.nivel,
-      cupos: `Cupo máximo ${g.cupoMaximo}`,
-      coach: g.coach ?? '',
-    }))
-  }, [gruposFS])
+    if (gruposFS.length === 0) return GRUPOS_FALLBACK.map((g) => ({ ...g, lleno: false }))
+    return gruposFS.map((g) => {
+      const ocupados = inscritosPorGrupo[g.id] ?? 0
+      const disponibles = Math.max(0, g.cupoMaximo - ocupados)
+      return {
+        id: g.id,
+        nombre: g.nombre,
+        horarios: g.horarios,
+        disponible: g.disponible,
+        nivel: g.nivel,
+        cupos: disponibles > 0 ? `${disponibles} cupo${disponibles === 1 ? '' : 's'} disponible${disponibles === 1 ? '' : 's'}` : 'Sin cupos disponibles',
+        coach: g.coach ?? '',
+        lleno: disponibles <= 0,
+      }
+    })
+  }, [gruposFS, inscritosPorGrupo])
 
   useEffect(() => {
     if (!user?.uid) { setCheckingPendiente(false); return }
@@ -686,6 +701,7 @@ export default function PlanesFlowPage() {
                     key={g.id}
                     selected={sel.grupoId === g.id}
                     onClick={() => setSel((s) => ({ ...s, grupoId: g.id }))}
+                    disabled={g.lleno}
                     icon="location_on"
                     title={g.nombre}
                     meta={
@@ -698,6 +714,11 @@ export default function PlanesFlowPage() {
                         {!g.disponible && (
                           <span className="label-caps text-[9px] px-2.5 py-1 rounded-full bg-[rgba(239,68,68,0.12)] text-[var(--color-danger-crimson)]">
                             Cupos por confirmar
+                          </span>
+                        )}
+                        {g.disponible && g.lleno && (
+                          <span className="label-caps text-[9px] px-2.5 py-1 rounded-full bg-[rgba(239,68,68,0.12)] text-[var(--color-danger-crimson)]">
+                            Grupo lleno
                           </span>
                         )}
                       </div>
