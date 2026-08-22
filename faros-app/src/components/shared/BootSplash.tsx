@@ -7,12 +7,16 @@
 // ícono del PWA) y nunca en navegaciones internas (el layout raíz no
 // se remonta al cambiar de página).
 //
-// No hay imagen estática de fondo: los 4 <path> SON el logo (SVG en
-// línea, no <img>) y los 4 se mueven todo el tiempo. El "hueco" que
-// se lee como la silueta del faro no es un dibujo aparte — es el
-// espacio negativo que dejan los arcos abiertos por abajo, igual que
-// en el archivo real (logo-amarillo.png no tiene ni un solo píxel
-// negro: se verificó con un histograma de color del PNG).
+// Dos capas, mismo SVG (mismo viewBox, mismo "d" por anillo):
+//   1. Base estática — el logo completo, siempre visible, el ancla
+//      visual (el "punto de impacto" de la onda). Nunca se anima.
+//   2. Ondas — copias de esos mismos 4 <path> por encima, que nacen
+//      del tamaño real del logo y crecen/se diluyen hacia afuera.
+// El "hueco" que se lee como la silueta del faro no es un dibujo
+// aparte — es el espacio negativo que dejan los arcos abiertos por
+// abajo, igual que en el archivo real (logo-amarillo.png no tiene ni
+// un solo píxel negro: se verificó con un histograma de color del
+// PNG).
 //
 // La geometría de cada anillo se midió directamente del PNG real
 // (escaneo de filas de píxeles buscando los bordes de cada arco) en
@@ -116,21 +120,35 @@ export function BootSplash() {
         }}
       />
 
-      {/* Los 4 anillos — SVG en línea, cada <path> independiente y en movimiento */}
       <svg
         viewBox="0 0 289 233"
         style={{ width: 260, height: 260 * (233 / 289), overflow: 'visible' }}
       >
+        {/* 1. Base estática — el logo real, siempre visible, nunca se anima */}
         {trazos.map((d, i) => (
           <path
-            key={i}
+            key={`base-${i}`}
             d={d}
             fill="none"
             stroke="#e6ff00"
             strokeWidth={15}
             strokeLinecap="round"
             vectorEffect="non-scaling-stroke"
-            className={destello ? 'faros-anillo faros-anillo--climax' : 'faros-anillo'}
+          />
+        ))}
+
+        {/* 2. Ondas — copias de los mismos anillos, naciendo del logo y
+            diluyéndose hacia afuera en cascada (interno primero) */}
+        {trazos.map((d, i) => (
+          <path
+            key={`onda-${i}`}
+            d={d}
+            fill="none"
+            stroke="#e6ff00"
+            strokeWidth={15}
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+            className={destello ? 'faros-onda faros-onda--climax' : 'faros-onda'}
             style={{
               transformOrigin: `${ORIGEN[0]}px ${ORIGEN[1]}px`,
               animationDelay: destello ? `${i * 0.05}s` : `${i * 0.32}s`,
