@@ -190,9 +190,11 @@ export default function PlanesFlowPage() {
   const [inscritosPorGrupo, setInscritosPorGrupo] = useState<Record<string, number>>({})
 
   useEffect(() => {
-    Promise.all([getSedes(), getGrupos(), getTarifas()])
-      .then(([s, g, t]) => { setSedes(s); setGruposFS(g); if (t) setTarifas(t) })
-      .catch(() => {}) // silencioso — usamos fallback
+    // allSettled: si UNA falla (ej. falta un índice), las otras dos no
+    // deben caer también al fallback — antes un solo error tumbaba las tres.
+    getSedes().then(setSedes).catch(() => {})
+    getGrupos().then(setGruposFS).catch(() => {})
+    getTarifas().then((t) => { if (t) setTarifas(t) }).catch(() => {})
     fetch('/api/grupos/cupos')
       .then((r) => r.json())
       .then((d) => setInscritosPorGrupo(d.inscritosPorGrupo ?? {}))

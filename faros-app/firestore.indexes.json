@@ -63,6 +63,14 @@
         { "fieldPath": "usuarioId", "order": "ASCENDING" },
         { "fieldPath": "creadoEn", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "sedes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "activo", "order": "ASCENDING" },
+        { "fieldPath": "orden", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
