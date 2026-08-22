@@ -12,7 +12,7 @@ import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button } from '@/components/ui'
-import { getTransacciones, getMovimientos, aprobarTransaccion } from '@/lib/firestore'
+import { getTransacciones, getMovimientosDesde, aprobarTransaccion } from '@/lib/firestore'
 import type { Transaccion, Movimiento } from '@/lib/types'
 import { fmtCOP, resumenPlan } from '@/lib/planes'
 
@@ -46,7 +46,9 @@ export default function FinanzasPage() {
   const [imgLoading, setImgLoading] = useState(false)
 
   useEffect(() => {
-    Promise.all([getTransacciones(), getMovimientos()])
+    // Sin tope de cantidad — "Balance" es un total histórico, no un
+    // periodo acotado, así que no se puede recortar por cantidad.
+    Promise.all([getTransacciones(), getMovimientosDesde(0)])
       .then(([ts, ms]) => { setTransacciones(ts); setMovimientos(ms) })
       .catch(console.error)
       .finally(() => setCargando(false))
@@ -55,11 +57,11 @@ export default function FinanzasPage() {
   const pendientes = useMemo(() => transacciones.filter((t) => t.estado === 'pendiente'), [transacciones])
   const historial = useMemo(() => transacciones.filter((t) => t.estado !== 'pendiente'), [transacciones])
 
-  const ingresosMes = useMemo(
+  const ingresosTotal = useMemo(
     () => movimientos.filter((m) => m.tipo === 'ingreso').reduce((s, m) => s + m.monto, 0),
     [movimientos],
   )
-  const egresosMes = useMemo(
+  const egresosTotal = useMemo(
     () => movimientos.filter((m) => m.tipo === 'egreso').reduce((s, m) => s + m.monto, 0),
     [movimientos],
   )
@@ -94,7 +96,7 @@ export default function FinanzasPage() {
         overrideStr !== '' ? { montoOverride: montoFinal } : undefined)
       setTransacciones((prev) => prev.map((x) => x.id === t.id
         ? { ...x, estado: 'aprobada', monto: montoFinal } : x))
-      getMovimientos().then(setMovimientos).catch(console.error)
+      getMovimientosDesde(0).then(setMovimientos).catch(console.error)
     } catch (err: any) {
       console.error(err)
       alert(err?.message ?? 'No se pudo aprobar la transacción. Intenta de nuevo.')
@@ -149,9 +151,9 @@ export default function FinanzasPage() {
         {/* ── KPIs ── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[
-            { label: 'Ingresos', value: COP.format(ingresosMes), tone: 'success', icon: 'trending_up' },
-            { label: 'Egresos', value: COP.format(egresosMes), tone: 'danger', icon: 'trending_down' },
-            { label: 'Balance', value: COP.format(ingresosMes - egresosMes), tone: 'primary', icon: 'account_balance' },
+            { label: 'Ingresos', value: COP.format(ingresosTotal), tone: 'success', icon: 'trending_up' },
+            { label: 'Egresos', value: COP.format(egresosTotal), tone: 'danger', icon: 'trending_down' },
+            { label: 'Balance', value: COP.format(ingresosTotal - egresosTotal), tone: 'primary', icon: 'account_balance' },
             { label: 'Pendientes', value: String(pendientes.length), tone: 'white', icon: 'pending' },
           ].map((s, i) => (
             <Reveal key={s.label} delay={0.05 * i}>

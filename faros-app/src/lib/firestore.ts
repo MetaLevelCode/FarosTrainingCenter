@@ -7,7 +7,7 @@
 import { getFirebase } from './firebase'
 import type {
   Usuario, Catalogo, Plan, Suscripcion, Transaccion,
-  Clase, Asistencia, Movimiento, Categoria, UserRole, CodigoInvitacion,
+  Clase, Asistencia, Movimiento, Categoria, UserRole,
   Sede, Grupo, Tarifas,
 } from './types'
 
@@ -267,9 +267,11 @@ export async function getAsistenciasClase(claseId: string): Promise<Asistencia[]
 /**
  * Registra o corrige la asistencia del alumno a una clase.
  *
- * La delta contra el estado previo determina el ajuste:
- *   nuevo=true, previo=false|null → +1 clasesAsistidas, -1 sesionesRestantes
- *   nuevo=false, previo=true      → -1 clasesAsistidas, +1 sesionesRestantes
+ * La sesión ya se descontó de sesionesRestantes al inscribirse
+ * (POST /api/clases/[id]/inscribir) — marcar asistencia NO vuelve a
+ * tocar el saldo, solo corrige las estadísticas de asistencia:
+ *   nuevo=true, previo=false|null → +1 clasesAsistidas
+ *   nuevo=false, previo=true      → -1 clasesAsistidas
  *   sin cambio                    → solo actualiza timestamp
  *
  * `tasaAsistencia` se recalcula como asistidas / reservadas y se guarda
@@ -323,30 +325,10 @@ export async function registrarAsistencia(
     const asistidas = Math.max(0, asistidasPrev + delta)
     const tasaAsistencia = reservadasPrev > 0 ? Math.min(1, asistidas / reservadasPrev) : 0
 
-    const restantesPrev: number = usu.suscripcionActiva?.sesionesRestantes ?? 0
-    const sesionesCompradas: number | undefined = usu.suscripcionActiva?.sesionesCompradas
-    const cap = Number.isFinite(sesionesCompradas) ? (sesionesCompradas as number) : Number.POSITIVE_INFINITY
-    // Al restar (delta=+1) no bajamos de 0; al devolver (delta=-1) no subimos del total comprado.
-    const restantes = Math.max(0, Math.min(cap, restantesPrev - delta))
-
-    const nuevoEstado = restantes === 0 ? 'vencida' : 'activa'
-
-    const usuUpdate: Record<string, any> = {
+    tx.update(usuRef, {
       'estadisticas.clasesAsistidas': asistidas,
       'estadisticas.tasaAsistencia': tasaAsistencia,
-    }
-    // Solo tocamos suscripcionActiva si existe (no crear el campo si el user no tiene plan)
-    if (usu.suscripcionActiva) {
-      usuUpdate['suscripcionActiva.sesionesRestantes'] = restantes
-      usuUpdate['suscripcionActiva.estado'] = nuevoEstado
-    }
-    tx.update(usuRef, usuUpdate)
-
-    const suscId: string = usu.suscripcionActiva?.suscripcionId ?? ''
-    if (suscId) {
-      const suscRef = doc(db, 'suscripciones', suscId)
-      tx.update(suscRef, { sesiones_restantes: restantes, estado: nuevoEstado })
-    }
+    })
   })
 }
 
@@ -380,6 +362,25 @@ export async function getMovimientos(limite = 50): Promise<Movimiento[]> {
     getFirebase(), import('firebase/firestore'),
   ])
   const q = query(collection(db, 'movimientos'), orderBy('fecha', 'desc'), limit(limite))
+  const snap = await getDocs(q)
+  return snap.docs.map(docToId<Movimiento>)
+}
+
+/**
+ * Trae TODOS los movimientos desde una fecha (ms) en adelante — sin tope
+ * de cantidad. A diferencia de getMovimientos(limite), que corta por
+ * cantidad y puede omitir movimientos dentro de la ventana si el club
+ * supera ese número, esta filtra por rango real de fecha.
+ */
+export async function getMovimientosDesde(desde: number): Promise<Movimiento[]> {
+  const [{ db }, { collection, query, where, orderBy, getDocs }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  const q = query(
+    collection(db, 'movimientos'),
+    where('fecha', '>=', desde),
+    orderBy('fecha', 'desc'),
+  )
   const snap = await getDocs(q)
   return snap.docs.map(docToId<Movimiento>)
 }
@@ -483,41 +484,6 @@ export async function setUsuarioRol(uid: string, rol: UserRole): Promise<void> {
   await updateDoc(doc(db, 'usuarios', uid), { rol })
 }
 
-// ── codigos_invitacion ───────────────────────────────────────
-
-const ALFABETO_CODIGO = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-
-export async function crearCodigoInvitacion(
-  adminUid: string,
-  adminNombre: string,
-): Promise<string> {
-  const [{ db }, { doc, setDoc }] = await Promise.all([
-    getFirebase(), import('firebase/firestore'),
-  ])
-  const bytes = new Uint8Array(4)
-  crypto.getRandomValues(bytes)
-  const sufijo = Array.from(bytes).map((b) => ALFABETO_CODIGO[b % ALFABETO_CODIGO.length]).join('')
-  const codigo = `FAROS-COACH-${sufijo}`
-  await setDoc(doc(db, 'codigos_invitacion', codigo), {
-    codigo,
-    creadoPor: adminNombre,
-    creadoPorUid: adminUid,
-    creadoEn: Date.now(),
-    rol: 'profesor',
-    activo: true,
-    usadoPor: null,
-    usadoEn: null,
-  })
-  return codigo
-}
-
-export async function getCodigosInvitacion(): Promise<CodigoInvitacion[]> {
-  const [{ db }, { collection, getDocs, orderBy, query }] = await Promise.all([
-    getFirebase(), import('firebase/firestore'),
-  ])
-  const snap = await getDocs(query(collection(db, 'codigos_invitacion'), orderBy('creadoEn', 'desc')))
-  return snap.docs.map(docToId<CodigoInvitacion>)
-}
 
 // ── categorias ───────────────────────────────────────────────
 

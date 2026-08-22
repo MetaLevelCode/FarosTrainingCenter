@@ -5,6 +5,9 @@
 //   - Valida cupo disponible + clase programada + no inscrito ya
 //   - arrayUnion uid en estudiantes_inscritos
 //   - Incrementa estadisticas.clasesReservadas
+//   - Descuenta 1 sesión de sesionesRestantes (se consume al reservar,
+//     no al marcar asistencia — evita que el alumno sobre-reserve más
+//     clases de las que su saldo permite). /cancelar la devuelve.
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -75,10 +78,27 @@ export async function POST(
 
       const asistidas = (usu.estadisticas?.clasesAsistidas as number) ?? 0
       const reservadas = ((usu.estadisticas?.clasesReservadas as number) ?? 0) + 1
+
+      // Descuenta la sesión del saldo del plan (tope en el total comprado).
+      const restantesPrev: number = susc.sesionesRestantes ?? 0
+      const sesionesCompradas: number | undefined = susc.sesionesCompradas
+      const cap = Number.isFinite(sesionesCompradas) ? (sesionesCompradas as number) : Number.POSITIVE_INFINITY
+      const restantes = Math.max(0, Math.min(cap, restantesPrev - 1))
+      const nuevoEstado = restantes === 0 ? 'vencida' : 'activa'
+
       tx.update(usuSnap.ref, {
         'estadisticas.clasesReservadas': reservadas,
         'estadisticas.tasaAsistencia': reservadas > 0 ? Math.min(1, asistidas / reservadas) : 0,
+        'suscripcionActiva.sesionesRestantes': restantes,
+        'suscripcionActiva.estado': nuevoEstado,
       })
+
+      if (susc.suscripcionId) {
+        tx.update(db.collection('suscripciones').doc(susc.suscripcionId), {
+          sesiones_restantes: restantes,
+          estado: nuevoEstado,
+        })
+      }
 
       return { ok: true }
     })

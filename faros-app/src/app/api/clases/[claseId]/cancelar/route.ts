@@ -2,6 +2,7 @@
 // POST /api/clases/[claseId]/cancelar
 // Cancela la inscripción del estudiante en una clase.
 // Solo se puede cancelar hasta 2 horas antes del inicio.
+// Devuelve la sesión descontada al inscribirse (tope en lo comprado).
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -76,6 +77,28 @@ export async function POST(
           'estadisticas.clasesReservadas': reservadas,
           'estadisticas.tasaAsistencia': reservadas > 0 ? Math.min(1, asistidas / reservadas) : 0,
         })
+      }
+
+      // Devuelve la sesión al saldo del plan (tope en el total comprado).
+      const susc = usu.suscripcionActiva
+      if (susc) {
+        const restantesPrev: number = susc.sesionesRestantes ?? 0
+        const sesionesCompradas: number | undefined = susc.sesionesCompradas
+        const cap = Number.isFinite(sesionesCompradas) ? (sesionesCompradas as number) : Number.POSITIVE_INFINITY
+        const restantes = Math.max(0, Math.min(cap, restantesPrev + 1))
+        const nuevoEstado = restantes > 0 ? 'activa' : susc.estado
+
+        tx.update(usuSnap.ref, {
+          'suscripcionActiva.sesionesRestantes': restantes,
+          'suscripcionActiva.estado': nuevoEstado,
+        })
+
+        if (susc.suscripcionId) {
+          tx.update(db.collection('suscripciones').doc(susc.suscripcionId), {
+            sesiones_restantes: restantes,
+            estado: nuevoEstado,
+          })
+        }
       }
 
       return { ok: true }

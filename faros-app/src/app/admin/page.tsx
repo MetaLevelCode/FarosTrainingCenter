@@ -13,7 +13,7 @@ import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button, Spinner } from '@/components/ui'
 import { BotonSeed } from '@/components/admin/BotonSeed'
-import { getMovimientos, getTransacciones, getUsuarios } from '@/lib/firestore'
+import { getMovimientosDesde, getTransacciones, getUsuarios } from '@/lib/firestore'
 import { fmtCOP } from '@/lib/planes'
 import type { Movimiento, Transaccion, Usuario } from '@/lib/types'
 
@@ -63,7 +63,11 @@ export default function AdminPage() {
   const [cargando, setCargando] = useState(true)
 
   useEffect(() => {
-    Promise.all([getMovimientos(200), getTransacciones(), getUsuarios()])
+    // Ventana real de 6 meses (misma que buildStream) — evita el techo
+    // silencioso de un límite fijo de cantidad cuando el club crece.
+    const hoy = new Date()
+    const inicioVentana = new Date(hoy.getFullYear(), hoy.getMonth() - 5, 1).getTime()
+    Promise.all([getMovimientosDesde(inicioVentana), getTransacciones(), getUsuarios()])
       .then(([ms, ts, us]) => { setMovimientos(ms); setTransacciones(ts); setUsuarios(us) })
       .catch(console.error)
       .finally(() => setCargando(false))
