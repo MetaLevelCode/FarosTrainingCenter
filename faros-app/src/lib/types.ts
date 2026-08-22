@@ -132,18 +132,6 @@ export interface Transaccion {
   seleccion?: import('./planes').SeleccionPlan
 }
 
-// ── codigos_invitacion/{codigo} ──────────────────────────────
-
-export interface CodigoInvitacion {
-  codigo: string
-  creadoPor: string
-  creadoEn: number
-  rol: 'profesor'
-  activo: boolean
-  usadoPor?: string | null
-  usadoEn?: number | null
-}
-
 // ── clases/{claseId} ─────────────────────────────────────────
 
 export interface Clase {

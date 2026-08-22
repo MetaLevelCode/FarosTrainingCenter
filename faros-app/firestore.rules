@@ -173,15 +173,6 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // ── codigos_invitacion ───────────────────────────────────
-
-    match /codigos_invitacion/{codigo} {
-      // Admin lee y crea códigos desde el panel.
-      // La verificación y consumo se hace en POST /api/invitaciones (Admin SDK)
-      // para garantizar atomicidad: el cliente nunca lee la lista de códigos.
-      allow read, write: if isAdmin();
-    }
-
     // ── clases ───────────────────────────────────────────────
 
     match /clases/{claseId} {
