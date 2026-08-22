@@ -1,6 +1,6 @@
 # Plan de Cierre — Faros Training Center
 
-**Fecha:** 2026-08-09
+**Fecha:** 2026-08-09 (última auditoría: 2026-08-21 — ver sección 6)
 **Rama:** `frontend-nextjs`
 **Stack:** Next.js 15 (App Router) · React 19 · Firebase 11 · Zustand · Motion · Tailwind v4
 
@@ -13,23 +13,24 @@ Snapshot de qué está terminado vs. qué falta para poder desplegar en producci
 | Área | Estado | Detalle |
 |---|---|---|
 | Auth + registro estudiante | ✅ Listo | Signup con schema definitivo; `AuthContext` conectado a Firebase |
-| Auth registro profesor (código de invitación) | 🟡 Parcial | Códigos hardcodeados en dev (`src/lib/registro.ts`), sin verificación server-side |
+| Auth registro profesor (código de invitación) | 🟢 Removido | El código de invitación nunca se conectó a ninguna UI de registro — se quitó todo (ver 6.4). Flujo real: se registra como estudiante y el admin lo promueve a profesor desde `/admin/usuarios` |
 | Dashboard estudiante — lectura | ✅ Listo | Suscripción, ranking, historial de asistencia leen Firestore real |
-| Dashboard estudiante — **comprar plan** | 🔴 Roto | `Solicitar` solo hace `setSolicitado(true)`, no crea transacción |
-| Dashboard estudiante — **subir comprobante** | 🔴 Falta | No hay UI ni Storage integrado |
-| Dashboard estudiante — **inscripción a clase** | 🔴 Falta | No hay flujo que agregue a `estudiantes_inscritos` |
-| Portal profesor — clases + asistencia | ✅ Listo | `registrarAsistencia()` completa: resta sesión, actualiza estadísticas |
-| Portal profesor — plan de clase | ✅ Listo | Guarda `observaciones_profesor` y `plan[]` |
-| Admin — dashboard KPIs | 🟡 Mock | `src/app/admin/page.tsx` con datos hardcodeados |
+| Dashboard estudiante — **comprar plan** | ✅ Listo | Wizard → API → precio server-side con tarifas reales de Firestore (bug de precio hardcodeado corregido, ver 6.1) |
+| Dashboard estudiante — **subir comprobante** | ✅ Listo | Storage + preview + progreso |
+| Dashboard estudiante — **inscripción a clase** | ✅ Listo | Control de cupo por clase Y por alumno (sesiones se descuentan al inscribirse, ver 6.3) |
+| Portal profesor — clases + asistencia | ✅ Listo (real) | `/portal` (home) reconectado a Firestore 2026-08-21 — antes usaba datos sintéticos sin persistencia pese a verse funcional (ver 6.2). `/portal/clases` sigue disponible como vista alterna en el menú |
+| Portal profesor — plan de clase | ✅ Listo | Campo `plan` con función de escritura real (`updateClasePlan`) — antes no existía pese a que las rules ya lo permitían |
+| Admin — dashboard KPIs | ✅ Listo | Reales desde Firestore, con rango de fecha (ya no un tope fijo de cantidad que se truncaba en silencio, ver 6.5) |
 | Admin — finanzas (aprobar/rechazar) | ✅ Listo | `aprobarTransaccion()` crea suscripción + movimiento en tx atómica |
-| Admin — planes CRUD | 🔴 UI-only | Edita estado local, no persiste a Firestore |
-| Admin — usuarios CRUD | 🔴 Falta | Sin panel para crear/editar/suspender |
-| Mensajería | 🔴 Falta | Tipos y helpers listos (`lib/mensajes.ts`), UI (`Conversacion.tsx`) no consume Firestore |
-| Cloud Functions | 🔴 No existen | Sin directorio `functions/`; lógica sensible corre en cliente |
-| PWA / Service Worker | 🟡 Parcial | `sw.js` presente, sin precache ni background sync |
-| Firestore Rules | ✅ Hardened | Commit `cf78d8b` — whitelist create, `activoOk()`, cross-check precio, validación instructor |
-| Landing | ✅ Listo | Pulida, con redirección por rol en modo standalone |
-| Deploy config | ✅ Listo | `firebase.json` + `apphosting.yaml` configurados |
+| Admin — planes CRUD | ✅ Listo | Sedes/Grupos/Tarifas/Plantillas persisten a Firestore de verdad |
+| Admin — usuarios CRUD | ✅ Listo | Rol, suspensión; bug crítico de `uid` en cambio de rol corregido (ver 6.6) |
+| Mensajería | 🔴 Falta | Tipos y helpers listos (`lib/mensajes.ts`), UI (`Conversacion.tsx`) no consume Firestore — sigue siendo demo local a propósito dentro del calendario del profesor |
+| Cloud Functions | 🔴 No existen | Sin directorio `functions/`; lógica sensible corre en API Routes (decisión ya tomada, ver Fase 1) |
+| PWA / Service Worker | 🟡 Parcial | `sw.js` presente, sin precache completo ni background sync |
+| Firestore Rules | ✅ Hardened | whitelist create, `activoOk()`, cross-check precio, validación instructor |
+| Landing + Login | ⚪ Sin auditar | Nunca se revisó con el mismo nivel de detalle que el resto (ver 7) |
+| Deploy config | 🟡 Funcional pero manual | `apphosting.yaml` OK, pero `ABIU: Disabled` — sin auto-deploy al hacer push, cada fix requiere rollout manual (ver 7) |
+| Dependencias (GitHub Dependabot) | ⚪ Sin revisar | 14 vulnerabilidades reportadas en cada push (7 altas, 7 moderadas) — nunca auditadas (ver 7) |
 
 ---
 
@@ -60,17 +61,16 @@ usa Firebase App Hosting: el backend ya es un servidor Node.js y no necesita des
   - Valida rol=estudiante y activo!=false
   - Calcula precio con `calcularPrecio()` en el servidor (cliente nunca declara el monto)
   - Crea doc en Firestore con Admin SDK
-- [x] Crear `src/app/api/invitaciones/route.ts` — POST: verifica y consume código atómicamente
-  - Transacción Firestore: check-and-mark-used en un solo paso
-  - Cliente nunca lee la colección `codigos_invitacion`
-- [x] Conectar `verificarCodigoEnServidor()` en `src/lib/registro.ts` a la API Route
+- [x] ~~Crear `src/app/api/invitaciones/route.ts` — POST: verifica y consume código atómicamente~~ **removido 2026-08-21** — nunca se conectó a una UI real, ver 6.4
+- [x] ~~Conectar `verificarCodigoEnServidor()` en `src/lib/registro.ts` a la API Route~~ **removido 2026-08-21** — el archivo completo era código muerto, ver 6.4
 - [x] Fix `src/app/dashboard/planes/page.tsx`:
   - `solicitar()` ahora llama `POST /api/transacciones` con ID token en header
   - Estado `solicitando` + error display en UI
-- [x] Añadir `codigos_invitacion` a `firestore.rules` (admin read/write; consumo solo vía API)
+- [x] ~~Añadir `codigos_invitacion` a `firestore.rules`~~ **removido 2026-08-21**
 - [x] Cambiar `transacciones` `allow create: if false` (creación solo vía Admin SDK)
 - [x] Admin finanzas — selector de plan de Firestore antes de aprobar transacción
-- [x] `src/lib/types.ts` — `Transaccion.seleccion`, `monto_disponible`, `CodigoInvitacion`
+- [x] `src/lib/types.ts` — `Transaccion.seleccion`, `monto_disponible` (`CodigoInvitacion` removido 2026-08-21)
+- [x] **2026-08-21**: `/api/transacciones` calculaba el precio con `TARIFAS_FALLBACK` (hardcodeado) en vez de leer `tarifas/actual` de Firestore — bug crítico corregido (ver 6.1)
 
 ### Fase 2 — Compra de plan end-to-end ✅ COMPLETADA
 
@@ -107,14 +107,14 @@ usa Firebase App Hosting: el backend ya es un servidor Node.js y no necesita des
   - Error display dismissible para errores de acción
 - [x] `firestore.indexes.json`: índice compuesto clases [estado + fecha_hora_inicio] + transacciones [usuarioId + creadoEn]
 
-### Fase 4 — Admin CRUD ✅ COMPLETADA
+### Fase 4 — Admin CRUD ✅ COMPLETADA (auditada y con bugs corregidos 2026-08-21, ver sección 6)
 
-- [x] `lib/firestore.ts`: `crearPlan`, `actualizarPlan`, `archivarPlan`, `setUsuarioRol`, `crearCodigoInvitacion`, `getCodigosInvitacion`
-- [x] `admin/page.tsx`: KPIs reales desde Firestore (ingresos/egresos del mes, atletas activos, pagos pendientes); gráfico de ingresos últimos 6 meses; cola de pagos pendientes con enlace a finanzas
-- [x] `admin/planes/page.tsx`: nuevo tab "Planes activos" con CRUD completo sobre colección `planes` (crear, editar inline, archivar)
+- [x] `lib/firestore.ts`: `crearPlan`, `actualizarPlan`, `archivarPlan`, `setUsuarioRol` (`crearCodigoInvitacion`/`getCodigosInvitacion` removidos 2026-08-21, ver 6.4)
+- [x] `admin/page.tsx`: KPIs reales desde Firestore; gráfico de ingresos últimos 6 meses; cola de pagos pendientes con enlace a finanzas. **2026-08-21**: el rango de 6 meses usaba `getMovimientos(200)` (tope de cantidad, no de fecha) — corregido con `getMovimientosDesde()` (ver 6.5)
+- [x] `admin/planes/page.tsx`: tabs Sedes/Grupos/Tarifas/Plantillas con CRUD real sobre Firestore. **2026-08-21**: bug de `docToId` causaba duplicados al editar sedes/grupos, y el formulario de "nuevo" quedaba invisible sin scroll — ambos corregidos
 - [x] `admin/usuarios/page.tsx`:
-  - Selector de rol (estudiante ↔ profesor) por fila con actualización optimista
-  - Sección de códigos de invitación: generar, listar, copiar al portapapeles, badge usado/disponible
+  - Selector de rol (estudiante ↔ profesor) por fila. **2026-08-21**: bug crítico — `getUsuario(s)` nunca fijaba `uid` real, así que cambiar el rol de un usuario podía afectar a OTRA cuenta (la primera de la lista, ej. el propio admin) — corregido (ver 6.6)
+  - ~~Sección de códigos de invitación~~ **removida 2026-08-21** (ver 6.4)
 
 ### Fase 5 — Mensajería (2 días)
 
@@ -141,17 +141,111 @@ usa Firebase App Hosting: el backend ya es un servidor Node.js y no necesita des
 
 ---
 
-## 4. Riesgos y decisiones abiertas
+## 6. Auditoría 2026-08-21 — bugs críticos encontrados y resueltos
 
-- **Storage vs. terceros:** ¿comprobantes en Firebase Storage o en un servicio como Cloudflare Images? Firebase es más simple y ya está en el stack.
-- **Códigos de invitación:** ¿one-shot o multi-uso con expiración? Recomendado one-shot para trazabilidad.
-- **Notificaciones push:** ¿FCM ahora o post-lanzamiento? Recomendado post-lanzamiento (Fase 6+).
-- **Modo mock/demo:** ya está protegido por `NODE_ENV`, pero conviene añadir un test de humo en CI que verifique que un build de producción no expone `MOCK_USERS`.
-- **Índices de Firestore:** al agregar nuevas queries en Fase 3 y 4 revisar `firestore.indexes.json`.
+Sesión de auditoría fase por fase (1-4 + portal del profesor) buscando bugs escondidos
+detrás de checkmarks ✅ que resultaron no ser tan sólidos como parecían. Todo lo listado
+aquí ya está corregido, comiteado y desplegado a producción.
+
+### 6.1 — Precio hardcodeado en `/api/transacciones`
+`calcularPrecio(seleccion)` se llamaba sin pasar `tarifas`, así que SIEMPRE usaba
+`TARIFAS_FALLBACK` (precios de fábrica) sin importar lo que el admin configurara en
+Tarifas. El wizard mostraba el precio correcto (sí lee Firestore), pero el servidor
+congelaba la transacción con el precio viejo. Corregido leyendo `tarifas/actual` vía
+Admin SDK antes de calcular.
+
+### 6.2 — Calendario del profesor (`/portal`) no conectado a Firestore
+El front construyó `CalendarioEntrenador.tsx` con datos sintéticos (`lib/agenda.ts`,
+ahora borrado) mientras el back se hacía por separado — nunca se conectaron. Se veía
+y se sentía funcional (guardar plan, marcar asistencia) pero todo vivía en estado
+local de React: se perdía al recargar. Mientras tanto `/portal/clases` sí era real,
+pero su link de navegación se había quitado a propósito asumiendo que el calendario
+"ya cubría lo mismo". Corregido: el calendario ahora usa `getClasesProfesor`,
+`getAsistenciasClase`, `registrarAsistencia`, `updateClasePlan` y
+`updateObservacionesClase` reales, con sección de Observaciones/finalizar clase
+agregada. `/portal/clases` se restauró en el menú como vista alterna.
+
+### 6.3 — Sobre-reserva de clases (control de cupo por alumno)
+`inscribir` solo validaba `sesionesRestantes > 0` pero nunca descontaba nada — el
+descuento real ocurría en `registrarAsistencia` (al marcar asistencia). Un alumno con
+1 sola sesión podía inscribirse en N clases futuras y "asistir" a todas, topando el
+saldo en 0 sin bloquear nada. Corregido: la sesión se descuenta al INSCRIBIRSE (tope en
+`sesionesCompradas`), `/cancelar` la devuelve, y `registrarAsistencia` ya no toca el
+saldo (solo estadísticas de asistencia).
+
+### 6.4 — Sistema de código de invitación para profesores (removido)
+Backend completo (`/api/invitaciones`, `crearCodigoInvitacion`/`getCodigosInvitacion`,
+`lib/registro.ts` — 272 líneas) que **nunca se conectó a ninguna UI**: `/registro`
+(la única página real de signup) solo crea cuentas de estudiante. El admin podía
+"Generar código" y verlo en una lista, pero no había dónde usarlo. El flujo real
+confirmado con el usuario: todos se registran como estudiante, el admin promueve a
+profesor desde `/admin/usuarios` (`setUsuarioRol`, ya funcional). Se quitó todo el
+sistema (rutas, funciones, UI, reglas, tipos).
+
+### 6.5 — Techo silencioso en KPIs (`getMovimientos(200)`)
+Traía los 200 movimientos MÁS RECIENTES de toda la historia (no un rango de fecha).
+Si el club supera ese volumen en 6 meses, "Ingresos del mes" y el gráfico quedan
+truncados sin ningún error visible. `admin/finanzas` tenía el mismo problema peor
+(tope de 50, sin filtro de fecha en absoluto pese a llamarse `ingresosMes`). Corregido
+con `getMovimientosDesde(fecha)` — filtra por rango real, sin tope de cantidad.
+
+### 6.6 — `uid` de `Usuario` siempre `undefined` (bug crítico)
+`getUsuario`/`getUsuarios` usaban el `docToId` genérico, que solo fija `id: snap.id`
+— pero `Usuario` usa `uid` como campo de identidad, y el whitelist de creación en
+`firestore.rules` no permite guardar `uid` dentro de los datos del doc (solo vive
+como el path `usuarios/{uid}`). Resultado: **todo usuario real tenía `uid: undefined`**
+en cualquier lista. Reproducido en vivo: al cambiar el rol de un usuario en
+`/admin/usuarios`, el diálogo de confirmación mostraba el nombre de OTRA cuenta (la
+primera de la lista, alfabéticamente — en la práctica, terminaba señalando al admin).
+Corregido con `docToUsuario`, que fuerza `uid: snap.id` siempre.
+
+### 6.7 — Otros fixes menores
+- `tasaAsistencia` se guarda como fracción (0-1) pero se mostraba directo como `%` sin
+  multiplicar por 100 (dashboard del alumno, ranking, `/portal/alumnos`) — corregido.
+- Botones sin funcionalidad real quitados: "Solicitar cambio de días" y "Pagar y
+  activar" en el dashboard del alumno (llamaban a funciones vacías que no guardaban
+  nada, dejando la falsa impresión de éxito).
+- `clasesDadas` (perfil del profesor) nunca se incrementaba — ahora sube al finalizar
+  una clase.
+- `docToId` (usado por sedes/grupos/etc.) dejaba que un campo `id` corrupto dentro del
+  documento pisara el id real del path — causaba duplicados al editar en
+  `admin/planes`. Corregido invirtiendo el orden del spread.
 
 ---
 
-## 5. Estimación total
+## 7. Pendientes actuales (post-auditoría 2026-08-21)
+
+- [ ] **Verificar en producción** que el commit desplegado (`497e99f`) se comporta
+  igual que en las pruebas locales — todo se probó en `localhost`, no en producción.
+- [ ] **Revisar las 14 vulnerabilidades de Dependabot** que GitHub reporta en cada
+  push (7 altas, 7 moderadas) — nunca se auditaron.
+- [ ] **Decidir el alcance de `/portal/alumnos`**: hoy un profesor ve a TODOS los
+  estudiantes del club, no solo los suyos. ¿Es intencional (club chico) o hay que
+  acotarlo por grupo/instructor?
+- [ ] **Auditar landing page + login** con el mismo nivel de detalle que el resto —
+  nunca se revisaron en esta ronda.
+- [ ] **Deploy manual**: `apphosting.yaml` está bien, pero `ABIU: Disabled` — no hay
+  auto-deploy al hacer push a GitHub. Cada fix requiere correr el rollout a mano
+  (`firebase apphosting:rollouts:create`); ya nos mordió una vez esta sesión (un fix
+  quedó en el repo sin desplegar).
+- [ ] Fase 5 (Mensajería), Fase 6 (PWA hardening) y Fase 7 (QA + staging) siguen
+  como se describen abajo — no se tocaron en esta auditoría por ser features nuevas,
+  no bugs de algo ya construido.
+
+---
+
+## 8. Riesgos y decisiones abiertas
+
+- **Storage vs. terceros:** ¿comprobantes en Firebase Storage o en un servicio como Cloudflare Images? Firebase es más simple y ya está en el stack.
+- ~~**Códigos de invitación:** ¿one-shot o multi-uso con expiración?~~ Resuelto 2026-08-21 — se quitó el sistema completo (ver 6.4); el flujo real es registro como estudiante + promoción manual de rol.
+- **Notificaciones push:** ¿FCM ahora o post-lanzamiento? Recomendado post-lanzamiento (Fase 6+).
+- **Modo mock/demo:** ya está protegido por `NODE_ENV`, pero conviene añadir un test de humo en CI que verifique que un build de producción no expone `MOCK_USERS`.
+- **Índices de Firestore:** al agregar nuevas queries en Fase 3 y 4 revisar `firestore.indexes.json`.
+- **Deploy manual (`ABIU: Disabled`):** ¿activar auto-deploy en App Hosting, o mantener el rollout manual? Ver 7.
+
+---
+
+## 9. Estimación total
 
 | Fase | Días |
 |---|---|
