@@ -6,8 +6,9 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getAdminAuth, getAdminDb } from '@/lib/admin'
-import { calcularPrecio, resumenPlan } from '@/lib/planes'
+import { calcularPrecio, resumenPlan, TARIFAS_FALLBACK } from '@/lib/planes'
 import type { SeleccionPlan } from '@/lib/planes'
+import type { Tarifas } from '@/lib/types'
 import { rateLimit, clientIp } from '@/lib/ratelimit'
 import { log } from '@/lib/logger'
 
@@ -50,7 +51,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Tu cuenta está suspendida' }, { status: 403 })
     }
 
-    const precio = calcularPrecio(seleccion)
+    const tarifasSnap = await db.collection('tarifas').doc('actual').get()
+    const tarifas = tarifasSnap.exists ? (tarifasSnap.data() as Tarifas) : TARIFAS_FALLBACK
+
+    const precio = calcularPrecio(seleccion, tarifas)
     const resumen = resumenPlan(seleccion)
     const now = Date.now()
 
