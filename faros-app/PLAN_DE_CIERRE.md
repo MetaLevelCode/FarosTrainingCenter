@@ -30,7 +30,7 @@ Snapshot de qué está terminado vs. qué falta para poder desplegar en producci
 | Firestore Rules | ✅ Hardened | whitelist create, `activoOk()`, cross-check precio, validación instructor |
 | Landing + Login | ⚪ Sin auditar | Nunca se revisó con el mismo nivel de detalle que el resto (ver 7) |
 | Deploy config | 🟡 Funcional pero manual | `apphosting.yaml` OK, pero `ABIU: Disabled` — sin auto-deploy al hacer push, cada fix requiere rollout manual (ver 7) |
-| Dependencias (GitHub Dependabot) | ⚪ Sin revisar | 14 vulnerabilidades reportadas en cada push (7 altas, 7 moderadas) — nunca auditadas (ver 7) |
+| Dependencias (GitHub Dependabot) | 🟡 Parcial | De 14 bajado a 8 (ver 6.8). Las 8 restantes solo se resuelven con un upgrade mayor (Next 15→16) o no tienen fix real disponible aún (`firebase-admin`) |
 
 ---
 
@@ -211,14 +211,31 @@ Corregido con `docToUsuario`, que fuerza `uid: snap.id` siempre.
   documento pisara el id real del path — causaba duplicados al editar en
   `admin/planes`. Corregido invirtiendo el orden del spread.
 
+### 6.8 — Dependencias vulnerables (Dependabot): 14 → 8
+`npm audit fix` (sin `--force`) resolvió `brace-expansion`, `js-yaml`, `nanoid` y
+`gaxios` sin tocar nada mayor. Se subió `eslint` 9.18.0 → 9.39.5 (misma major,
+resuelve el ReDoS de `@eslint/plugin-kit`) — herramienta de desarrollo, no va al
+bundle de producción. Quedan 8 (5 moderadas, 3 altas), ambas solo resolubles con
+un upgrade mayor real:
+- **`next` 15→16** — única forma de resolver `postcss` (empaquetado dentro de
+  `next`) y `sharp`. Riesgo práctico bajo hoy: se revisó dónde se usa `next/image`
+  en la app y solo procesa assets estáticos propios (`/media/*.jpg`), nunca
+  imágenes subidas por usuarios (los comprobantes van directo a Firebase Storage).
+  El upgrade en sí es grande y merece su propia sesión de pruebas dedicada, dado
+  el historial de fragilidad de esta app con hydration/chunks del service worker.
+- **`firebase-admin`** — el único "fix" que sugiere `npm audit` es bajar a 10.3.0
+  (más vieja que la actual, 14.2.0) — se descartó por ser una regresión real a
+  cambio de una vulnerabilidad de `uuid` (buffer manual) que no aplica a cómo la
+  usamos. No hay versión más nueva disponible todavía que lo resuelva.
+
 ---
 
 ## 7. Pendientes actuales (post-auditoría 2026-08-21)
 
-- [ ] **Verificar en producción** que el commit desplegado (`497e99f`) se comporta
-  igual que en las pruebas locales — todo se probó en `localhost`, no en producción.
-- [ ] **Revisar las 14 vulnerabilidades de Dependabot** que GitHub reporta en cada
-  push (7 altas, 7 moderadas) — nunca se auditaron.
+- [ ] **Verificar en producción** que el commit desplegado se comporta igual que en
+  las pruebas locales — todo se probó en `localhost`, no en producción.
+- [x] ~~Revisar las 14 vulnerabilidades de Dependabot~~ — bajado a 8, ver 6.8. Las
+  8 restantes quedan pendientes de un upgrade mayor de Next (decisión aparte).
 - [ ] **Decidir el alcance de `/portal/alumnos`**: hoy un profesor ve a TODOS los
   estudiantes del club, no solo los suyos. ¿Es intencional (club chico) o hay que
   acotarlo por grupo/instructor?
