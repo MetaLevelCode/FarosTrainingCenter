@@ -13,6 +13,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { WaterBackground } from '@/components/shared/WaterBackground'
 import { FarosWordmark, Spinner } from '@/components/ui'
 import { CuentaSuspendida } from '@/components/shared/CuentaSuspendida'
+import { PendienteSync } from '@/components/shared/PendienteSync'
 import type { UserRole } from '@/lib/types'
 
 interface NavItem { label: string; href: string; icon: string }
@@ -40,7 +41,7 @@ const NAV: Record<UserRole, NavItem[]> = {
 }
 
 export function AppShell({ title, children }: { title: string; children: ReactNode }) {
-  const { user, signOut } = useAuth()
+  const { user, signOut, offline } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
   const [fabOpen, setFabOpen] = useState(false)
@@ -106,6 +107,8 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
     <div className="min-h-dvh relative">
       <WaterBackground />
 
+      <PendienteSync />
+
       {/* Top bar */}
       <header className="sticky top-0 z-40 h-20 px-5 md:px-10 flex items-center justify-between backdrop-blur-xl bg-[rgba(5,5,5,0.55)] border-b border-[var(--color-surface-stroke)]">
         <div className="flex items-center gap-6">
@@ -135,6 +138,13 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
           </div>
         </div>
       </header>
+
+      {offline && (
+        <div className="sticky top-20 z-30 px-4 py-2 flex items-center justify-center gap-2 bg-amber-500/10 border-b border-amber-500/20">
+          <span className="material-symbols-outlined text-amber-400 text-[15px]">cloud_off</span>
+          <span className="label-caps text-[9px] text-amber-200">Sin conexión — viendo tus últimos datos guardados</span>
+        </div>
+      )}
 
       {/* Mobile title */}
       <div className="md:hidden px-5 pt-6">

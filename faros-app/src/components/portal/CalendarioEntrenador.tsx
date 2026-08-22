@@ -25,6 +25,7 @@ import {
 } from '@/lib/firestore'
 import { displayName } from '@/lib/types'
 import type { Clase, Asistencia, Usuario } from '@/lib/types'
+import { encolarAsistencia } from '@/lib/offlineQueue'
 import {
   mensajesSemilla, delCanal, nuevoMensaje, canalGrupo, canalPrivado,
   COACH_ID, COACH_NOMBRE, type Mensaje,
@@ -175,11 +176,25 @@ export function CalendarioEntrenador() {
       }
       return { ...prev, [claseId]: copia }
     })
+
+    // Sin señal: ni lo intentamos por red — se queda en cola y se
+    // sincroniza solo cuando vuelva la conexión (ver PendienteSync).
+    if (!navigator.onLine) {
+      encolarAsistencia({ claseId, usuarioId, asistio, profesorId: user.uid })
+      return
+    }
+
     try {
       await registrarAsistencia(claseId, usuarioId, asistio, user.uid)
     } catch (err) {
+      // Si la red falló a mitad de camino, no se descarta: se encola
+      // igual que si hubiéramos detectado el offline de antemano.
+      if (!navigator.onLine) {
+        encolarAsistencia({ claseId, usuarioId, asistio, profesorId: user.uid })
+        return
+      }
       console.error(err)
-      // Revertir releyendo el estado real desde Firestore.
+      // Error real (no de conectividad): revertir releyendo Firestore.
       getAsistenciasClase(claseId)
         .then((as) => setAsistenciasPorClase((prev) => ({ ...prev, [claseId]: as })))
         .catch(() => {})

@@ -16,6 +16,7 @@ import {
   registrarAsistencia, updateObservacionesClase,
 } from '@/lib/firestore'
 import type { Clase, Asistencia } from '@/lib/types'
+import { encolarAsistencia } from '@/lib/offlineQueue'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -108,11 +109,21 @@ export default function ClasesPage() {
       return { ...prev, [claseId]: copia }
     })
 
+    // Sin señal: se queda en cola y se sincroniza al volver la conexión.
+    if (!navigator.onLine) {
+      encolarAsistencia({ claseId, usuarioId, asistio: nuevoValor, profesorId: user.uid })
+      return
+    }
+
     try {
       await registrarAsistencia(claseId, usuarioId, nuevoValor, user.uid)
     } catch (err) {
+      if (!navigator.onLine) {
+        encolarAsistencia({ claseId, usuarioId, asistio: nuevoValor, profesorId: user.uid })
+        return
+      }
       console.error(err)
-      // Revertir
+      // Error real (no de conectividad): revertir
       setAsistencias((prev) => {
         const copia = [...(prev[claseId] ?? [])]
         const idx = copia.findIndex((a) => a.usuarioId === usuarioId)

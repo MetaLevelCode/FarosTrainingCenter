@@ -11,6 +11,7 @@ import {
   createContext, useContext, useEffect, useState, useCallback, ReactNode,
 } from 'react'
 import { MOCK_MODE, MAL_CONFIGURADO, getFirebase } from '@/lib/firebase'
+import { guardarCache, leerCache } from '@/lib/offlineCache'
 import type { Usuario, UserRole } from '@/lib/types'
 
 // Producción sin credenciales: no hay a quién autenticar. Se corta ahí
@@ -57,6 +58,8 @@ interface AuthContextValue {
   loading: boolean
   error: string | null
   isMockMode: boolean
+  /** true si `user` viene del cache local (Firestore no respondió — sin señal). */
+  offline: boolean
   signIn: (email: string, password: string) => Promise<{ ok: boolean; role?: UserRole; error?: string }>
   signUp: (email: string, password: string, nombres: string, apellidos: string, cedula: string, rol: UserRole, extra?: { telefono?: string; telefonoEmergencia?: string; eps?: string; sede?: string; dificultades?: string[] }) => Promise<{ ok: boolean; error?: string }>
   signOut: () => Promise<void>
@@ -69,6 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Usuario | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [offline, setOffline] = useState(false)
 
   // ── Restore session ─────────────────────────────────────
   useEffect(() => {
@@ -99,11 +103,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return
         }
 
+        const cacheKey = `usuario-${fbUser.uid}`
         try {
           const snap = await getDoc(doc(db, 'usuarios', fbUser.uid))
           const data = snap.data()
           if (data) {
-            setUser({
+            const usuario = {
               uid: fbUser.uid,
               nombres: data.nombres ?? '',
               apellidos: data.apellidos ?? '',
@@ -122,7 +127,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               estadisticas: data.estadisticas,
               suscripcionActiva: data.suscripcionActiva ?? null,
               activo: data.activo !== false,
-            } as Usuario)
+            } as Usuario
+            setUser(usuario)
+            setOffline(false)
+            guardarCache(cacheKey, usuario)
+          } else {
+            setUser({
+              uid: fbUser.uid,
+              nombres: fbUser.displayName?.split(' ')[0] ?? '',
+              apellidos: fbUser.displayName?.split(' ').slice(1).join(' ') ?? '',
+              cedula: '',
+              email: fbUser.email ?? '',
+              rol: 'estudiante',
+            })
+            setOffline(false)
+          }
+        } catch {
+          // Sin conexión (u otro error de lectura): usar la última versión
+          // buena conocida en vez de mostrar un perfil vacío/equivocado.
+          const cache = leerCache<Usuario>(cacheKey)
+          if (cache) {
+            setUser(cache.data)
+            setOffline(true)
           } else {
             setUser({
               uid: fbUser.uid,
@@ -133,15 +159,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               rol: 'estudiante',
             })
           }
-        } catch {
-          setUser({
-            uid: fbUser.uid,
-            nombres: fbUser.displayName?.split(' ')[0] ?? '',
-            apellidos: fbUser.displayName?.split(' ').slice(1).join(' ') ?? '',
-            cedula: '',
-            email: fbUser.email ?? '',
-            rol: 'estudiante',
-          })
         }
         setLoading(false)
       })
@@ -247,7 +264,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider value={{
-      user, loading, error, isMockMode: MOCK_MODE,
+      user, loading, error, isMockMode: MOCK_MODE, offline,
       signIn, signUp, signOut, clearError,
     }}>
       {children}
