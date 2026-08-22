@@ -2,8 +2,10 @@
 
 // ============================================================
 // FAROS — Profesor · Estudiantes
-// Lee de Firestore: usuarios donde rol == 'estudiante'.
-// Muestra plan, asistencia del ciclo y estado de suscripción.
+// El profesor ve solo a SUS alumnos: los inscritos en alguna clase
+// donde él es el instructor (no hay campo "profesor asignado" en
+// Usuario — la única relación real es Clase.instructor_id +
+// Clase.estudiantes_inscritos). El admin sigue viendo a todos.
 // ============================================================
 
 import { useEffect, useMemo, useState } from 'react'
@@ -11,7 +13,7 @@ import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge } from '@/components/ui'
-import { getUsuarios } from '@/lib/firestore'
+import { getUsuarios, getClasesProfesor } from '@/lib/firestore'
 import type { Usuario } from '@/lib/types'
 
 const EASE = [0.22, 1, 0.36, 1] as const
@@ -41,18 +43,26 @@ function estadoSuscripcion(u: Usuario) {
 }
 
 export default function EstudiantesPage() {
-  const { authorized, loading } = useRoleGuard(['profesor', 'admin'])
+  const { authorized, loading, user } = useRoleGuard(['profesor', 'admin'])
   const [estudiantes, setEstudiantes] = useState<Usuario[]>([])
   const [cargando, setCargando] = useState(true)
   const [busqueda, setBusqueda] = useState('')
   const [filtroEstado, setFiltroEstado] = useState<'todos' | 'activo' | 'vencido' | 'sin-plan'>('todos')
 
   useEffect(() => {
-    getUsuarios('estudiante')
-      .then(setEstudiantes)
+    if (!user) return
+    Promise.all([
+      getUsuarios('estudiante'),
+      user.rol === 'admin' ? Promise.resolve(null) : getClasesProfesor(user.uid),
+    ])
+      .then(([todos, clases]) => {
+        if (!clases) { setEstudiantes(todos); return }
+        const misUids = new Set(clases.flatMap((c) => c.estudiantes_inscritos))
+        setEstudiantes(todos.filter((u) => misUids.has(u.uid)))
+      })
       .catch(console.error)
       .finally(() => setCargando(false))
-  }, [])
+  }, [user])
 
   const visibles = useMemo(() => {
     const q = busqueda.trim().toLowerCase()
@@ -151,7 +161,9 @@ export default function EstudiantesPage() {
                   ) : visibles.length === 0 ? (
                     <tr>
                       <td colSpan={6} className="px-6 py-10 text-center text-sm text-[var(--color-on-surface-variant)]/60">
-                        {estudiantes.length === 0 ? 'No hay estudiantes registrados aún.' : 'Ningún estudiante coincide.'}
+                        {estudiantes.length === 0
+                          ? (user?.rol === 'admin' ? 'No hay estudiantes registrados aún.' : 'Aún no tienes alumnos inscritos en tus clases.')
+                          : 'Ningún estudiante coincide.'}
                       </td>
                     </tr>
                   ) : visibles.map((u) => {
