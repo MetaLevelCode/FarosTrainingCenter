@@ -6,7 +6,7 @@
 // re-declarar <html> y <body> porque el root ya no está montado.
 // ============================================================
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 
 export default function GlobalError({
   error,
@@ -15,9 +15,29 @@ export default function GlobalError({
   error: Error & { digest?: string }
   reset: () => void
 }) {
+  // Igual que en error.tsx: la app depende de Firestore para casi todo,
+  // así que sin señal cualquier fetch sin capturar termina acá. Sin
+  // señal, un mensaje simple en vez de "error crítico" (que asusta de
+  // más por algo que no es un bug real). Sin dependencias externas
+  // (ni el font de íconos) porque este es el último recurso.
+  const [offline, setOffline] = useState(
+    typeof navigator !== 'undefined' && !navigator.onLine,
+  )
+
   useEffect(() => {
     console.error('[global-error]', { message: error.message, digest: error.digest, stack: error.stack })
   }, [error])
+
+  useEffect(() => {
+    const onOnline = () => setOffline(false)
+    const onOffline = () => setOffline(true)
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
+    return () => {
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('offline', onOffline)
+    }
+  }, [])
 
   return (
     <html lang="es">
@@ -27,10 +47,12 @@ export default function GlobalError({
         }}>
           <div style={{ maxWidth: 420, textAlign: 'center' }}>
             <h1 style={{ fontSize: 22, fontWeight: 900, marginBottom: 12, textTransform: 'uppercase' }}>
-              Error crítico
+              {offline ? 'Sin conexión' : 'Error crítico'}
             </h1>
             <p style={{ fontSize: 14, opacity: 0.7, marginBottom: 24 }}>
-              La aplicación no pudo continuar. Recarga la página para intentarlo de nuevo.
+              {offline
+                ? 'Esta pantalla necesita internet para cargar. Conéctate y vuelve a intentar.'
+                : 'La aplicación no pudo continuar. Recarga la página para intentarlo de nuevo.'}
             </p>
             <button
               onClick={reset}
