@@ -159,6 +159,22 @@ export default function LandingPage() {
         </div>
       </header>
 
+      {/* ── Top branding (mobile) — el header de escritorio va oculto
+          (hidden md:block) y no queda nada arriba en celular. Barra
+          simple, centrada, solo marca (la navegación en mobile vive
+          en el dock de abajo). */}
+      <header
+        className="fixed top-0 w-full z-50 md:hidden backdrop-blur-xl bg-[rgba(5,5,5,0.55)] border-b border-[var(--color-surface-stroke)]"
+        style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}
+      >
+        <Link href="#hero" aria-label="Faros Training — inicio" className="h-16 flex items-center justify-center gap-2.5">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/farosWordmark/logo-amarillo.png" alt="" style={{ width: 26, height: 'auto' }} />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/farosWordmark/letras-brush-amarillas.png" alt="Faros Training" style={{ width: 128, height: 'auto' }} />
+        </Link>
+      </header>
+
       {/* ── Liquid dock (mobile) ── */}
       <nav
         className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 md:hidden w-[90%] max-w-sm rounded-full px-8 py-4 flex justify-between items-center backdrop-blur-xl bg-[rgba(15,15,15,0.7)] border border-[rgba(230,255,0,0.15)] shadow-[0_10px_40px_rgba(0,0,0,0.5)]"
