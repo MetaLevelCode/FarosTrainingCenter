@@ -8,7 +8,7 @@
 //   · Firebase / APIs ............ never intercepted
 // Bump VERSION on every deploy that should invalidate caches.
 // ============================================================
-const VERSION = 'faros-v8'
+const VERSION = 'faros-v9'
 const PRECACHE = `${VERSION}-precache`
 const RUNTIME = `${VERSION}-runtime`
 const MEDIA = `${VERSION}-media`
@@ -31,7 +31,10 @@ const NEVER_CACHE_HOSTS = [
 self.addEventListener('install', (e) => {
   e.waitUntil(
     caches.open(PRECACHE)
-      .then((c) => c.addAll(PRECACHE_URLS))
+      // addAll() es todo-o-nada: si UNA sola URL falla, ninguna queda
+      // cacheada — incluida /offline, el propio fallback. allSettled +
+      // add() individual hace que un solo tropiezo no tumbe el resto.
+      .then((c) => Promise.allSettled(PRECACHE_URLS.map((url) => c.add(url))))
       .then(() => self.skipWaiting())
   )
 })
