@@ -16,7 +16,11 @@ export function useCanalMensajes(canalId: string | null) {
   const [cargando, setCargando] = useState(true)
 
   useEffect(() => {
-    if (!canalId) { setMensajes([]); setCargando(false); return }
+    // Limpiar de inmediato al cambiar de canal — si no, mientras carga el
+    // nuevo (getFirebase + import dinámico + primer snapshot son async) se
+    // sigue viendo la conversación del canal anterior en pantalla.
+    setMensajes([])
+    if (!canalId) { setCargando(false); return }
 
     let activo = true
     let unsub: (() => void) | undefined

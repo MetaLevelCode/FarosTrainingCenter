@@ -18,7 +18,7 @@ function ini(nombre: string) {
 }
 
 export function Conversacion({
-  mensajes, yoId, placeholder = 'Escribe un comentario…', vacio = 'Sé el primero en comentar.', onEnviar, alto = 'max-h-[340px]',
+  mensajes, yoId, placeholder = 'Escribe un comentario…', vacio = 'Sé el primero en comentar.', onEnviar, alto = 'max-h-[340px]', className = '',
 }: {
   mensajes: Mensaje[]
   yoId: string
@@ -26,10 +26,11 @@ export function Conversacion({
   vacio?: string
   onEnviar: (texto: string) => void | Promise<void>
   alto?: string
+  className?: string
 }) {
   const [texto, setTexto] = useState('')
   const [enviando, setEnviando] = useState(false)
-  const [error, setError] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const finRef = useRef<HTMLDivElement>(null)
 
   // Baja al último mensaje al abrir y al enviar.
@@ -41,21 +42,28 @@ export function Conversacion({
     e.preventDefault()
     const valor = texto.trim()
     if (!valor || enviando) return
-    setError(false)
+    setError(null)
     setEnviando(true)
     try {
       await onEnviar(valor)
       setTexto('')
-    } catch (err) {
+    } catch (err: any) {
       console.error(err)
-      setError(true)
+      // "permission-denied" casi siempre significa que este canal (grupo)
+      // todavía no tiene al usuario en su lista de miembros — ver botón
+      // "Reparar canales de mensajes" en /admin.
+      setError(
+        err?.code === 'permission-denied'
+          ? 'No tienes permiso para escribir aquí todavía. Si es el muro de un grupo, pide a un admin que corra "Reparar canales de mensajes".'
+          : 'No se pudo enviar el mensaje. Intenta de nuevo.',
+      )
     } finally {
       setEnviando(false)
     }
   }
 
   return (
-    <div className="flex flex-col">
+    <div className={`flex flex-col ${className}`}>
       <div className={`${alto} overflow-y-auto space-y-3 pr-1`}>
         {mensajes.length === 0 && (
           <p className="text-center text-[12px] text-[var(--color-on-surface-variant)]/40 py-8">{vacio}</p>
@@ -115,9 +123,7 @@ export function Conversacion({
 
       <form onSubmit={enviar} className="flex flex-col gap-2 mt-4 pt-4 border-t border-white/5">
         {error && (
-          <p className="text-[11px] text-[var(--color-danger-crimson)]">
-            No se pudo enviar el mensaje. Intenta de nuevo.
-          </p>
+          <p className="text-[11px] text-[var(--color-danger-crimson)]">{error}</p>
         )}
         <div className="flex gap-2">
           <input
