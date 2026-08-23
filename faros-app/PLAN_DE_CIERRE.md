@@ -441,9 +441,27 @@ cerrado** — si tira `FAILED_PRECONDITION`, la consola de Firebase da el
 link directo para crear el índice compuesto.
 
 **Fuera de alcance (anotado a propósito, no es un olvido):** editar/borrar
-mensajes propios, notificaciones push, contador de no leídos, y backfill de
-`participantes` para alumnos que ya estaban inscritos antes de este cambio
-(el canal se puebla hacia adelante, desde el próximo inscribir/cancelar).
+mensajes propios, notificaciones push, contador de no leídos.
+
+**Bugs reales encontrados al probarlo (mismo día, corregidos):**
+- El muro grupal no dejaba enviar mensajes para NINGÚN alumno inscrito antes
+  del deploy — exactamente la consecuencia del backfill pendiente de arriba.
+  Se agregó `POST /api/mensajes/backfill` (admin, botón en `/admin`) que
+  recorre todas las `clases` y reconstruye `participantes` desde
+  `estudiantes_inscritos`/`instructor_id` reales. Idempotente, correrlo una
+  vez tras el deploy.
+- `cancelar` fallaba con error genérico en clases cuyo canal de grupo
+  todavía no existía (nadie se había inscrito a ese grupo desde el deploy):
+  usaba `tx.update()` sobre el doc del canal, que lanza si el doc no
+  existe. Cambiado a `tx.set(..., { merge: true })`, igual que ya hacía
+  `inscribir`.
+- El chat no tenía apartado propio en el menú — vivía anidado dentro del
+  dashboard del alumno y dentro de cada tarjeta de clase del profesor, sin
+  forma de encontrarlo sin saber que estaba ahí. Se agregó "Mensajes" al
+  menú de ambos roles: `/dashboard/mensajes` (reusa `MensajesAlumno`) y
+  `/portal/mensajes` (nueva página: mismo patrón de tabs, pero listando
+  todos los grupos que dicta el profesor + un DM por cada alumno distinto
+  entre sus clases, no solo los de la clase abierta en el calendario).
 
 ---
 

@@ -83,10 +83,13 @@ export async function POST(
       })
 
       if (!sigueEnOtraSesion) {
-        tx.update(db.collection('mensajes').doc(canalGrupo(clase.nombre_clase)), {
+        // set+merge, no update: el doc de canal puede no existir todavía
+        // (ej. si nadie se inscribió a este grupo desde que existe
+        // mensajería) — update() en un doc inexistente falla la transacción.
+        tx.set(db.collection('mensajes').doc(canalGrupo(clase.nombre_clase)), {
           participantes: FieldValue.arrayRemove(uid),
           actualizadoEn: Date.now(),
-        })
+        }, { merge: true })
       }
 
       const asistidas = (usu.estadisticas?.clasesAsistidas as number) ?? 0
