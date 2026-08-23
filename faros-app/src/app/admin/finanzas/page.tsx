@@ -200,8 +200,8 @@ export default function FinanzasPage() {
                   <div key={t.id} className="p-6 space-y-4">
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div className="min-w-0">
-                        <p className="font-display font-black text-white">{t.nombre_usuario ?? t.usuarioId}</p>
-                        <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mt-1">
+                        <p className="font-display font-black text-white truncate">{t.nombre_usuario ?? t.usuarioId}</p>
+                        <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mt-1 truncate">
                           {t.nombre_plan ?? t.planId} · {new Date(t.fecha_solicitud).toLocaleDateString('es-CO')}
                         </p>
                         {/* Resumen del plan que armó el alumno en el wizard */}

@@ -221,13 +221,13 @@ export default function ClasesPage() {
                         </div>
                         <div className="min-w-0">
                           <p className="font-display font-black text-white text-sm uppercase tracking-tight truncate">{c.nombre_clase}</p>
-                          <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mt-0.5">
+                          <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mt-0.5 truncate">
                             {c.sede} · {c.estudiantes_inscritos.length} inscritos
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3 shrink-0">
-                        <Badge variant={ESTADO_COLOR[c.estado] as any}>{ESTADO_LABEL[c.estado]}</Badge>
+                      <div className="flex items-center gap-2 md:gap-3 shrink-0">
+                        <Badge variant={ESTADO_COLOR[c.estado] as any} className="whitespace-nowrap">{ESTADO_LABEL[c.estado]}</Badge>
                         <span className="material-symbols-outlined text-white/40 text-[20px] transition-transform duration-300" style={{ transform: abierta ? 'rotate(180deg)' : 'none' }}>
                           expand_more
                         </span>

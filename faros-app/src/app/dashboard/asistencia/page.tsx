@@ -315,16 +315,16 @@ export default function AsistenciaPage() {
                           <h4 className="font-display text-base font-extrabold text-white uppercase tracking-tight truncate">
                             {c.nombre_clase}
                           </h4>
-                          <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mt-1 capitalize">
+                          <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mt-1 capitalize truncate">
                             {dia} · {hora}
                           </p>
                           {c.sede && (
-                            <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/40 mt-0.5">
+                            <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/40 mt-0.5 truncate">
                               {c.sede}
                             </p>
                           )}
                         </div>
-                        <Badge variant={sinCupo ? 'danger' : cuposLibres <= 3 ? 'primary' : 'default'}>
+                        <Badge variant={sinCupo ? 'danger' : cuposLibres <= 3 ? 'primary' : 'default'} className="shrink-0 whitespace-nowrap">
                           {sinCupo ? 'Llena' : `${cuposLibres} cupos`}
                         </Badge>
                       </div>
@@ -379,11 +379,11 @@ export default function AsistenciaPage() {
                           <h4 className="font-display text-base font-extrabold text-white uppercase tracking-tight truncate">
                             {c.nombre_clase}
                           </h4>
-                          <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mt-1 capitalize">
+                          <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mt-1 capitalize truncate">
                             {dia} · {hora}
                           </p>
                           {c.sede && (
-                            <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/40 mt-0.5">
+                            <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/40 mt-0.5 truncate">
                               {c.sede}
                             </p>
                           )}

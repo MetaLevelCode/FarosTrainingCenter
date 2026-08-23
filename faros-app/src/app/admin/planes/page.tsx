@@ -332,7 +332,7 @@ function SedeRow({ sede, onGuardar, onBorrar, procesando }: {
       <Card>
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <p className="font-display text-lg font-black text-white uppercase">{sede.nombre}</p>
               <Badge variant={sede.activo ? 'success' : 'default'}>
                 {sede.activo ? 'Activa' : 'Inactiva'}
