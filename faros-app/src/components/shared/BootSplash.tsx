@@ -9,7 +9,12 @@
 //
 // Logo + texto quietos arriba; abajo, una franja de agua amarilla con
 // la superficie ondulando (loop horizontal sin fin). Al final, la
-// marea entera sube y se traga la pantalla, revelando la app.
+// marea sube, cubre TODA la pantalla, y sigue bajando hasta salir del
+// todo por abajo — la página real queda revelada progresivamente a
+// medida que se retira, no con un fundido aparte al final. El fondo
+// negro se apaga (opacity→0) escondido bajo el amarillo justo en el
+// instante en que la marea cubre completo, para que ese cambio sea
+// invisible.
 //
 // El texto es el mismo del archivo faros-training-brush.jpeg (trazo a
 // pincel), pero extraído a PNG transparente — el jpeg original es
@@ -21,14 +26,14 @@
 import { useEffect, useState } from 'react'
 
 const T_FINAL = 2600
-const T_OCULTAR = T_FINAL + 750
+const T_OCULTAR = T_FINAL + 1550
 
 export function BootSplash() {
   const [visible, setVisible] = useState(true)
-  const [destello, setDestello] = useState(false)
+  const [ciclo, setCiclo] = useState(false)
 
   useEffect(() => {
-    const t1 = setTimeout(() => setDestello(true), T_FINAL)
+    const t1 = setTimeout(() => setCiclo(true), T_FINAL)
     const t2 = setTimeout(() => setVisible(false), T_OCULTAR)
     return () => { clearTimeout(t1); clearTimeout(t2) }
   }, [])
@@ -36,21 +41,17 @@ export function BootSplash() {
   if (!visible) return null
 
   return (
-    <div
-      className="fixed inset-0 z-[300] overflow-hidden"
-      style={{
-        background: '#050505',
-        opacity: destello ? 0 : 1,
-        transition: 'opacity 0.65s ease',
-      }}
-    >
+    <div className="fixed inset-0 z-[300] overflow-hidden">
+      {/* Fondo negro — se apaga escondido bajo la marea cuando cubre
+          toda la pantalla, revelando la página real desde ese instante */}
+      <div
+        className={`absolute inset-0 ${ciclo ? 'faros-fondo--ciclo' : ''}`}
+        style={{ background: '#050505' }}
+      />
+
       {/* Logo + texto — quietos, por encima de la marea */}
       <div
-        className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-6 px-6"
-        style={{
-          opacity: destello ? 0 : 1,
-          transition: `opacity 0.5s ease ${destello ? '0.15s' : '0s'}`,
-        }}
+        className={`absolute inset-0 z-10 flex flex-col items-center justify-center gap-6 px-6 ${ciclo ? 'faros-contenido--ciclo' : ''}`}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/farosWordmark/logo-amarillo.png" alt="" style={{ width: 92, height: 'auto' }} />
@@ -64,11 +65,11 @@ export function BootSplash() {
 
       {/* La marea — caja el doble de alta que la pantalla (bottom:0,
           height:200%), anclada abajo. En reposo se empuja hacia abajo
-          con translateY para que solo asome una franja; al subir,
-          translateY baja a ~45% y el cuerpo (mucho más alto que la
-          pantalla) la cubre entera. */}
+          con translateY para que solo asome una franja; al final sube
+          (cubre entera) y sigue bajando hasta quedar del todo fuera
+          de pantalla. */}
       <div
-        className={destello ? 'faros-marea faros-marea--sube' : 'faros-marea'}
+        className={`faros-marea ${ciclo ? 'faros-marea--ciclo' : ''}`}
         style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '200%' }}
       >
         <svg

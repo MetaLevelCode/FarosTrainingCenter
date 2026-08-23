@@ -295,21 +295,43 @@ body {
    Franja de agua calma en la base, con la superficie ondulando sin
    parar (.faros-ola, loop horizontal sin fin — dos copias del mismo
    trazo, tamaño 200%, al trasladar -50% queda perfecto porque el
-   patrón se repite cada 50% del ancho). Al final, la marea entera
-   (.faros-marea) sube y se traga la pantalla. */
+   patrón se repite cada 50% del ancho).
+
+   Al final: la marea sube, cubre TODA la pantalla, y sigue bajando
+   hasta desaparecer del todo por abajo (farosMareaCiclo). El fondo
+   negro (.faros-fondo) se apaga (opacity→0) escondido bajo el amarillo
+   justo en el instante en que la marea cubre completo — desde ahí la
+   página real ya queda detrás, y se revela sola a medida que la marea
+   se retira, sin necesidad de un fundido aparte. */
 .faros-marea {
   animation: farosMareaIdle 3.2s ease-in-out infinite;
 }
-.faros-marea--sube {
-  animation: farosMareaSube 0.75s cubic-bezier(0.6, 0, 0.4, 1) forwards;
+.faros-marea--ciclo {
+  animation: farosMareaCiclo 1.5s forwards;
 }
 @keyframes farosMareaIdle {
   0%, 100% { transform: translateY(90%); }
   50%      { transform: translateY(87%); }
 }
-@keyframes farosMareaSube {
-  from { transform: translateY(90%); }
-  to   { transform: translateY(44%); }
+@keyframes farosMareaCiclo {
+  0%   { transform: translateY(90%); animation-timing-function: cubic-bezier(0.6, 0, 0.2, 1); }
+  38%  { transform: translateY(44%); animation-timing-function: linear; }
+  46%  { transform: translateY(44%); animation-timing-function: cubic-bezier(0.4, 0, 0.8, 1); }
+  100% { transform: translateY(108%); }
+}
+.faros-fondo--ciclo {
+  animation: farosFondoApaga 1.5s forwards;
+}
+@keyframes farosFondoApaga {
+  0%, 40% { opacity: 1; }
+  42%, 100% { opacity: 0; }
+}
+.faros-contenido--ciclo {
+  animation: farosContenidoApaga 1.5s forwards;
+}
+@keyframes farosContenidoApaga {
+  0%, 22% { opacity: 1; }
+  36%, 100% { opacity: 0; }
 }
 .faros-ola {
   animation: farosOlaScroll 7s linear infinite;
