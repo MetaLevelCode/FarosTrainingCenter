@@ -8,13 +8,33 @@
 //   · Firebase / APIs ............ never intercepted
 // Bump VERSION on every deploy that should invalidate caches.
 // ============================================================
-const VERSION = 'faros-v9'
+const VERSION = 'faros-v10'
 const PRECACHE = `${VERSION}-precache`
 const RUNTIME = `${VERSION}-runtime`
 const MEDIA = `${VERSION}-media`
 const MEDIA_MAX_ENTRIES = 60
 
 const PRECACHE_URLS = ['/', '/login', '/offline', '/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png']
+
+// Último recurso absoluto si ni el cache de la navegación ni /offline
+// están disponibles — nunca dejar que el navegador muestre su propia
+// pantalla nativa de "sin conexión" (el dinosaurio de Chrome).
+const FALLBACK_HTML = `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sin conexión — Faros Training</title>
+<style>
+  body{margin:0;min-height:100dvh;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:16px;background:#050505;color:#f5f5f5;
+    font-family:-apple-system,BlinkMacSystemFont,sans-serif;text-align:center;padding:24px}
+  h1{font-size:15px;letter-spacing:.15em;text-transform:uppercase;color:#e6ff00;margin:0}
+  p{font-size:13px;color:rgba(245,245,245,.7);margin:0;max-width:320px}
+  button{margin-top:8px;padding:10px 24px;border-radius:999px;border:none;
+    background:#e6ff00;color:#050505;font-weight:700;font-size:13px}
+</style></head><body>
+  <h1>Sin conexión</h1>
+  <p>No hay datos guardados de esta página todavía. Conéctate y vuelve a intentar.</p>
+  <button onclick="location.reload()">Reintentar</button>
+</body></html>`
 
 const NEVER_CACHE_HOSTS = [
   'firestore.googleapis.com',
@@ -66,10 +86,18 @@ async function networkFirstPage(request) {
     }
     return res
   } catch {
-    const cached = await caches.match(request)
+    // ignoreVary/ignoreSearch: una navegación real trae headers propios
+    // de Next (rsc, next-router-state-tree...) que no estaban presentes
+    // cuando el SW cacheó estas URLs con un fetch/add plano — sin esto,
+    // una respuesta cacheada con Vary podía no calzar y el fallback
+    // caía al último recurso sin necesidad.
+    const cached = await caches.match(request, { ignoreVary: true, ignoreSearch: true })
     if (cached) return cached
-    const offline = await caches.match('/offline')
-    return offline || Response.error()
+    const offline = await caches.match('/offline', { ignoreVary: true })
+    if (offline) return offline
+    return new Response(FALLBACK_HTML, {
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    })
   }
 }
 
