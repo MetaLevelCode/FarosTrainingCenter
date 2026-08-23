@@ -177,8 +177,10 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
         </motion.main>
       </AnimatePresence>
 
-      {/* Magnetic FAB nav */}
-      <div className="fixed bottom-8 right-8 z-[100]">
+      {/* Magnetic FAB nav — bottom con safe-area: sin esto, en un iPhone
+          con home indicator el FAB queda pegado justo en la franja del
+          gesto de "volver al inicio". */}
+      <div className="fixed right-8 z-[100]" style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 2rem)' }}>
         <AnimatePresence>
           {fabOpen && (
             <motion.div

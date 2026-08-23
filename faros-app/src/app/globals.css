@@ -87,6 +87,12 @@ html {
      más allá de los límites de la página (y la franja del navegador en
      modo app). En amarillo de marca en vez de la línea blanca. */
   background: var(--color-primary-fixed);
+  /* Sin esto, tirar del scroll hacia abajo en el tope de la página
+     encadena al gesto nativo de "pull to refresh" del navegador
+     (sobre todo Android/Chrome en modo PWA) — recarga toda la app de
+     golpe. El rebote elástico propio (el "rubber band" de arriba) se
+     conserva igual; esto solo corta la cadena hacia el navegador. */
+  overscroll-behavior-y: contain;
 }
 
 body {
@@ -99,6 +105,16 @@ body {
   min-height: 100dvh;
   overflow-x: hidden;
   padding-bottom: env(safe-area-inset-bottom, 0);
+  overscroll-behavior-y: contain;
+}
+
+/* Quita el flash gris al tocar botones/links en Safari/Chrome móvil —
+   sin esto cualquier tap se ve "de página web" en vez de nativo. Y
+   touch-action:manipulation elimina el retraso de ~300ms y el
+   double-tap-zoom en elementos interactivos. */
+a, button, [role='button'], input, textarea, select {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 /* En @layer base: sin capa, este reset gana a las utilidades de
