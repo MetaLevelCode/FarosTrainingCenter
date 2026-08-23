@@ -6,7 +6,7 @@
 // Permite marcar asistencia y escribir observaciones.
 // ============================================================
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
@@ -17,6 +17,7 @@ import {
 } from '@/lib/firestore'
 import type { Clase, Asistencia } from '@/lib/types'
 import { encolarAsistencia } from '@/lib/offlineQueue'
+import { agruparPorCategoria, labelCategoria, proximaClase } from '@/lib/categoriaClase'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -53,6 +54,7 @@ export default function ClasesPage() {
   const [asistencias, setAsistencias] = useState<Record<string, Asistencia[]>>({})
   const [observaciones, setObservaciones] = useState<Record<string, string>>({})
   const [guardando, setGuardando] = useState<string | null>(null)
+  const [categoriaAbierta, setCategoriaAbierta] = useState<string | null>(null)
 
   useEffect(() => {
     if (!user) return
@@ -152,6 +154,147 @@ export default function ClasesPage() {
   const finalizadas = clases.filter((c) => c.estado === 'finalizada').length
   const pendientes = clases.filter((c) => c.estado === 'programada').length
 
+  // La lista completa crece rápido con clases recurrentes (grupales +
+  // personalizadas) — se muestra solo la más próxima suelta, el resto
+  // agrupado por categoría y colapsado hasta que el profesor haga click.
+  const proxima = useMemo(() => proximaClase(clases), [clases])
+  const grupos = useMemo(
+    () => agruparPorCategoria(clases.filter((c) => c.id !== proxima?.id)),
+    [clases, proxima],
+  )
+
+  function renderClaseCard(c: Clase) {
+    const abierta = claseAbierta === c.id
+    const inicio = new Date(c.fecha_hora_inicio)
+    const listaAsistencia = asistencias[c.id] ?? []
+
+    return (
+      <Card key={c.id} padding="none" className="overflow-hidden">
+        {/* Cabecera clickeable — dos filas: la fecha/hora y el
+            badge nunca dejan suficiente ancho al título/sede en
+            una sola fila (se veía truncado a "T...", "ES..."
+            en celular); separados, el título tiene todo el
+            ancho de la tarjeta para sí solo. */}
+        <button
+          className="w-full p-6 flex flex-col gap-3 text-left hover:bg-white/[0.02] transition-colors duration-200"
+          onClick={() => abrirClase(c.id)}
+        >
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-baseline gap-2 min-w-0">
+              <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 shrink-0">
+                {inicio.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }).toUpperCase()}
+              </span>
+              <span className="font-display text-lg font-black text-white shrink-0">
+                {inicio.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Badge variant={ESTADO_COLOR[c.estado] as any} className="whitespace-nowrap">{ESTADO_LABEL[c.estado]}</Badge>
+              <span className="material-symbols-outlined text-white/40 text-[20px] transition-transform duration-300" style={{ transform: abierta ? 'rotate(180deg)' : 'none' }}>
+                expand_more
+              </span>
+            </div>
+          </div>
+          <div className="min-w-0">
+            <p className="font-display font-black text-white text-sm uppercase tracking-tight truncate">{c.nombre_clase}</p>
+            <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mt-0.5 truncate">
+              {c.sede} · {c.estudiantes_inscritos.length} inscritos
+            </p>
+          </div>
+        </button>
+
+        {/* Detalle expandido */}
+        {abierta && (
+          <div className="border-t border-white/10">
+            {/* Tabs */}
+            <div className="flex border-b border-white/10">
+              {(['plan', 'asistencia', 'observaciones'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setTabActiva(tab)}
+                  className={`px-5 py-3 text-[10px] font-black uppercase tracking-widest transition-colors duration-200 ${
+                    tabActiva === tab
+                      ? 'text-[var(--color-primary-fixed)] border-b-2 border-[var(--color-primary-fixed)]'
+                      : 'text-white/40 hover:text-white'
+                  }`}
+                >
+                  {tab === 'plan' ? 'Plan de clase' : tab === 'asistencia' ? 'Asistencia' : 'Observaciones'}
+                </button>
+              ))}
+            </div>
+
+            <div className="p-6">
+              {tabActiva === 'plan' && (
+                <ul className="space-y-3">
+                  {(c.plan ?? []).length === 0 ? (
+                    <li className="text-sm text-[var(--color-on-surface-variant)]/50">Sin plan de clase definido.</li>
+                  ) : (c.plan ?? []).map((item, i) => (
+                    <li key={i} className="flex items-start gap-3 text-sm text-[var(--color-on-surface-variant)]/85">
+                      <span className="material-symbols-outlined text-[var(--color-primary-fixed)] text-[17px] mt-0.5 shrink-0">check_circle</span>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {tabActiva === 'asistencia' && (
+                <div className="space-y-3">
+                  {c.estudiantes_inscritos.length === 0 ? (
+                    <p className="text-sm text-[var(--color-on-surface-variant)]/50">No hay estudiantes inscritos.</p>
+                  ) : c.estudiantes_inscritos.map((uid) => {
+                    const reg = listaAsistencia.find((a) => a.usuarioId === uid)
+                    const presente = reg?.asistio ?? false
+                    return (
+                      <div key={uid} className="flex items-center justify-between p-4 rounded-2xl border border-white/5 bg-white/[0.02]">
+                        <div className="flex items-center gap-3">
+                          <span className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-[11px] font-black text-white">
+                            {uid.substring(0, 2).toUpperCase()}
+                          </span>
+                          <span className="text-sm text-white">{uid}</span>
+                        </div>
+                        <button
+                          onClick={() => toggleAsistencia(c.id, uid, uid)}
+                          className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-200 ${
+                            presente
+                              ? 'bg-[var(--color-success-emerald)]/20 text-[var(--color-success-emerald)] border border-[var(--color-success-emerald)]/30'
+                              : 'bg-white/5 text-white/40 border border-white/10 hover:border-white/30'
+                          }`}
+                        >
+                          {presente ? 'Asistió ✓' : 'Marcar'}
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              {tabActiva === 'observaciones' && (
+                <div className="space-y-4">
+                  <textarea
+                    value={observaciones[c.id] ?? ''}
+                    onChange={(e) => setObservaciones((prev) => ({ ...prev, [c.id]: e.target.value }))}
+                    placeholder="Escribe tus observaciones de la clase..."
+                    rows={5}
+                    className="w-full bg-white/5 border border-white/5 rounded-2xl px-5 py-4 text-[var(--color-on-surface)] placeholder:text-[var(--color-on-surface-variant)]/30 focus:border-[rgba(230,255,0,0.5)] focus:outline-none transition-colors duration-300 resize-none"
+                  />
+                  <div className="flex justify-end">
+                    <Button
+                      size="md"
+                      loading={guardando === c.id}
+                      onClick={() => guardarObservaciones(c.id)}
+                    >
+                      {guardando === c.id ? 'Guardando…' : 'Guardar y finalizar clase'}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </Card>
+    )
+  }
+
   return (
     <GuardedShell authorized={authorized} loading={loading} title="Mis Clases">
       <div className="space-y-8">
@@ -195,141 +338,61 @@ export default function ClasesPage() {
             </Card>
           </Reveal>
         ) : (
-          <div className="space-y-4">
-            {clases.map((c, idx) => {
-              const abierta = claseAbierta === c.id
-              const inicio = new Date(c.fecha_hora_inicio)
-              const fin = new Date(c.fecha_hora_fin)
-              const listaAsistencia = asistencias[c.id] ?? []
+          <div className="space-y-8">
+            {proxima && (
+              <Reveal delay={0.1}>
+                <div>
+                  <p className="label-caps text-[10px] text-[var(--color-primary-fixed)] mb-3 tracking-[0.3em]">Próxima clase</p>
+                  {renderClaseCard(proxima)}
+                </div>
+              </Reveal>
+            )}
 
-              return (
-                <Reveal key={c.id} delay={0.1 + idx * 0.04}>
-                  <Card padding="none" className="overflow-hidden">
-                    {/* Cabecera clickeable — dos filas: la fecha/hora y el
-                        badge nunca dejan suficiente ancho al título/sede en
-                        una sola fila (se veía truncado a "T...", "ES..."
-                        en celular); separados, el título tiene todo el
-                        ancho de la tarjeta para sí solo. */}
-                    <button
-                      className="w-full p-6 flex flex-col gap-3 text-left hover:bg-white/[0.02] transition-colors duration-200"
-                      onClick={() => abrirClase(c.id)}
-                    >
-                      <div className="flex items-center justify-between gap-4">
-                        <div className="flex items-baseline gap-2 min-w-0">
-                          <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 shrink-0">
-                            {inicio.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }).toUpperCase()}
-                          </span>
-                          <span className="font-display text-lg font-black text-white shrink-0">
-                            {inicio.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <Badge variant={ESTADO_COLOR[c.estado] as any} className="whitespace-nowrap">{ESTADO_LABEL[c.estado]}</Badge>
-                          <span className="material-symbols-outlined text-white/40 text-[20px] transition-transform duration-300" style={{ transform: abierta ? 'rotate(180deg)' : 'none' }}>
-                            expand_more
-                          </span>
-                        </div>
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-display font-black text-white text-sm uppercase tracking-tight truncate">{c.nombre_clase}</p>
-                        <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mt-0.5 truncate">
-                          {c.sede} · {c.estudiantes_inscritos.length} inscritos
-                        </p>
-                      </div>
-                    </button>
+            {grupos.size > 0 && (
+              <Reveal delay={0.14}>
+                <div>
+                  <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mb-3 tracking-[0.3em]">Otras clases</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {[...grupos.entries()].map(([codigo, lista]) => {
+                      const abierta = categoriaAbierta === codigo
+                      return (
+                        <button
+                          key={codigo}
+                          onClick={() => setCategoriaAbierta(abierta ? null : codigo)}
+                          className={`rounded-2xl border p-4 text-left transition-colors duration-200 ${
+                            abierta
+                              ? 'border-[var(--color-primary-fixed)] bg-[rgba(230,255,0,0.06)]'
+                              : 'border-white/10 bg-white/[0.02] hover:border-white/25'
+                          }`}
+                        >
+                          <p className="font-display text-sm font-black text-white uppercase tracking-tight truncate">
+                            {labelCategoria(codigo)}
+                          </p>
+                          <p className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50 mt-1">
+                            {lista.length} {lista.length === 1 ? 'clase' : 'clases'}
+                          </p>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  {categoriaAbierta && grupos.get(categoriaAbierta) && (
+                    <div className="space-y-4 mt-4">
+                      {grupos.get(categoriaAbierta)!.map((c) => renderClaseCard(c))}
+                    </div>
+                  )}
+                </div>
+              </Reveal>
+            )}
 
-                    {/* Detalle expandido */}
-                    {abierta && (
-                      <div className="border-t border-white/10">
-                        {/* Tabs */}
-                        <div className="flex border-b border-white/10">
-                          {(['plan', 'asistencia', 'observaciones'] as const).map((tab) => (
-                            <button
-                              key={tab}
-                              onClick={() => setTabActiva(tab)}
-                              className={`px-5 py-3 text-[10px] font-black uppercase tracking-widest transition-colors duration-200 ${
-                                tabActiva === tab
-                                  ? 'text-[var(--color-primary-fixed)] border-b-2 border-[var(--color-primary-fixed)]'
-                                  : 'text-white/40 hover:text-white'
-                              }`}
-                            >
-                              {tab === 'plan' ? 'Plan de clase' : tab === 'asistencia' ? 'Asistencia' : 'Observaciones'}
-                            </button>
-                          ))}
-                        </div>
-
-                        <div className="p-6">
-                          {tabActiva === 'plan' && (
-                            <ul className="space-y-3">
-                              {(c.plan ?? []).length === 0 ? (
-                                <li className="text-sm text-[var(--color-on-surface-variant)]/50">Sin plan de clase definido.</li>
-                              ) : (c.plan ?? []).map((item, i) => (
-                                <li key={i} className="flex items-start gap-3 text-sm text-[var(--color-on-surface-variant)]/85">
-                                  <span className="material-symbols-outlined text-[var(--color-primary-fixed)] text-[17px] mt-0.5 shrink-0">check_circle</span>
-                                  {item}
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-
-                          {tabActiva === 'asistencia' && (
-                            <div className="space-y-3">
-                              {c.estudiantes_inscritos.length === 0 ? (
-                                <p className="text-sm text-[var(--color-on-surface-variant)]/50">No hay estudiantes inscritos.</p>
-                              ) : c.estudiantes_inscritos.map((uid) => {
-                                const reg = listaAsistencia.find((a) => a.usuarioId === uid)
-                                const presente = reg?.asistio ?? false
-                                return (
-                                  <div key={uid} className="flex items-center justify-between p-4 rounded-2xl border border-white/5 bg-white/[0.02]">
-                                    <div className="flex items-center gap-3">
-                                      <span className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-[11px] font-black text-white">
-                                        {uid.substring(0, 2).toUpperCase()}
-                                      </span>
-                                      <span className="text-sm text-white">{uid}</span>
-                                    </div>
-                                    <button
-                                      onClick={() => toggleAsistencia(c.id, uid, uid)}
-                                      className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-200 ${
-                                        presente
-                                          ? 'bg-[var(--color-success-emerald)]/20 text-[var(--color-success-emerald)] border border-[var(--color-success-emerald)]/30'
-                                          : 'bg-white/5 text-white/40 border border-white/10 hover:border-white/30'
-                                      }`}
-                                    >
-                                      {presente ? 'Asistió ✓' : 'Marcar'}
-                                    </button>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          )}
-
-                          {tabActiva === 'observaciones' && (
-                            <div className="space-y-4">
-                              <textarea
-                                value={observaciones[c.id] ?? ''}
-                                onChange={(e) => setObservaciones((prev) => ({ ...prev, [c.id]: e.target.value }))}
-                                placeholder="Escribe tus observaciones de la clase..."
-                                rows={5}
-                                className="w-full bg-white/5 border border-white/5 rounded-2xl px-5 py-4 text-[var(--color-on-surface)] placeholder:text-[var(--color-on-surface-variant)]/30 focus:border-[rgba(230,255,0,0.5)] focus:outline-none transition-colors duration-300 resize-none"
-                              />
-                              <div className="flex justify-end">
-                                <Button
-                                  size="md"
-                                  loading={guardando === c.id}
-                                  onClick={() => guardarObservaciones(c.id)}
-                                >
-                                  {guardando === c.id ? 'Guardando…' : 'Guardar y finalizar clase'}
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                  </Card>
-                </Reveal>
-              )
-            })}
+            {!proxima && grupos.size === 0 && (
+              <Reveal delay={0.1}>
+                <Card>
+                  <p className="text-sm text-[var(--color-on-surface-variant)]/60 text-center py-8">
+                    No tienes clases próximas.
+                  </p>
+                </Card>
+              </Reveal>
+            )}
           </div>
         )}
       </div>

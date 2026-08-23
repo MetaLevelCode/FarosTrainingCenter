@@ -16,6 +16,7 @@ import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button, Spinner } from '@/components/ui'
 import { getFirebase } from '@/lib/firebase'
 import { SolicitudPersonalizada } from '@/components/dashboard/SolicitudPersonalizada'
+import { agruparPorCategoria, labelCategoria, proximaClase } from '@/lib/categoriaClase'
 import type { Clase } from '@/lib/types'
 
 const EASE = [0.22, 1, 0.36, 1] as const
@@ -54,6 +55,7 @@ export default function AsistenciaPage() {
   const [inscribiendo, setInscribiendo] = useState<string | null>(null)
   const [cancelando, setCancelando] = useState<string | null>(null)
   const [errorAccion, setErrorAccion] = useState<string | null>(null)
+  const [categoriaAbierta, setCategoriaAbierta] = useState<string | null>(null)
 
   const susc = user?.suscripcionActiva
   const puedeInscribirse = !!susc && susc.estado === 'activa' && (susc.sesionesRestantes ?? 0) > 0
@@ -218,6 +220,59 @@ export default function AsistenciaPage() {
   const asistidasReales = useMemo(() => historial.filter((h) => h.asistio).length, [historial])
   const faltasReales = useMemo(() => historial.filter((h) => !h.asistio).length, [historial])
 
+  // Con clases personalizadas recurrentes "Mis clases" crece rápido — se
+  // muestra solo la más próxima suelta, el resto agrupado por categoría.
+  const proximaInscrita = useMemo(() => proximaClase(clasesInscritas), [clasesInscritas])
+  const gruposInscritas = useMemo(
+    () => agruparPorCategoria(clasesInscritas.filter((c) => c.id !== proximaInscrita?.id)),
+    [clasesInscritas, proximaInscrita],
+  )
+
+  function renderClaseInscrita(c: Clase) {
+    const inicio = new Date(c.fecha_hora_inicio)
+    const dia = inicio.toLocaleDateString('es-CO', { weekday: 'long', day: '2-digit', month: 'short' })
+    const hora = inicio.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
+    const puedeCancelar = c.estado === 'programada' && (c.fecha_hora_inicio - Date.now()) >= VENTANA_CANCELACION_MS
+    const isLoading = cancelando === c.id
+    return (
+      <Card key={c.id}>
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-2">
+              <Badge variant={c.estado === 'en_curso' ? 'primary' : 'success'}>
+                {c.estado === 'en_curso' ? 'En curso' : 'Reservada'}
+              </Badge>
+            </div>
+            <h4 className="font-display text-base font-extrabold text-white uppercase tracking-tight truncate">
+              {c.nombre_clase}
+            </h4>
+            <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mt-1 capitalize truncate">
+              {dia} · {hora}
+            </p>
+            {c.sede && (
+              <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/40 mt-0.5 truncate">
+                {c.sede}
+              </p>
+            )}
+          </div>
+          <span className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/40 shrink-0 text-right">
+            {c.estudiantes_inscritos?.length ?? 0} / {c.cupo_maximo}
+          </span>
+        </div>
+        <Button
+          variant={puedeCancelar ? 'outline' : 'ghost'}
+          size="sm"
+          fullWidth
+          disabled={!puedeCancelar || !!cancelando}
+          loading={isLoading}
+          onClick={() => cancelarInscripcion(c.id)}
+        >
+          {isLoading ? '' : puedeCancelar ? 'Cancelar inscripción' : 'No cancelable (< 2 h)'}
+        </Button>
+      </Card>
+    )
+  }
+
   return (
     <GuardedShell authorized={authorized} loading={loading} title="Asistencia">
       <div className="space-y-8">
@@ -312,51 +367,45 @@ export default function AsistenciaPage() {
                 </p>
               </Card>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {clasesInscritas.map((c) => {
-                  const inicio = new Date(c.fecha_hora_inicio)
-                  const dia = inicio.toLocaleDateString('es-CO', { weekday: 'long', day: '2-digit', month: 'short' })
-                  const hora = inicio.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
-                  const puedeCancelar = c.estado === 'programada' && (c.fecha_hora_inicio - Date.now()) >= VENTANA_CANCELACION_MS
-                  const isLoading = cancelando === c.id
-                  return (
-                    <Card key={c.id}>
-                      <div className="flex items-start justify-between gap-3 mb-4">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Badge variant={c.estado === 'en_curso' ? 'primary' : 'success'}>
-                              {c.estado === 'en_curso' ? 'En curso' : 'Reservada'}
-                            </Badge>
-                          </div>
-                          <h4 className="font-display text-base font-extrabold text-white uppercase tracking-tight truncate">
-                            {c.nombre_clase}
-                          </h4>
-                          <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mt-1 capitalize truncate">
-                            {dia} · {hora}
-                          </p>
-                          {c.sede && (
-                            <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/40 mt-0.5 truncate">
-                              {c.sede}
+              <div className="space-y-6">
+                {proximaInscrita && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    {renderClaseInscrita(proximaInscrita)}
+                  </div>
+                )}
+
+                {gruposInscritas.size > 0 && (
+                  <div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {[...gruposInscritas.entries()].map(([codigo, lista]) => {
+                        const abierta = categoriaAbierta === codigo
+                        return (
+                          <button
+                            key={codigo}
+                            onClick={() => setCategoriaAbierta(abierta ? null : codigo)}
+                            className={`rounded-2xl border p-4 text-left transition-colors duration-200 ${
+                              abierta
+                                ? 'border-[var(--color-primary-fixed)] bg-[rgba(230,255,0,0.06)]'
+                                : 'border-white/10 bg-white/[0.03] hover:border-white/25'
+                            }`}
+                          >
+                            <p className="font-display text-sm font-black text-white uppercase tracking-tight truncate">
+                              {labelCategoria(codigo)}
                             </p>
-                          )}
-                        </div>
-                        <span className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/40 shrink-0 text-right">
-                          {c.estudiantes_inscritos?.length ?? 0} / {c.cupo_maximo}
-                        </span>
+                            <p className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50 mt-1">
+                              {lista.length} {lista.length === 1 ? 'clase' : 'clases'}
+                            </p>
+                          </button>
+                        )
+                      })}
+                    </div>
+                    {categoriaAbierta && gruposInscritas.get(categoriaAbierta) && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mt-4">
+                        {gruposInscritas.get(categoriaAbierta)!.map((c) => renderClaseInscrita(c))}
                       </div>
-                      <Button
-                        variant={puedeCancelar ? 'outline' : 'ghost'}
-                        size="sm"
-                        fullWidth
-                        disabled={!puedeCancelar || !!cancelando}
-                        loading={isLoading}
-                        onClick={() => cancelarInscripcion(c.id)}
-                      >
-                        {isLoading ? '' : puedeCancelar ? 'Cancelar inscripción' : 'No cancelable (< 2 h)'}
-                      </Button>
-                    </Card>
-                  )
-                })}
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
