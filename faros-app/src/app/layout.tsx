@@ -87,6 +87,12 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
+  // Sin esto, iOS en modo PWA (standalone) NO redimensiona el viewport al
+  // abrir el teclado — el teclado se superpone encima y 100dvh se queda
+  // con el alto de ANTES del teclado, así que un contenedor calculado con
+  // dvh (como el chat) queda "cortado" a la mitad de la pantalla real
+  // visible. 'resizes-content' fuerza a que dvh sí reaccione al teclado.
+  interactiveWidget: 'resizes-content',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
