@@ -89,6 +89,7 @@ function construirUsuario(fbUser: { uid: string; email: string | null }, data: R
     foto_perfil: data.foto_perfil,
     sede: data.sede,
     clasesDadas: data.clasesDadas,
+    disponibilidadPersonal: data.disponibilidadPersonal,
     nivel: data.nivel,
     dificultades: data.dificultades,
     fecha_registro: data.fecha_registro,
