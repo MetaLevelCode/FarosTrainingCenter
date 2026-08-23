@@ -45,10 +45,27 @@ Pasos:
    contador de sesiones se devolvió
 4. Intentar cancelar una clase dentro de la ventana de 2h → debe bloquearse
 
-**Estado:** 🔲 Pendiente
+**Estado:** 🐛 Bugs encontrados (corregidos, pendiente re-probar)
 
 **Notas / bugs:**
--
+- El contador de sesiones restantes no bajaba al inscribirse (bug de cliente:
+  `AuthContext` nunca refrescaba el perfil tras la acción — el backend sí
+  descontaba bien). Fix: nueva `refreshUser()`, llamada tras inscribir/cancelar.
+- Se podía ver e inscribirse a clases de OTRA sede (la query no filtraba por
+  sede). Fix: filtro en cliente + validación server-side + índice nuevo.
+- "Mis clases" quedaba al final de la página, después de toda la lista de
+  disponibles — costaba confirmar que la inscripción funcionó. Fix: se
+  reordenó, "Mis clases" va primero.
+- (Encontrado de paso, no estaba en los pasos de esta historia pero salió al
+  navegar desde acá) "Clase del Día" en `/dashboard` era 100% mock. Fix:
+  ahora busca la clase real de hoy y muestra el plan real subido por el
+  profesor.
+- (Idem) "Tu semana" siempre mostraba los 6 días en gris — nunca recibía qué
+  días entrena el alumno. Fix: se derivan de sus clases inscritas reales.
+
+Pendiente: volver a probar los 4 pasos originales con los fixes ya
+desplegados (especialmente el paso 4, cancelar dentro de la ventana de 2h,
+que no se alcanzó a probar).
 
 ---
 
@@ -143,4 +160,8 @@ Pasos:
 
 | # | Historia | Bug | Severidad | Estado |
 |---|---|---|---|---|
-| | | | | |
+| 1 | E2 | Contador de sesiones no baja al inscribirse (cliente no refresca perfil) | Alta | ✅ Corregido (`ce9c8a8`) |
+| 2 | E2 | Se puede inscribir a clases de otra sede | Media | ✅ Corregido (`ce9c8a8`) |
+| 3 | E2 | "Mis clases" al final de la página, difícil confirmar inscripción | Baja | ✅ Corregido (`ce9c8a8`) |
+| 4 | E2/E3 | "Clase del Día" en dashboard 100% hardcodeada | Alta | ✅ Corregido (`ce9c8a8`) |
+| 5 | E2/E3 | "Tu semana" siempre en gris, sin días reales | Media | ✅ Corregido (`ce9c8a8`) |
