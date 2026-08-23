@@ -145,6 +145,10 @@ export async function aprobarTransaccion(
   ])
   const { sesionesDelPlan, duracionDiasDelPlan, resumenPlan } = await import('./planes')
 
+  let selAprobada: import('./planes').SeleccionPlan | undefined
+  let usuarioIdAprobado = ''
+  let fechaVencimientoNueva = 0
+
   await runTransaction(db, async (tx) => {
     const txRef = doc(db, 'transacciones', transaccionId)
     const txSnap = await tx.get(txRef)
@@ -188,7 +192,9 @@ export async function aprobarTransaccion(
       suscripcionCreada: { suscripcionId: suscRef.id, fechaActivacion: now },
     })
 
-    // 3. Actualizar usuario.suscripcionActiva
+    // 3. Actualizar usuario.suscripcionActiva — tipo/personalId/personas
+    // denormalizados desde la selección para que el dashboard del alumno
+    // sepa si su plan es personalizado sin un fetch aparte.
     tx.update(doc(db, 'usuarios', t.usuarioId), {
       suscripcionActiva: {
         suscripcionId: suscRef.id,
@@ -198,6 +204,9 @@ export async function aprobarTransaccion(
         sesionesCompradas: sesiones,
         fechaVencimiento,
         estado: 'activa',
+        tipo: sel.tipo,
+        personalId: sel.tipo === 'personal' ? sel.personalId : null,
+        personas: sel.tipo === 'personal' ? sel.personas : null,
       },
     })
 
@@ -215,7 +224,97 @@ export async function aprobarTransaccion(
       transaccionId,
       creadoEn: now,
     })
+
+    selAprobada = sel
+    usuarioIdAprobado = t.usuarioId
+    fechaVencimientoNueva = fechaVencimiento
   })
+
+  // Renovación de clase personalizada: si el alumno ya tenía una franja
+  // ACEPTADA, extender las clases generadas hasta la nueva fecha de
+  // vencimiento — sin esto, un plan personal renovado se queda sin
+  // clases futuras pese a que el alumno ya pagó. Deliberadamente NO va
+  // dentro de la transacción de arriba (el SDK de cliente no permite
+  // queries dentro de una transacción, solo lecturas por referencia) y
+  // es best-effort: si falla, la aprobación del pago YA se hizo y no se
+  // revierte — el alumno no puede perder su plan por un choque de
+  // agenda que hay que resolver a mano.
+  if (selAprobada?.tipo === 'personal') {
+    extenderClasesPersonalizadas(usuarioIdAprobado, fechaVencimientoNueva).catch((err) => {
+      console.error('[aprobarTransaccion] no se pudo extender clases personalizadas', err)
+    })
+  }
+}
+
+async function extenderClasesPersonalizadas(alumnoId: string, hastaTs: number): Promise<void> {
+  const [{ db }, { collection, query, where, orderBy, limit, getDocs, writeBatch, doc }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  const { ocurrenciasSemanales } = await import('./recurrencia')
+
+  const solSnap = await getDocs(
+    query(
+      collection(db, 'solicitudes_personalizadas'),
+      where('alumnoId', '==', alumnoId),
+      where('estado', '==', 'aceptada'),
+      orderBy('respondidoEn', 'desc'),
+      limit(1),
+    ),
+  )
+  if (solSnap.empty) return
+  const solRef = solSnap.docs[0].ref
+  const sol = solSnap.docs[0].data()
+
+  const desde = new Date(Math.max(Date.now(), sol.rangoGeneradoHasta ?? 0))
+  if (desde.getTime() >= hastaTs) return
+
+  // Anti-choque contra clases reales del profesor en el rango nuevo
+  // (grupales o personalizadas de otros alumnos).
+  const clasesSnap = await getDocs(
+    query(
+      collection(db, 'clases'),
+      where('instructor_id', '==', sol.profesorId),
+      where('fecha_hora_inicio', '>=', desde.getTime()),
+      where('fecha_hora_inicio', '<', hastaTs),
+    ),
+  )
+  const ocupadas = clasesSnap.docs
+    .map((d) => d.data())
+    .filter((c) => c.estado !== 'cancelada')
+    .map((c) => new Date(c.fecha_hora_inicio).getDay())
+  if (ocupadas.includes(sol.dow)) {
+    console.error('[extenderClasesPersonalizadas] choque de horario al renovar, no se generaron clases', { alumnoId, solId: solRef.id })
+    return
+  }
+
+  const ocurrencias = ocurrenciasSemanales(sol.dow, sol.horaInicio, sol.horaFin, desde, hastaTs)
+  if (ocurrencias.length === 0) return
+
+  const batch = writeBatch(db)
+  const nuevosIds: string[] = []
+  for (const oc of ocurrencias) {
+    const claseRef = doc(collection(db, 'clases'))
+    batch.set(claseRef, {
+      claseId: claseRef.id,
+      catalogo_codigo: 'personalizada',
+      nombre_clase: 'Clase personalizada',
+      instructor_id: sol.profesorId,
+      sede: '',
+      fecha_hora_inicio: oc.inicio,
+      fecha_hora_fin: oc.fin,
+      cupo_maximo: sol.personas ?? 1,
+      estudiantes_inscritos: [alumnoId],
+      estado: 'programada',
+      creadoEn: Date.now(),
+      actualizadoEn: Date.now(),
+    })
+    nuevosIds.push(claseRef.id)
+  }
+  batch.update(solRef, {
+    clasesGeneradas: [...(sol.clasesGeneradas ?? []), ...nuevosIds],
+    rangoGeneradoHasta: hastaTs,
+  })
+  await batch.commit()
 }
 
 export async function rechazarTransaccion(

@@ -24,6 +24,10 @@ rules_version = '2';
 // clases/{id}
 //   instructor_id: string, estudiantes_inscritos: [uid], plan: string[] ...
 //
+// solicitudes_personalizadas/{id}  — clases personalizadas (1-a-1 etc.)
+//   alumnoId: string, profesorId: string, dow: number,
+//   horaInicio/horaFin: string, estado: string ...
+//
 // asistencias/{id}
 //   claseId: string, usuarioId: string, registradoPor: string, asistio: bool
 //
@@ -103,9 +107,22 @@ service cloud.firestore {
       allow update: if isAdmin()
         || (isOwner(uid)
             && !request.resource.data.diff(resource.data).affectedKeys()
-                .hasAny(['rol', 'activo', 'suscripcionActiva']));
+                .hasAny(['rol', 'activo', 'suscripcionActiva'])
+            && disponibilidadValida());
 
       allow delete: if isAdmin();
+    }
+
+    // Validación de forma de Usuario.disponibilidadPersonal (franjas para
+    // clases personalizadas) — el profesor la edita directo desde el
+    // cliente, así que solo se valida que sea una lista razonable; el
+    // detalle de cada franja (dow/horaInicio/horaFin) lo valida la UI y,
+    // de forma autoritativa, las API routes de /api/personalizadas/* que
+    // la leen (un profesor mandando franjas mal formadas solo rompe su
+    // propia UI, no escala privilegios).
+    function disponibilidadValida() {
+      let d = request.resource.data.get('disponibilidadPersonal', []);
+      return d is list && d.size() <= 20;
     }
 
     // ── catalogo ────────────────────────────────────────────
@@ -170,6 +187,26 @@ service cloud.firestore {
             && resource.data.estado == 'pendiente'
             && request.resource.data.diff(resource.data).affectedKeys()
                .hasOnly(['comprobante_url']));
+      allow delete: if isAdmin();
+    }
+
+    // ── solicitudes_personalizadas ──────────────────────────
+    // Flujo de clases personalizadas (1-a-1/pareja/familia/reducido):
+    // disponibilidad del profesor → solicitud del alumno → aceptar/
+    // rechazar. Toda escritura mutante pasa por Admin SDK (rutas
+    // /api/personalizadas/*) porque aceptar necesita re-validar
+    // disponibilidad + chocar contra `clases` real de forma atómica,
+    // algo que las reglas no pueden hacer — ni siquiera el dueño
+    // escribe directo, a diferencia de `transacciones` (que sí deja
+    // al estudiante tocar comprobante_url).
+
+    match /solicitudes_personalizadas/{solId} {
+      allow read: if isAdmin()
+        || (isAuthenticated() && resource.data.alumnoId == request.auth.uid)
+        || (isAuthenticated() && resource.data.profesorId == request.auth.uid);
+
+      allow create: if false;
+      allow update: if false;
       allow delete: if isAdmin();
     }
 

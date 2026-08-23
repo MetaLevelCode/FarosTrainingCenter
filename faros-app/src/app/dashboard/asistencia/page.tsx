@@ -15,6 +15,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button, Spinner } from '@/components/ui'
 import { getFirebase } from '@/lib/firebase'
+import { SolicitudPersonalizada } from '@/components/dashboard/SolicitudPersonalizada'
 import type { Clase } from '@/lib/types'
 
 const EASE = [0.22, 1, 0.36, 1] as const
@@ -361,7 +362,14 @@ export default function AsistenciaPage() {
           </div>
         </Reveal>
 
-        {/* ── Clases disponibles ── */}
+        {/* ── Clases disponibles (grupal) / Clase personalizada ──
+            Un plan 'personal' no navega un pool público de clases — el
+            horario se pacta con el profesor (ver SolicitudPersonalizada). */}
+        {susc?.tipo === 'personal' ? (
+          <Reveal delay={0.22}>
+            <SolicitudPersonalizada />
+          </Reveal>
+        ) : (
         <Reveal delay={0.22}>
           <div>
             <h3 className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight mb-5">
@@ -429,6 +437,7 @@ export default function AsistenciaPage() {
             )}
           </div>
         </Reveal>
+        )}
 
         {/* ── Historial de asistencias ── */}
         <Reveal delay={0.28}>

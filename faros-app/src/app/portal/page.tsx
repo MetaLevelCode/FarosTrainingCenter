@@ -16,6 +16,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { getClasesProfesor } from '@/lib/firestore'
 import type { Clase } from '@/lib/types'
 import { CalendarioEntrenador } from '@/components/portal/CalendarioEntrenador'
+import { SolicitudesPendientes } from '@/components/portal/SolicitudesPendientes'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -84,6 +85,11 @@ export default function PortalPage() {
               </div>
             </Card>
           </section>
+        </Reveal>
+
+        {/* ── Solicitudes de clase personalizada pendientes ── */}
+        <Reveal delay={0.08}>
+          <SolicitudesPendientes />
         </Reveal>
 
         {/* ── Calendario (plan de clase + asistencia por día) ── */}

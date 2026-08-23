@@ -13,8 +13,45 @@ export interface SuscripcionActiva {
   planId: string
   nombrePlan: string
   sesionesRestantes: number
+  sesionesCompradas?: number   // se guarda en runtime desde aprobarTransaccion(); faltaba en el tipo
   fechaVencimiento: number
   estado: 'activa' | 'vencida'
+  // Denormalizado desde SeleccionPlan al aprobar — permite saber si el plan
+  // es personalizado sin un fetch aparte a suscripciones/{id}.
+  tipo?: import('./planes').TipoPlan
+  personalId?: string | null
+  personas?: number
+}
+
+// ── Clases personalizadas (1-a-1, pareja, familia, grupo reducido) ──
+// El profesor declara franjas semanales FIJAS (no cambian semana a
+// semana); el alumno con plan `personal` activo elige una y manda una
+// solicitud; el profesor acepta o rechaza. Al aceptar se generan las
+// Clase reales (ver src/lib/recurrencia.ts + /api/personalizadas/*).
+
+export interface FranjaDisponibilidad {
+  dow: number         // 0=domingo … 6=sábado
+  horaInicio: string  // 'HH:mm', 24h
+  horaFin: string
+}
+
+export interface SolicitudPersonalizada {
+  id: string
+  solicitudId: string
+  alumnoId: string
+  nombreAlumno: string   // denormalizado al crear — evita N+1 reads en la bandeja del profesor
+  profesorId: string
+  dow: number
+  horaInicio: string
+  horaFin: string
+  personas: number
+  estado: 'pendiente' | 'aceptada' | 'rechazada' | 'cancelada'
+  mensaje?: string | null
+  motivoRechazo?: string | null
+  creadoEn: number
+  respondidoEn?: number | null
+  clasesGeneradas?: string[]
+  rangoGeneradoHasta?: number
 }
 
 export interface Estadisticas {
@@ -38,6 +75,7 @@ export interface Usuario {
   sede?: string
   // Profesores
   clasesDadas?: number
+  disponibilidadPersonal?: FranjaDisponibilidad[]  // franjas para clases personalizadas
   // Estudiantes
   nivel?: string
   dificultades?: string[]

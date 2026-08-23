@@ -80,6 +80,23 @@
         { "fieldPath": "activo", "order": "ASCENDING" },
         { "fieldPath": "orden", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "solicitudes_personalizadas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "profesorId", "order": "ASCENDING" },
+        { "fieldPath": "estado", "order": "ASCENDING" },
+        { "fieldPath": "creadoEn", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "solicitudes_personalizadas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "alumnoId", "order": "ASCENDING" },
+        { "fieldPath": "creadoEn", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

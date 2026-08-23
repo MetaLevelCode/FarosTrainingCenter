@@ -14,8 +14,138 @@ import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button } from '@/components/ui'
 import { AvatarFoto } from '@/components/shared/AvatarFoto'
 import { useAuth } from '@/contexts/AuthContext'
+import { getFirebase } from '@/lib/firebase'
+import type { FranjaDisponibilidad } from '@/lib/types'
 
 const EASE = [0.22, 1, 0.36, 1] as const
+
+const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
+
+function DisponibilidadPersonal() {
+  const { user, refreshUser } = useAuth()
+  const [franjas, setFranjas] = useState<FranjaDisponibilidad[]>(user?.disponibilidadPersonal ?? [])
+  const [nuevoDow, setNuevoDow] = useState(1)
+  const [nuevoInicio, setNuevoInicio] = useState('14:00')
+  const [nuevoFin, setNuevoFin] = useState('16:00')
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [guardado, setGuardado] = useState(false)
+
+  function agregarFranja() {
+    setError(null)
+    if (nuevoInicio >= nuevoFin) {
+      setError('La hora de inicio debe ser antes que la de fin.')
+      return
+    }
+    const yaExiste = franjas.some((f) => f.dow === nuevoDow && f.horaInicio < nuevoFin && nuevoInicio < f.horaFin)
+    if (yaExiste) {
+      setError('Esa franja se solapa con una que ya agregaste.')
+      return
+    }
+    setFranjas((prev) => [...prev, { dow: nuevoDow, horaInicio: nuevoInicio, horaFin: nuevoFin }]
+      .sort((a, b) => a.dow - b.dow || a.horaInicio.localeCompare(b.horaInicio)))
+    setGuardado(false)
+  }
+
+  function quitarFranja(i: number) {
+    setFranjas((prev) => prev.filter((_, idx) => idx !== i))
+    setGuardado(false)
+  }
+
+  async function guardar() {
+    if (!user) return
+    setGuardando(true)
+    setError(null)
+    try {
+      const [{ db }, { doc, updateDoc }] = await Promise.all([
+        getFirebase(), import('firebase/firestore'),
+      ])
+      await updateDoc(doc(db, 'usuarios', user.uid), { disponibilidadPersonal: franjas })
+      await refreshUser()
+      setGuardado(true)
+    } catch {
+      setError('No se pudo guardar. Intenta de nuevo.')
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <Card>
+      <h3 className="font-display text-lg font-extrabold text-white uppercase tracking-tight mb-1">
+        Disponibilidad para clases personalizadas
+      </h3>
+      <p className="text-sm text-[var(--color-on-surface-variant)]/60 mb-6">
+        Franjas semanales fijas en las que puedes dar clases 1-a-1, en pareja o grupo reducido.
+        Los alumnos con plan personalizado solo pueden solicitar dentro de estas franjas.
+      </p>
+
+      {franjas.length === 0 ? (
+        <p className="text-sm text-[var(--color-on-surface-variant)]/50 mb-6">
+          Todavía no tienes franjas declaradas.
+        </p>
+      ) : (
+        <div className="space-y-2 mb-6">
+          {franjas.map((f, i) => (
+            <div key={i} className="flex items-center justify-between gap-3 p-3 rounded-xl border border-white/5 bg-white/[0.03]">
+              <span className="text-sm text-white">
+                {DIAS[f.dow]} · {f.horaInicio} – {f.horaFin}
+              </span>
+              <button
+                onClick={() => quitarFranja(i)}
+                aria-label="Quitar franja"
+                className="w-9 h-9 rounded-lg text-[var(--color-on-surface-variant)]/60 hover:text-[var(--color-danger-crimson)] hover:bg-white/5 flex items-center justify-center transition-colors duration-200"
+              >
+                <span className="material-symbols-outlined text-[18px]">close</span>
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-end gap-3 mb-4">
+        <div className="flex flex-col gap-1.5">
+          <label className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">Día</label>
+          <select
+            value={nuevoDow}
+            onChange={(e) => setNuevoDow(Number(e.target.value))}
+            className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white"
+          >
+            {DIAS.map((d, i) => <option key={i} value={i}>{d}</option>)}
+          </select>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">Desde</label>
+          <input
+            type="time"
+            value={nuevoInicio}
+            onChange={(e) => setNuevoInicio(e.target.value)}
+            className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">Hasta</label>
+          <input
+            type="time"
+            value={nuevoFin}
+            onChange={(e) => setNuevoFin(e.target.value)}
+            className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white"
+          />
+        </div>
+        <Button variant="outline" size="sm" onClick={agregarFranja}>Agregar</Button>
+      </div>
+
+      {error && <p className="text-sm text-[var(--color-danger-crimson)] mb-4">{error}</p>}
+
+      <div className="flex items-center gap-3">
+        <Button size="md" loading={guardando} onClick={guardar}>
+          {guardando ? 'Guardando…' : 'Guardar disponibilidad'}
+        </Button>
+        {guardado && <span className="text-sm text-[var(--color-success-emerald)]">Guardado.</span>}
+      </div>
+    </Card>
+  )
+}
 
 function Reveal({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) {
   return (
@@ -124,6 +254,10 @@ export default function PerfilProfesorPage() {
             </Reveal>
           </div>
         </div>
+
+        <Reveal delay={0.18}>
+          <DisponibilidadPersonal />
+        </Reveal>
 
         <Reveal delay={0.24}>
           <Card>
