@@ -37,6 +37,9 @@ rules_version = '2';
 //
 // sugerencias/{id}   — write: owner; read: admin only
 //
+// cancelaciones/{id}  — write: Admin SDK only
+//   usuarioId: string, claseId: string, fecha_hora_clase: number, canceladoEn: number
+//
 // mensajes/{canalId}  — doc de control (Admin SDK only): participantes: [uid]
 //   mensajes/{canalId}/items/{id}
 //     autorId: string, autorNombre: string, autorRol: 'alumno'|'entrenador',
@@ -277,6 +280,17 @@ service cloud.firestore {
     match /categorias/{catId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
+    }
+
+    // ── cancelaciones ────────────────────────────────────────
+    // Rastro de cancelaciones a tiempo — solo lo escribe Admin SDK desde
+    // POST /api/clases/[claseId]/cancelar (ver 6.16 en PLAN_DE_CIERRE.md).
+    // Se usa para el comodín de la Racha semanal (lib/racha.ts).
+
+    match /cancelaciones/{id} {
+      allow read: if isAdmin()
+        || (isAuthenticated() && resource.data.usuarioId == request.auth.uid);
+      allow write: if false;
     }
 
     // ── mensajes ─────────────────────────────────────────────

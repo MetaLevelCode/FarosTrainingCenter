@@ -535,6 +535,57 @@ la query de `/cancelar` necesita un índice compuesto explícito en
 ningún `FAILED_PRECONDITION` en las pruebas de esta sesión, pero tampoco
 se probó ese caso puntual.
 
+### 6.16 — Gráfico de asistencia real + Racha semanal (2026-08-23)
+
+**`VELOCIDAD` (6.13) corregido.** El gráfico "Tendencia de velocidad" del
+dashboard del alumno era un array fijo (`S1..S6`, porcentajes inventados).
+Se reemplazó por "Asistencia semanal": cuenta asistencias reales
+(`asistio: true`) de las últimas 6 semanas desde la colección
+`asistencias`, mismo patrón de query que ya usa `dashboard/asistencia`
+(sin filtro extra que obligara a un índice compuesto nuevo).
+
+**Feature nueva: Racha semanal.** Decisión de producto acordada con el
+usuario tras evaluar 3 granularidades (por día, por sesión, por semana):
+- *Por día* se descartó — las clases son 1-3x/semana, no diarias, así que
+  una racha diaria se rompería casi siempre.
+- *Por sesión* (estilo Duolingo) se descartó por frágil — una sola falta
+  real resetea todo, y en un centro de entrenamiento eso castiga de más.
+- **Semanal**, con comodín, es lo implementado: sube +1 por cada semana
+  calendario (lunes–domingo) con al menos una asistencia real. Una semana
+  sin asistencia NO rompe la racha (se "pausa") si el alumno no tenía
+  ninguna clase programada esa semana, o si canceló su clase con
+  anticipación. Solo se rompe a 0 si tenía clase, no la canceló, y no fue.
+  La semana en curso nunca cuenta en contra (todavía no terminó).
+
+**Por qué hizo falta una colección nueva (`cancelaciones`).** Cancelar
+una clase hace `arrayRemove(uid)` de `estudiantes_inscritos` — no deja
+ningún rastro de que el alumno estuvo ahí. Sin un registro aparte, no hay
+forma de distinguir después "canceló a tiempo" (comodín válido) de "nunca
+se inscribió a nada esa semana" (también comodín, pero por otra razón) ni
+de "faltó sin avisar" (rompe la racha) — los tres casos se ven idénticos
+una vez borrado. Se agregó `cancelaciones/{id}` (`usuarioId`, `claseId`,
+`fecha_hora_clase`, `canceladoEn`), escrita por Admin SDK dentro de la
+misma transacción de `/api/clases/[claseId]/cancelar` — llegar a esa
+escritura ya implica que pasó la validación de la ventana de 2h, así que
+toda cancelación registrada ahí es, por definición, a tiempo.
+
+**Cálculo:** función pura `calcularRacha()` en `lib/racha.ts` (fácil de
+testear, sin dependencias de Firestore) — recibe asistencias + clases
+históricas del alumno (`estudiantes_inscritos array-contains uid`) +
+cancelaciones, y recorre semana por semana hacia atrás desde hoy hasta
+encontrar el corte. Se calcula al vuelo en el dashboard (no se persiste
+en el doc de usuario).
+
+**Fuera de alcance a propósito:** no se muestra en el ranking de
+compañeros — calcular la racha de cada uno en el cliente implicaría 3
+queries × N compañeros, caro y lento. Extenderlo ahí requeriría
+persistir la racha en `estadisticas` del usuario (actualizada
+incrementalmente desde `registrarAsistencia`/`cancelar`, como ya se hace
+con `tasaAsistencia`) en vez de recalcularla al vuelo — trabajo aparte,
+no bloqueante. Tampoco hay backfill: cancelaciones de ANTES de este
+cambio no generan comodín (mismo límite ya aceptado con el backfill de
+mensajería en 6.14).
+
 ---
 
 ## 7. Pendientes actuales (post-auditoría 2026-08-21)

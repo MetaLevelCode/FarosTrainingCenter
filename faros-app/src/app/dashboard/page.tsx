@@ -21,6 +21,7 @@ import type { Transaccion, Clase } from '@/lib/types'
 import { Semanario } from '@/components/dashboard/Semanario'
 import { MensajesPreview } from '@/components/dashboard/MensajesPreview'
 import { faseDeSuscripcion, cuposDisponibles, parseVencimiento } from '@/lib/matricula'
+import { calcularRacha } from '@/lib/racha'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -75,6 +76,7 @@ export default function DashboardPage() {
   const [diasSemana, setDiasSemana] = useState<number[]>([])
   const [horaSemana, setHoraSemana] = useState<string>('6:00 PM')
   const [asistenciaSemanal, setAsistenciaSemanal] = useState<{ semana: string; count: number }[]>([])
+  const [racha, setRacha] = useState(0)
 
   const susc = user?.suscripcionActiva
   // tasaAsistencia se guarda como fracción (0-1) — a porcentaje para mostrar.
@@ -182,6 +184,8 @@ export default function DashboardPage() {
   // gráfico de asistencia real: mismo patrón de query que ya usa
   // dashboard/asistencia (usuarioId + orderBy fecha_registro, sin filtro
   // extra por `asistio` para no necesitar un índice compuesto nuevo).
+  // De paso, con esos mismos datos + clases históricas + cancelaciones a
+  // tiempo, se calcula la Racha semanal (ver lib/racha.ts).
   useEffect(() => {
     if (!user?.uid) return
     ;(async () => {
@@ -189,16 +193,32 @@ export default function DashboardPage() {
         const [{ db }, { collection, query, where, orderBy, limit, getDocs }] = await Promise.all([
           getFirebase(), import('firebase/firestore'),
         ])
-        const snap = await getDocs(
-          query(
+
+        const [asistSnap, clasesSnap, cancelSnap] = await Promise.all([
+          getDocs(query(
             collection(db, 'asistencias'),
             where('usuarioId', '==', user.uid),
             orderBy('fecha_registro', 'desc'),
             limit(60),
-          ),
-        )
-        const registros = snap.docs.map((d) => d.data() as { asistio: boolean; fecha_registro: number })
-        setAsistenciaSemanal(asistenciasPorSemana(registros))
+          )),
+          getDocs(query(
+            collection(db, 'clases'),
+            where('estudiantes_inscritos', 'array-contains', user.uid),
+            where('estado', 'in', ['programada', 'en_curso', 'finalizada']),
+          )),
+          getDocs(query(
+            collection(db, 'cancelaciones'),
+            where('usuarioId', '==', user.uid),
+            limit(60),
+          )),
+        ])
+
+        const asistencias = asistSnap.docs.map((d) => d.data() as { asistio: boolean; fecha_registro: number })
+        setAsistenciaSemanal(asistenciasPorSemana(asistencias))
+
+        const clasesHistoricas = clasesSnap.docs.map((d) => d.data() as { fecha_hora_inicio: number })
+        const cancelaciones = cancelSnap.docs.map((d) => d.data() as { fecha_hora_clase: number })
+        setRacha(calcularRacha({ asistencias, clasesHistoricas, cancelaciones }))
       } catch (err) { console.error(err) }
     })()
   }, [user?.uid])
@@ -387,7 +407,14 @@ export default function DashboardPage() {
               <Card padding="lg">
                 <div className="flex justify-between items-center mb-10">
                   <h3 className="label-caps text-[var(--color-on-surface-variant)]/60">Asistencia semanal</h3>
-                  <span className="label-caps text-[10px] text-[var(--color-primary-fixed)]/80">Últimas 6 semanas</span>
+                  <div className="flex items-center gap-3">
+                    {racha > 0 && (
+                      <span className="label-caps text-[10px] text-white flex items-center gap-1" title="Semanas seguidas con al menos una asistencia">
+                        🔥 {racha} {racha === 1 ? 'semana' : 'semanas'}
+                      </span>
+                    )}
+                    <span className="label-caps text-[10px] text-[var(--color-primary-fixed)]/80">Últimas 6 semanas</span>
+                  </div>
                 </div>
                 {asistenciaSemanal.every((s) => s.count === 0) ? (
                   <p className="text-sm text-[var(--color-on-surface-variant)]/50 py-14 text-center">

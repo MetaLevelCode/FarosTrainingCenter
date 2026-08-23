@@ -82,6 +82,20 @@ export async function POST(
         actualizadoEn: Date.now(),
       })
 
+      // Rastro de la cancelación — para la Racha semanal (lib/racha.ts):
+      // sin esto, una vez removido de estudiantes_inscritos no hay forma
+      // de distinguir "canceló a tiempo" de "nunca se inscribió esa
+      // semana", y una cancelación anticipada legítima rompería la racha
+      // igual que una falta real. Llegar hasta aquí YA implica que pasó
+      // la validación de la ventana de 2h de arriba, así que toda
+      // escritura aquí es, por definición, una cancelación a tiempo.
+      tx.set(db.collection('cancelaciones').doc(), {
+        usuarioId: uid,
+        claseId,
+        fecha_hora_clase: clase.fecha_hora_inicio,
+        canceladoEn: Date.now(),
+      })
+
       if (!sigueEnOtraSesion) {
         // set+merge, no update: el doc de canal puede no existir todavía
         // (ej. si nadie se inscribió a este grupo desde que existe
