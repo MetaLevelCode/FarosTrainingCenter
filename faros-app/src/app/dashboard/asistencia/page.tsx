@@ -11,6 +11,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
+import { useAuth } from '@/contexts/AuthContext'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button, Spinner } from '@/components/ui'
 import { getFirebase } from '@/lib/firebase'
@@ -44,6 +45,7 @@ async function getIdToken(): Promise<string | null> {
 
 export default function AsistenciaPage() {
   const { authorized, loading, user } = useRoleGuard(['estudiante'])
+  const { refreshUser } = useAuth()
   const [clasesInscritas, setClasesInscritas] = useState<Clase[]>([])
   const [clasesDisponibles, setClasesDisponibles] = useState<Clase[]>([])
   const [historial, setHistorial] = useState<HistorialItem[]>([])
@@ -104,16 +106,27 @@ export default function AsistenciaPage() {
         const inscritas = inscritasSnap.docs.map((d) => ({ id: d.id, ...d.data() }) as Clase)
         setClasesInscritas(inscritas)
 
-        // Clases disponibles: programadas en el futuro, sin inscribir aún
+        // Clases disponibles: de SU sede, programadas en el futuro, sin
+        // inscribir aún — antes no filtraba por sede y un alumno de una
+        // sede veía (y podía inscribirse a) clases de otra.
         const inscritasIds = new Set(inscritas.map((c) => c.id))
         const disponiblesSnap = await getDocs(
-          query(
-            collection(db, 'clases'),
-            where('estado', '==', 'programada'),
-            where('fecha_hora_inicio', '>', ahora),
-            orderBy('fecha_hora_inicio', 'asc'),
-            limit(12),
-          ),
+          user.sede
+            ? query(
+                collection(db, 'clases'),
+                where('sede', '==', user.sede),
+                where('estado', '==', 'programada'),
+                where('fecha_hora_inicio', '>', ahora),
+                orderBy('fecha_hora_inicio', 'asc'),
+                limit(12),
+              )
+            : query(
+                collection(db, 'clases'),
+                where('estado', '==', 'programada'),
+                where('fecha_hora_inicio', '>', ahora),
+                orderBy('fecha_hora_inicio', 'asc'),
+                limit(12),
+              ),
         )
         setClasesDisponibles(
           disponiblesSnap.docs
@@ -154,6 +167,10 @@ export default function AsistenciaPage() {
         }
         return prev.filter((c) => c.id !== claseId)
       })
+      // El API route descuenta sesionesRestantes en el servidor — sin esto,
+      // el contador de sesiones se veía desactualizado hasta el próximo
+      // login/recarga (reportado en QA manual).
+      refreshUser()
     } catch (err: any) {
       setErrorAccion(err.message ?? 'No se pudo inscribir. Intenta de nuevo.')
     } finally {
@@ -189,6 +206,7 @@ export default function AsistenciaPage() {
         }
         return prev.filter((c) => c.id !== claseId)
       })
+      refreshUser()
     } catch (err: any) {
       setErrorAccion(err.message ?? 'No se pudo cancelar. Intenta de nuevo.')
     } finally {
@@ -276,8 +294,75 @@ export default function AsistenciaPage() {
           ))}
         </div>
 
-        {/* ── Clases disponibles ── */}
+        {/* ── Mis clases (inscritas) — primero: confirmar que una inscripción
+            funcionó no debería exigir bajar toda la lista de disponibles
+            (reportado en QA manual). ── */}
         <Reveal delay={0.16}>
+          <div>
+            <h3 className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight mb-5">
+              Mis clases
+            </h3>
+            {cargando ? (
+              <div className="flex justify-center py-6"><Spinner size="md" /></div>
+            ) : clasesInscritas.length === 0 ? (
+              <Card>
+                <p className="text-sm text-[var(--color-on-surface-variant)]/60">
+                  No tienes clases próximas. Inscríbete en alguna de las disponibles abajo.
+                </p>
+              </Card>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {clasesInscritas.map((c) => {
+                  const inicio = new Date(c.fecha_hora_inicio)
+                  const dia = inicio.toLocaleDateString('es-CO', { weekday: 'long', day: '2-digit', month: 'short' })
+                  const hora = inicio.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
+                  const puedeCancelar = c.estado === 'programada' && (c.fecha_hora_inicio - Date.now()) >= VENTANA_CANCELACION_MS
+                  const isLoading = cancelando === c.id
+                  return (
+                    <Card key={c.id}>
+                      <div className="flex items-start justify-between gap-3 mb-4">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Badge variant={c.estado === 'en_curso' ? 'primary' : 'success'}>
+                              {c.estado === 'en_curso' ? 'En curso' : 'Reservada'}
+                            </Badge>
+                          </div>
+                          <h4 className="font-display text-base font-extrabold text-white uppercase tracking-tight truncate">
+                            {c.nombre_clase}
+                          </h4>
+                          <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mt-1 capitalize truncate">
+                            {dia} · {hora}
+                          </p>
+                          {c.sede && (
+                            <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/40 mt-0.5 truncate">
+                              {c.sede}
+                            </p>
+                          )}
+                        </div>
+                        <span className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/40 shrink-0 text-right">
+                          {c.estudiantes_inscritos?.length ?? 0} / {c.cupo_maximo}
+                        </span>
+                      </div>
+                      <Button
+                        variant={puedeCancelar ? 'outline' : 'ghost'}
+                        size="sm"
+                        fullWidth
+                        disabled={!puedeCancelar || !!cancelando}
+                        loading={isLoading}
+                        onClick={() => cancelarInscripcion(c.id)}
+                      >
+                        {isLoading ? '' : puedeCancelar ? 'Cancelar inscripción' : 'No cancelable (< 2 h)'}
+                      </Button>
+                    </Card>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </Reveal>
+
+        {/* ── Clases disponibles ── */}
+        <Reveal delay={0.22}>
           <div>
             <h3 className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight mb-5">
               Clases disponibles
@@ -336,71 +421,6 @@ export default function AsistenciaPage() {
                         onClick={() => inscribirse(c.id)}
                       >
                         {isLoading ? '' : sinCupo ? 'Sin cupo' : 'Inscribirse'}
-                      </Button>
-                    </Card>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        </Reveal>
-
-        {/* ── Mis clases (inscritas) ── */}
-        <Reveal delay={0.22}>
-          <div>
-            <h3 className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight mb-5">
-              Mis clases
-            </h3>
-            {cargando ? (
-              <div className="flex justify-center py-6"><Spinner size="md" /></div>
-            ) : clasesInscritas.length === 0 ? (
-              <Card>
-                <p className="text-sm text-[var(--color-on-surface-variant)]/60">
-                  No tienes clases próximas. Inscríbete en alguna de las disponibles arriba.
-                </p>
-              </Card>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {clasesInscritas.map((c) => {
-                  const inicio = new Date(c.fecha_hora_inicio)
-                  const dia = inicio.toLocaleDateString('es-CO', { weekday: 'long', day: '2-digit', month: 'short' })
-                  const hora = inicio.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
-                  const puedeCancelar = c.estado === 'programada' && (c.fecha_hora_inicio - Date.now()) >= VENTANA_CANCELACION_MS
-                  const isLoading = cancelando === c.id
-                  return (
-                    <Card key={c.id}>
-                      <div className="flex items-start justify-between gap-3 mb-4">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 mb-2">
-                            <Badge variant={c.estado === 'en_curso' ? 'primary' : 'success'}>
-                              {c.estado === 'en_curso' ? 'En curso' : 'Reservada'}
-                            </Badge>
-                          </div>
-                          <h4 className="font-display text-base font-extrabold text-white uppercase tracking-tight truncate">
-                            {c.nombre_clase}
-                          </h4>
-                          <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mt-1 capitalize truncate">
-                            {dia} · {hora}
-                          </p>
-                          {c.sede && (
-                            <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/40 mt-0.5 truncate">
-                              {c.sede}
-                            </p>
-                          )}
-                        </div>
-                        <span className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/40 shrink-0 text-right">
-                          {c.estudiantes_inscritos?.length ?? 0} / {c.cupo_maximo}
-                        </span>
-                      </div>
-                      <Button
-                        variant={puedeCancelar ? 'outline' : 'ghost'}
-                        size="sm"
-                        fullWidth
-                        disabled={!puedeCancelar || !!cancelando}
-                        loading={isLoading}
-                        onClick={() => cancelarInscripcion(c.id)}
-                      >
-                        {isLoading ? '' : puedeCancelar ? 'Cancelar inscripción' : 'No cancelable (< 2 h)'}
                       </Button>
                     </Card>
                   )

@@ -62,6 +62,9 @@ export async function POST(
         return { error: 'No tienes sesiones disponibles en tu plan actual', status: 403 }
       }
 
+      if (usu.sede && clase.sede && usu.sede !== clase.sede) {
+        return { error: 'Esta clase es de otra sede', status: 403 }
+      }
       if (clase.estado !== 'programada') return { error: 'Esta clase ya no está disponible', status: 409 }
       if (clase.fecha_hora_inicio <= Date.now()) return { error: 'Esta clase ya comenzó', status: 409 }
 

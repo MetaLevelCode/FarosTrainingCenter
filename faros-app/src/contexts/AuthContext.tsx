@@ -64,9 +64,39 @@ interface AuthContextValue {
   signUp: (email: string, password: string, nombres: string, apellidos: string, cedula: string, rol: UserRole, extra?: { telefono?: string; telefonoEmergencia?: string; eps?: string; sede?: string; dificultades?: string[] }) => Promise<{ ok: boolean; error?: string }>
   signOut: () => Promise<void>
   clearError: () => void
+  /** Vuelve a leer usuarios/{uid} y actualiza `user` — hace falta llamarla a
+   *  mano después de acciones que cambian datos del propio perfil desde el
+   *  servidor (ej. sesionesRestantes al inscribirse/cancelar una clase) y
+   *  que si no, no se reflejan hasta el próximo login/recarga. */
+  refreshUser: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
+
+// Compartida entre la restauración de sesión y refreshUser() — un solo
+// lugar que arma el objeto Usuario a partir del doc de Firestore.
+function construirUsuario(fbUser: { uid: string; email: string | null }, data: Record<string, any>): Usuario {
+  return {
+    uid: fbUser.uid,
+    nombres: data.nombres ?? '',
+    apellidos: data.apellidos ?? '',
+    cedula: data.cedula ?? '',
+    email: fbUser.email ?? data.email ?? '',
+    rol: (data.rol as UserRole) ?? 'estudiante',
+    telefono: data.telefono,
+    telefonoEmergencia: data.telefonoEmergencia,
+    eps: data.eps,
+    foto_perfil: data.foto_perfil,
+    sede: data.sede,
+    clasesDadas: data.clasesDadas,
+    nivel: data.nivel,
+    dificultades: data.dificultades,
+    fecha_registro: data.fecha_registro,
+    estadisticas: data.estadisticas,
+    suscripcionActiva: data.suscripcionActiva ?? null,
+    activo: data.activo !== false,
+  } as Usuario
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Usuario | null>(null)
@@ -108,26 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const snap = await getDoc(doc(db, 'usuarios', fbUser.uid))
           const data = snap.data()
           if (data) {
-            const usuario = {
-              uid: fbUser.uid,
-              nombres: data.nombres ?? '',
-              apellidos: data.apellidos ?? '',
-              cedula: data.cedula ?? '',
-              email: fbUser.email ?? data.email ?? '',
-              rol: (data.rol as UserRole) ?? 'estudiante',
-              telefono: data.telefono,
-              telefonoEmergencia: data.telefonoEmergencia,
-              eps: data.eps,
-              foto_perfil: data.foto_perfil,
-              sede: data.sede,
-              clasesDadas: data.clasesDadas,
-              nivel: data.nivel,
-              dificultades: data.dificultades,
-              fecha_registro: data.fecha_registro,
-              estadisticas: data.estadisticas,
-              suscripcionActiva: data.suscripcionActiva ?? null,
-              activo: data.activo !== false,
-            } as Usuario
+            const usuario = construirUsuario(fbUser, data)
             setUser(usuario)
             setOffline(false)
             guardarCache(cacheKey, usuario)
@@ -262,10 +273,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const clearError = useCallback(() => setError(null), [])
 
+  // ── Refresh manual ───────────────────────────────────────
+  const refreshUser = useCallback(async () => {
+    if (MOCK_MODE) return
+    try {
+      const [{ auth, db }, { doc, getDoc }] = await Promise.all([
+        getFirebase(), import('firebase/firestore'),
+      ])
+      const fbUser = auth.currentUser
+      if (!fbUser) return
+      const snap = await getDoc(doc(db, 'usuarios', fbUser.uid))
+      const data = snap.data()
+      if (!data) return
+      const usuario = construirUsuario(fbUser, data)
+      setUser(usuario)
+      setOffline(false)
+      guardarCache(`usuario-${fbUser.uid}`, usuario)
+    } catch {}
+  }, [])
+
   return (
     <AuthContext.Provider value={{
       user, loading, error, isMockMode: MOCK_MODE, offline,
-      signIn, signUp, signOut, clearError,
+      signIn, signUp, signOut, clearError, refreshUser,
     }}>
       {children}
     </AuthContext.Provider>

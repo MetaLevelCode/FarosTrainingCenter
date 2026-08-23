@@ -11,13 +11,13 @@ import Link from 'next/link'
 import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
-import { Card, Badge, Button } from '@/components/ui'
+import { Card, Badge, Button, Spinner } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { getFirebase } from '@/lib/firebase'
 import { getTransaccionesUsuario } from '@/lib/firestore'
 import { ScrollVideoPanel } from '@/components/shared/ScrollVideoPanel'
 import { BrandImageStrip } from '@/components/shared/BrandImageStrip'
-import type { Transaccion } from '@/lib/types'
+import type { Transaccion, Clase } from '@/lib/types'
 import { Semanario } from '@/components/dashboard/Semanario'
 import { MensajesAlumno } from '@/components/dashboard/MensajesAlumno'
 import { faseDeSuscripcion, cuposDisponibles, parseVencimiento } from '@/lib/matricula'
@@ -50,6 +50,10 @@ export default function DashboardPage() {
   const [companeros, setCompaneros] = useState<Companero[]>([])
   const [txPendiente, setTxPendiente] = useState<Transaccion | null>(null)
   const [txCargada, setTxCargada] = useState(false)
+  const [claseHoy, setClaseHoy] = useState<Clase | null>(null)
+  const [claseHoyCargada, setClaseHoyCargada] = useState(false)
+  const [diasSemana, setDiasSemana] = useState<number[]>([])
+  const [horaSemana, setHoraSemana] = useState<string>('6:00 PM')
 
   const susc = user?.suscripcionActiva
   // tasaAsistencia se guarda como fracción (0-1) — a porcentaje para mostrar.
@@ -74,6 +78,53 @@ export default function DashboardPage() {
       })
       .catch(() => {})
       .finally(() => setTxCargada(true))
+  }, [user?.uid])
+
+  // "Clase del Día" (protocolo de sesión, notas del coach) vivía 100%
+  // hardcodeada, sin ninguna relación con las clases reales del alumno
+  // (reportado en QA manual) — se busca su clase inscrita de hoy y se
+  // muestra el plan real que subió el profesor (o el aviso de que aún
+  // no lo sube), en vez de datos de ejemplo.
+  useEffect(() => {
+    if (!user?.uid) return
+    ;(async () => {
+      try {
+        const [{ db }, { collection, query, where, getDocs }] = await Promise.all([
+          getFirebase(), import('firebase/firestore'),
+        ])
+        const snap = await getDocs(
+          query(
+            collection(db, 'clases'),
+            where('estudiantes_inscritos', 'array-contains', user.uid),
+            where('estado', 'in', ['programada', 'en_curso']),
+          ),
+        )
+        const todas = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }) as Clase)
+          .sort((a, b) => a.fecha_hora_inicio - b.fecha_hora_inicio)
+
+        const hoy = new Date()
+        const inicioDia = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()).getTime()
+        const finDia = inicioDia + 24 * 60 * 60 * 1000
+        const deHoy = todas.filter((c) => c.fecha_hora_inicio >= inicioDia && c.fecha_hora_inicio < finDia)
+        setClaseHoy(deHoy[0] ?? null)
+
+        // "Tu semana" (Semanario) mostraba siempre los 6 días en gris —
+        // no recibía diasIniciales/horaInicial de ningún lado (reportado
+        // en QA manual). El plan del wizard solo guarda la FRECUENCIA
+        // (cuántos días/semana), no cuáles — así que se derivan de las
+        // clases en las que el alumno ya está inscrito de verdad.
+        const futuras = todas.filter((c) => c.fecha_hora_inicio > Date.now())
+        setDiasSemana([...new Set(futuras.map((c) => new Date(c.fecha_hora_inicio).getDay()))])
+        if (futuras[0]) {
+          setHoraSemana(new Date(futuras[0].fecha_hora_inicio).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' }))
+        }
+      } catch (err) {
+        console.error(err)
+      } finally {
+        setClaseHoyCargada(true)
+      }
+    })()
   }, [user?.uid])
 
   useEffect(() => {
@@ -201,6 +252,8 @@ export default function DashboardPage() {
               cupos={cuposDisponibles(susc)}
               nombrePlan={susc?.nombrePlan}
               proximoPago={vencimiento}
+              diasIniciales={diasSemana}
+              horaInicial={horaSemana}
             />
           </Reveal>
         )}
@@ -220,49 +273,66 @@ export default function DashboardPage() {
                 <h3 className="font-display text-headline-lg text-white mb-10 uppercase tracking-tighter">
                   Clase del Día
                 </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                  <div className="space-y-6">
-                    <p className="label-caps text-[var(--color-primary-fixed)] border-b border-[rgba(230,255,0,0.2)] pb-2 inline-block">
-                      Protocolo de sesión
-                    </p>
-                    <ul className="space-y-4">
-                      {[
-                        'Calentamiento: 400m libre ritmo mixto',
-                        'Series: 8 × 50m sprints (90% intensidad)',
-                        'Drills: 200m enfoque en patada',
-                      ].map((item, i) => (
-                        <li key={i} className="flex items-baseline gap-4 group">
-                          <span className="text-[12px] font-black text-[rgba(230,255,0,0.5)] group-hover:text-[var(--color-primary-fixed)] transition-colors">
-                            0{i + 1}
-                          </span>
-                          <span className="text-[var(--color-on-surface)]/70 group-hover:text-white transition-colors">
-                            {item}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                  <div className="bg-white/5 p-8 border border-white/5 rounded-2xl">
-                    <p className="label-caps text-[var(--color-on-surface-variant)] mb-4 text-[10px]">Notas del coach</p>
-                    <p className="text-[var(--color-on-surface)]/90 italic leading-relaxed">
-                      &ldquo;{firstName}, prioriza el codo alto en la recuperación. Objetivo &lt; 32s en los 50m.&rdquo;
-                    </p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-8 mt-12 pt-8 border-t border-white/5">
-                  {[
-                    { label: 'Ritmo objetivo', value: '1:24', unit: '/100m' },
-                    { label: 'Distancia', value: '1,800m', unit: '' },
-                    { label: 'Tiempo', value: '55 MIN', unit: '' },
-                  ].map((stat) => (
-                    <div key={stat.label}>
-                      <span className="block label-caps text-[var(--color-on-surface-variant)]/50 mb-2">{stat.label}</span>
-                      <span className="block font-display text-headline-md font-extrabold text-[var(--color-primary-fixed)] uppercase tracking-tighter">
-                        {stat.value}<span className="text-sm opacity-50">{stat.unit}</span>
+                {!claseHoyCargada ? (
+                  <div className="flex justify-center py-8"><Spinner size="md" /></div>
+                ) : !claseHoy ? (
+                  <p className="text-[var(--color-on-surface-variant)]/60">
+                    No tienes clase programada hoy.{' '}
+                    <Link href="/dashboard/asistencia" className="text-[var(--color-primary-fixed)] hover:underline">
+                      Inscríbete en una clase
+                    </Link>{' '}
+                    para verla acá.
+                  </p>
+                ) : (
+                  <>
+                    <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-8">
+                      <span className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight">
+                        {claseHoy.nombre_clase}
+                      </span>
+                      <span className="label-caps text-[var(--color-on-surface-variant)]/60 text-[11px]">
+                        {new Date(claseHoy.fecha_hora_inicio).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
+                        {' · '}{claseHoy.sede}
                       </span>
                     </div>
-                  ))}
-                </div>
+                    <div className="space-y-6">
+                      <p className="label-caps text-[var(--color-primary-fixed)] border-b border-[rgba(230,255,0,0.2)] pb-2 inline-block">
+                        Protocolo de sesión
+                      </p>
+                      {claseHoy.plan && claseHoy.plan.length > 0 ? (
+                        <ul className="space-y-4">
+                          {claseHoy.plan.map((item, i) => (
+                            <li key={i} className="flex items-baseline gap-4 group">
+                              <span className="text-[12px] font-black text-[rgba(230,255,0,0.5)] group-hover:text-[var(--color-primary-fixed)] transition-colors">
+                                0{i + 1}
+                              </span>
+                              <span className="text-[var(--color-on-surface)]/70 group-hover:text-white transition-colors">
+                                {item}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="text-sm text-[var(--color-on-surface-variant)]/50">
+                          Tu profesor todavía no subió el plan de esta sesión.
+                        </p>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-8 mt-12 pt-8 border-t border-white/5">
+                      <div>
+                        <span className="block label-caps text-[var(--color-on-surface-variant)]/50 mb-2">Cupo</span>
+                        <span className="block font-display text-headline-md font-extrabold text-[var(--color-primary-fixed)] uppercase tracking-tighter">
+                          {claseHoy.estudiantes_inscritos?.length ?? 0}<span className="text-sm opacity-50">/{claseHoy.cupo_maximo}</span>
+                        </span>
+                      </div>
+                      <div>
+                        <span className="block label-caps text-[var(--color-on-surface-variant)]/50 mb-2">Estado</span>
+                        <span className="block font-display text-headline-md font-extrabold text-[var(--color-primary-fixed)] uppercase tracking-tighter">
+                          {claseHoy.estado === 'en_curso' ? 'En curso' : 'Programada'}
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                )}
               </Card>
             </Reveal>
 
