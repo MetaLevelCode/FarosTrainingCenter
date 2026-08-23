@@ -270,12 +270,16 @@ async function extenderClasesPersonalizadas(alumnoId: string, hastaTs: number): 
 
   // Anti-choque contra clases reales del profesor en el rango nuevo
   // (grupales o personalizadas de otros alumnos).
+  // orderBy explícito para reutilizar el índice [instructor_id ASC,
+  // fecha_hora_inicio DESC] ya existente — sin esto Firestore exige un
+  // índice ASC nuevo (ver mismo fix en .../[id]/aceptar/route.ts).
   const clasesSnap = await getDocs(
     query(
       collection(db, 'clases'),
       where('instructor_id', '==', sol.profesorId),
       where('fecha_hora_inicio', '>=', desde.getTime()),
       where('fecha_hora_inicio', '<', hastaTs),
+      orderBy('fecha_hora_inicio', 'desc'),
     ),
   )
   const ocupadas = clasesSnap.docs

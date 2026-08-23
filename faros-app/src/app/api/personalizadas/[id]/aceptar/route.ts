@@ -89,10 +89,17 @@ export async function POST(
       // Anti-choque: cualquier Clase real del profesor (grupal o de otro
       // alumno personalizado) que caiga el mismo día de la semana y se
       // solape en horario con la franja pedida.
+      // orderBy explícito (aunque no se use el orden) para que reutilice
+      // el índice compuesto [instructor_id ASC, fecha_hora_inicio DESC]
+      // que ya existe para el calendario del profesor — sin esto, Firestore
+      // exige un índice ASC nuevo (la dirección implícita de un rango sin
+      // orderBy es siempre ascendente) y la transacción falla con
+      // FAILED_PRECONDITION.
       const clasesQuery = db.collection('clases')
         .where('instructor_id', '==', sol.profesorId)
         .where('fecha_hora_inicio', '>=', ahora)
         .where('fecha_hora_inicio', '<', hasta)
+        .orderBy('fecha_hora_inicio', 'desc')
       const clasesSnap = await tx.get(clasesQuery)
       const choque = clasesSnap.docs.some((d) => {
         const c = d.data()
