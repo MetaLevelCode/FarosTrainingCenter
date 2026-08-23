@@ -205,32 +205,36 @@ export default function ClasesPage() {
               return (
                 <Reveal key={c.id} delay={0.1 + idx * 0.04}>
                   <Card padding="none" className="overflow-hidden">
-                    {/* Cabecera clickeable */}
+                    {/* Cabecera clickeable — dos filas: la fecha/hora y el
+                        badge nunca dejan suficiente ancho al título/sede en
+                        una sola fila (se veía truncado a "T...", "ES..."
+                        en celular); separados, el título tiene todo el
+                        ancho de la tarjeta para sí solo. */}
                     <button
-                      className="w-full p-6 flex items-center justify-between gap-4 hover:bg-white/[0.02] transition-colors duration-200"
+                      className="w-full p-6 flex flex-col gap-3 text-left hover:bg-white/[0.02] transition-colors duration-200"
                       onClick={() => abrirClase(c.id)}
                     >
-                      <div className="flex items-center gap-4 min-w-0">
-                        <div className="shrink-0 text-left">
-                          <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50">
+                      <div className="flex items-center justify-between gap-4">
+                        <div className="flex items-baseline gap-2 min-w-0">
+                          <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 shrink-0">
                             {inicio.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }).toUpperCase()}
-                          </p>
-                          <p className="font-display text-xl font-black text-white">
+                          </span>
+                          <span className="font-display text-lg font-black text-white shrink-0">
                             {inicio.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
-                          </p>
+                          </span>
                         </div>
-                        <div className="min-w-0">
-                          <p className="font-display font-black text-white text-sm uppercase tracking-tight truncate">{c.nombre_clase}</p>
-                          <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mt-0.5 truncate">
-                            {c.sede} · {c.estudiantes_inscritos.length} inscritos
-                          </p>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <Badge variant={ESTADO_COLOR[c.estado] as any} className="whitespace-nowrap">{ESTADO_LABEL[c.estado]}</Badge>
+                          <span className="material-symbols-outlined text-white/40 text-[20px] transition-transform duration-300" style={{ transform: abierta ? 'rotate(180deg)' : 'none' }}>
+                            expand_more
+                          </span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 md:gap-3 shrink-0">
-                        <Badge variant={ESTADO_COLOR[c.estado] as any} className="whitespace-nowrap">{ESTADO_LABEL[c.estado]}</Badge>
-                        <span className="material-symbols-outlined text-white/40 text-[20px] transition-transform duration-300" style={{ transform: abierta ? 'rotate(180deg)' : 'none' }}>
-                          expand_more
-                        </span>
+                      <div className="min-w-0">
+                        <p className="font-display font-black text-white text-sm uppercase tracking-tight truncate">{c.nombre_clase}</p>
+                        <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mt-0.5 truncate">
+                          {c.sede} · {c.estudiantes_inscritos.length} inscritos
+                        </p>
                       </div>
                     </button>
 
