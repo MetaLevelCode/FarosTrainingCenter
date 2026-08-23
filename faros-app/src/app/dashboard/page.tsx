@@ -36,10 +36,30 @@ function Reveal({ children, delay = 0 }: { children: React.ReactNode; delay?: nu
   )
 }
 
-const VELOCIDAD = [
-  { semana: 'S1', pct: 40 }, { semana: 'S2', pct: 55 }, { semana: 'S3', pct: 45 },
-  { semana: 'S4', pct: 70 }, { semana: 'S5', pct: 65 }, { semana: 'S6', pct: 91 },
-]
+/** Últimas 6 semanas (lunes a domingo), la más reciente al final. */
+function semanasRecientes(hoy = new Date()): { inicio: number; fin: number }[] {
+  const lunesActual = new Date(hoy)
+  lunesActual.setHours(0, 0, 0, 0)
+  lunesActual.setDate(lunesActual.getDate() - ((lunesActual.getDay() + 6) % 7))
+  return Array.from({ length: 6 }, (_, i) => {
+    const inicio = new Date(lunesActual)
+    inicio.setDate(inicio.getDate() - (5 - i) * 7)
+    const fin = new Date(inicio)
+    fin.setDate(fin.getDate() + 7)
+    return { inicio: inicio.getTime(), fin: fin.getTime() }
+  })
+}
+
+/** Cuenta asistencias reales (asistio=true) por semana, a partir del historial. */
+function asistenciasPorSemana(registros: { asistio: boolean; fecha_registro: number }[]): { semana: string; count: number }[] {
+  const semanas = semanasRecientes().map((s) => ({ ...s, count: 0 }))
+  for (const r of registros) {
+    if (!r.asistio) continue
+    const semana = semanas.find((s) => r.fecha_registro >= s.inicio && r.fecha_registro < s.fin)
+    if (semana) semana.count++
+  }
+  return semanas.map((s, i) => ({ semana: `S${i + 1}`, count: s.count }))
+}
 
 type Companero = { uid: string; nombre: string; tasa: number; pos: number; esYo: boolean }
 
@@ -54,6 +74,7 @@ export default function DashboardPage() {
   const [claseHoyCargada, setClaseHoyCargada] = useState(false)
   const [diasSemana, setDiasSemana] = useState<number[]>([])
   const [horaSemana, setHoraSemana] = useState<string>('6:00 PM')
+  const [asistenciaSemanal, setAsistenciaSemanal] = useState<{ semana: string; count: number }[]>([])
 
   const susc = user?.suscripcionActiva
   // tasaAsistencia se guarda como fracción (0-1) — a porcentaje para mostrar.
@@ -155,6 +176,32 @@ export default function DashboardPage() {
       } catch {}
     })()
   }, [user?.uid, user?.sede])
+
+  // "Tendencia de velocidad" era un array 100% inventado (S1..S6 con
+  // porcentajes fijos, ver PLAN_DE_CIERRE 6.13) — se reemplaza por un
+  // gráfico de asistencia real: mismo patrón de query que ya usa
+  // dashboard/asistencia (usuarioId + orderBy fecha_registro, sin filtro
+  // extra por `asistio` para no necesitar un índice compuesto nuevo).
+  useEffect(() => {
+    if (!user?.uid) return
+    ;(async () => {
+      try {
+        const [{ db }, { collection, query, where, orderBy, limit, getDocs }] = await Promise.all([
+          getFirebase(), import('firebase/firestore'),
+        ])
+        const snap = await getDocs(
+          query(
+            collection(db, 'asistencias'),
+            where('usuarioId', '==', user.uid),
+            orderBy('fecha_registro', 'desc'),
+            limit(60),
+          ),
+        )
+        const registros = snap.docs.map((d) => d.data() as { asistio: boolean; fecha_registro: number })
+        setAsistenciaSemanal(asistenciasPorSemana(registros))
+      } catch (err) { console.error(err) }
+    })()
+  }, [user?.uid])
 
 
   return (
@@ -339,31 +386,42 @@ export default function DashboardPage() {
             <Reveal delay={0.18}>
               <Card padding="lg">
                 <div className="flex justify-between items-center mb-10">
-                  <h3 className="label-caps text-[var(--color-on-surface-variant)]/60">Tendencia de velocidad</h3>
-                  <span className="label-caps text-[10px] text-[var(--color-primary-fixed)]/80">Fase actual · Semana 6</span>
+                  <h3 className="label-caps text-[var(--color-on-surface-variant)]/60">Asistencia semanal</h3>
+                  <span className="label-caps text-[10px] text-[var(--color-primary-fixed)]/80">Últimas 6 semanas</span>
                 </div>
-                <div className="h-44 flex items-end justify-between gap-3 md:gap-4">
-                  {VELOCIDAD.map((v, i) => {
-                    const actual = i === VELOCIDAD.length - 1
-                    return (
-                      <div key={v.semana} className="flex-1 flex flex-col items-center gap-3 h-full justify-end">
-                        <motion.div
-                          initial={{ height: 0 }}
-                          animate={{ height: `${v.pct}%` }}
-                          transition={{ duration: 0.7, delay: 0.05 * i, ease: EASE }}
-                          className={`w-full rounded-t-lg ${
-                            actual
-                              ? 'bg-[var(--color-primary-fixed)] shadow-[0_0_30px_rgba(230,255,0,0.3)]'
-                              : 'bg-white/5 hover:bg-[rgba(230,255,0,0.2)] transition-colors duration-200'
-                          }`}
-                        />
-                        <span className={`label-caps text-[9px] ${actual ? 'text-[var(--color-primary-fixed)]' : 'text-[var(--color-on-surface-variant)]/60'}`}>
-                          {v.semana}
-                        </span>
-                      </div>
-                    )
-                  })}
-                </div>
+                {asistenciaSemanal.every((s) => s.count === 0) ? (
+                  <p className="text-sm text-[var(--color-on-surface-variant)]/50 py-14 text-center">
+                    Aún no hay asistencias registradas en las últimas 6 semanas.
+                  </p>
+                ) : (
+                  <div className="h-44 flex items-end justify-between gap-3 md:gap-4">
+                    {(() => {
+                      const max = Math.max(1, ...asistenciaSemanal.map((s) => s.count))
+                      return asistenciaSemanal.map((s, i) => {
+                        const actual = i === asistenciaSemanal.length - 1
+                        const pct = Math.round((s.count / max) * 100)
+                        return (
+                          <div key={s.semana} className="flex-1 flex flex-col items-center gap-3 h-full justify-end">
+                            <span className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/40">{s.count}</span>
+                            <motion.div
+                              initial={{ height: 0 }}
+                              animate={{ height: s.count === 0 ? '2px' : `${pct}%` }}
+                              transition={{ duration: 0.7, delay: 0.05 * i, ease: EASE }}
+                              className={`w-full rounded-t-lg ${
+                                actual
+                                  ? 'bg-[var(--color-primary-fixed)] shadow-[0_0_30px_rgba(230,255,0,0.3)]'
+                                  : 'bg-white/5 hover:bg-[rgba(230,255,0,0.2)] transition-colors duration-200'
+                              }`}
+                            />
+                            <span className={`label-caps text-[9px] ${actual ? 'text-[var(--color-primary-fixed)]' : 'text-[var(--color-on-surface-variant)]/60'}`}>
+                              {s.semana}
+                            </span>
+                          </div>
+                        )
+                      })
+                    })()}
+                  </div>
+                )}
               </Card>
             </Reveal>
           </div>
