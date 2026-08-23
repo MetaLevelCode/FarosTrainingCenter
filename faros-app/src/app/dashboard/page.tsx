@@ -19,7 +19,7 @@ import { ScrollVideoPanel } from '@/components/shared/ScrollVideoPanel'
 import { BrandImageStrip } from '@/components/shared/BrandImageStrip'
 import type { Transaccion, Clase } from '@/lib/types'
 import { Semanario } from '@/components/dashboard/Semanario'
-import { MensajesAlumno } from '@/components/dashboard/MensajesAlumno'
+import { MensajesPreview } from '@/components/dashboard/MensajesPreview'
 import { faseDeSuscripcion, cuposDisponibles, parseVencimiento } from '@/lib/matricula'
 
 const EASE = [0.22, 1, 0.36, 1] as const
@@ -468,17 +468,12 @@ export default function DashboardPage() {
                 </Link>
               </Card>
             </Reveal>
+
+            <Reveal delay={0.4}>
+              <MensajesPreview alumnoId={user?.uid ?? ''} />
+            </Reveal>
           </div>
         </div>
-
-        {/* ── Mensajes: muro de la clase + privado con el profesor ── */}
-        <Reveal delay={0.15}>
-          <MensajesAlumno
-            alumnoId={user?.uid ?? ''}
-            alumnoNombre={firstName}
-            alumnoFoto={user?.foto_perfil}
-          />
-        </Reveal>
 
         <Reveal delay={0.1}>
           <ScrollVideoPanel />
