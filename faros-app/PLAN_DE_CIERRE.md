@@ -1,6 +1,6 @@
 # Plan de Cierre — Faros Training Center
 
-**Fecha:** 2026-08-09 (última auditoría: 2026-08-21 — ver sección 6)
+**Fecha:** 2026-08-09 (última auditoría: 2026-08-23 — ver sección 6)
 **Rama:** `frontend-nextjs`
 **Stack:** Next.js 15 (App Router) · React 19 · Firebase 11 · Zustand · Motion · Tailwind v4
 
@@ -458,10 +458,82 @@ mensajes propios, notificaciones push, contador de no leídos.
 - El chat no tenía apartado propio en el menú — vivía anidado dentro del
   dashboard del alumno y dentro de cada tarjeta de clase del profesor, sin
   forma de encontrarlo sin saber que estaba ahí. Se agregó "Mensajes" al
-  menú de ambos roles: `/dashboard/mensajes` (reusa `MensajesAlumno`) y
-  `/portal/mensajes` (nueva página: mismo patrón de tabs, pero listando
-  todos los grupos que dicta el profesor + un DM por cada alumno distinto
-  entre sus clases, no solo los de la clase abierta en el calendario).
+  menú de ambos roles: `/dashboard/mensajes` y `/portal/mensajes` (nueva
+  página: mismo patrón de tabs, pero listando todos los grupos que dicta
+  el profesor + un DM por cada alumno distinto entre sus clases, no solo
+  los de la clase abierta en el calendario).
+
+> `MensajesAlumno.tsx`, mencionado arriba, se reescribió a fondo y luego
+> se borró del todo — ver 6.15.
+
+### 6.15 — Mensajería: rediseño de pantalla completa + fixes de PWA en iOS (2026-08-23)
+
+Sesión de seguimiento probando 6.14 en un iPhone real. Verificado en vivo:
+el botón "Reparar canales de mensajes" corrió (4 canales de 37 clases) y
+el muro grupal empezó a funcionar — confirma que el bug real era la falta
+de backfill, no algo más profundo en las reglas.
+
+**Bug: conversación anterior seguía visible al cambiar de chat.**
+`useCanalMensajes` solo limpiaba `mensajes` cuando el canal pasaba a
+`null`, no al cambiar de un canal activo a OTRO — mientras cargaba el
+nuevo (`getFirebase()` + import dinámico + primer snapshot, todo async) se
+seguía viendo el hilo viejo en pantalla. Se limpia de inmediato al cambiar
+`canalId`.
+
+**Rediseño a pantalla completa (pedido explícito: "como WhatsApp o
+Instagram", no un bloque tipo tarjeta):** nuevo `ChatShell.tsx`
+(`components/shared/`) — lista de conversaciones + hilo activo lado a
+lado en desktop; en mobile se turnan la pantalla completa con botón de
+volver. Cada fila de la lista muestra el último mensaje real + hora
+relativa (`useUltimoMensaje`, `onSnapshot` con `limit(1)`), no un
+subtítulo estático. Reutilizado por `/dashboard/mensajes` y
+`/portal/mensajes` — cada página solo arma su lista de canales según su
+rol y le pasa el resto al shell.
+
+**Dos bugs de PWA en iOS, encontrados con capturas reales del dispositivo:**
+1. *Zoom raro al enfocar un input.* Safari hace zoom automático en
+   cualquier input con `font-size` menor a 16px. Fix en `globals.css`:
+   16px forzado en `input/textarea/select`, solo en mobile (`!important`
+   porque las utilidades de Tailwind como `text-[13px]` pesan más que un
+   selector de elemento).
+2. *Chat cortado a la mitad al abrir el teclado, con el FAB flotando en
+   un hueco negro.* Primer intento (`interactive-widget=resizes-content`
+   en el `viewport` de `layout.tsx`) no alcanzó en modo standalone
+   (confirmado con captura: el hueco seguía ahí). Fix real:
+   `ChatShell` mide el alto visible A MANO con `window.visualViewport`
+   (`hooks/useAlturaVisible.ts`) en vez de confiar en `100dvh` — se
+   recalcula en cada evento `resize`/`scroll` del visualViewport, así que
+   no depende de que el navegador soporte la propiedad CSS nueva.
+   `interactive-widget=resizes-content` se dejó igual (no estorba, ayuda
+   en navegadores que sí lo soportan).
+   - Se evaluó ocultar el FAB de navegación en las pantallas de chat
+     (`hideFab` prop nuevo en `AppShell`/`GuardedShell`, sin usar
+     todavía) pero se descartó: el FAB es la ÚNICA navegación de toda la
+     app (el header no tiene links) — esconderlo dejaría al usuario sin
+     forma de salir del chat salvo el botón atrás del navegador.
+
+**Fotos de perfil en las burbujas de mensaje.** No se veían nunca — el
+avatar de cada mensaje solo mostraba iniciales porque `Mensaje` nunca
+guardó la foto del autor. Se agregó `autorFoto` (denormalizado, igual que
+`autorNombre`) en los 4 puntos donde se envía un mensaje + whitelist de
+`firestore.rules`. Mensajes viejos (enviados antes de este cambio)
+siguen mostrando iniciales — no se hizo backfill de fotos en mensajes
+históricos.
+
+**`MensajesAlumno.tsx` reemplazado por `MensajesPreview.tsx`.** El widget
+de chat completo embebido en la página de inicio del alumno quedó
+redundante frente a `/dashboard/mensajes` (pantalla completa) — duplicaba
+la misma función con un diseño distinto y arrastraba los mismos riesgos
+de teclado/altura a un espacio chico. Se reemplazó por una tarjeta
+liviana (mismo patrón que "Mi plan": resumen + botón "Ver mensajes").
+`MensajesAlumno.tsx` se borró por quedar sin ningún importador.
+
+**Nota que queda abierta, no bloqueante:** la pregunta de 6.14 sobre si
+la query de `/cancelar` necesita un índice compuesto explícito en
+`firestore.indexes.json` sigue sin confirmarse contra un caso real de
+"alumno en dos sesiones del mismo grupo, cancela una". No se ha visto
+ningún `FAILED_PRECONDITION` en las pruebas de esta sesión, pero tampoco
+se probó ese caso puntual.
 
 ---
 
@@ -485,9 +557,8 @@ mensajes propios, notificaciones push, contador de no leídos.
   (`firebase apphosting:rollouts:create`); ya nos mordió una vez esta sesión (un fix
   quedó en el repo sin desplegar).
 - [x] ~~Fase 6 (PWA hardening)~~ — completada 2026-08-23, ver 6.12.
-- [ ] Fase 5 (Mensajería) y Fase 7 (QA + staging) siguen como se describen
-  abajo — no se tocaron en esta auditoría por ser features nuevas, no bugs de
-  algo ya construido.
+- [x] ~~Fase 5 (Mensajería)~~ — completada y probada en dispositivo real
+  2026-08-23, ver 6.14 y 6.15. Fase 7 (QA + staging) sigue pendiente.
 - [ ] **`sedes`/`grupos`/`tarifas` exigen login para leerse** pese a que el wizard
   de planes dice estar "abierto a invitados" (ver 6.11) — decidir si se relaja la
   regla a lectura pública (son catálogo/precios, no datos sensibles) o si el
@@ -496,11 +567,13 @@ mensajes propios, notificaciones push, contador de no leídos.
   "Tendencia de velocidad" del alumno muestra datos inventados, no reales.
 - [ ] **Limpiar código muerto**: `ROSTER`/`AtletaRoster`/`pctAsistencia` en
   `lib/planes.ts` (ver 6.13) — sin importadores en todo `src/`.
-- [ ] **Desplegar `firestore.rules` y probar Mensajería contra Firestore real**
-  (ver 6.14) — recordar `firebase deploy --only firestore:rules,storage` (no
-  lo hace `apphosting:rollouts:create`, ver 6.10) y verificar si la query
-  nueva de `/cancelar` necesita un índice compuesto que no está en
-  `firestore.indexes.json` todavía.
+- [x] ~~Desplegar `firestore.rules` y probar Mensajería contra Firestore real~~
+  — desplegado y verificado en dispositivo real 2026-08-23 (ver 6.14 y
+  6.15): backfill corrido, muro grupal y DM funcionando, fotos de perfil
+  en los mensajes, teclado de iOS ya no corta el chat.
+- [ ] **Verificar el índice compuesto de `/cancelar`** con el caso puntual
+  de un alumno en dos sesiones del mismo grupo (ver nota al final de
+  6.15) — no bloqueante, no se ha visto el error todavía.
 
 ---
 
