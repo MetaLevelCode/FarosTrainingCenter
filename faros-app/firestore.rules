@@ -89,7 +89,12 @@ service cloud.firestore {
     // ── usuarios ────────────────────────────────────────────
 
     match /usuarios/{uid} {
-      allow read: if isOwner(uid) || isAdmin() || isProfesor();
+      // isEstudiante() + rol=='profesor': un alumno necesita poder leer
+      // los docs de profesores para elegir uno al solicitar una clase
+      // personalizada (ve nombre/sede/disponibilidadPersonal) — antes
+      // solo el dueño, un admin u otro profesor podían leer usuarios/{uid}.
+      allow read: if isOwner(uid) || isAdmin() || isProfesor()
+        || (isEstudiante() && resource.data.rol == 'profesor');
 
       // Lista blanca explícita: impide que el estudiante se auto-asigne
       // suscripcionActiva, estadisticas u otros campos sensibles al registrarse.
