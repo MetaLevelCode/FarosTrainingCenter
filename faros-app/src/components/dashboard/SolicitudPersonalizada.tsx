@@ -12,6 +12,7 @@ import { useEffect, useState } from 'react'
 import { Card, Badge, Button, Spinner } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { getFirebase } from '@/lib/firebase'
+import { DURACION_PERSONALIZADA_MIN, slotsDisponibles, sumarMinutos } from '@/lib/recurrencia'
 import type { FranjaDisponibilidad, SolicitudPersonalizada as Solicitud } from '@/lib/types'
 
 const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
@@ -30,6 +31,7 @@ export function SolicitudPersonalizada() {
   const [profesores, setProfesores] = useState<Profesor[]>([])
   const [profesorSel, setProfesorSel] = useState<string>('')
   const [franjaSel, setFranjaSel] = useState<number>(0)
+  const [slotSel, setSlotSel] = useState<string>('')
   const [enviando, setEnviando] = useState(false)
   const [cancelando, setCancelando] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -66,7 +68,11 @@ export function SolicitudPersonalizada() {
           })
           .filter((p) => p.franjas.length > 0)
         setProfesores(lista)
-        if (lista[0]) setProfesorSel(lista[0].uid)
+        if (lista[0]) {
+          setProfesorSel(lista[0].uid)
+          const primeraFranja = lista[0].franjas[0]
+          setSlotSel(slotsDisponibles(primeraFranja.horaInicio, primeraFranja.horaFin)[0] ?? '')
+        }
       }
     } catch (err) {
       console.error(err)
@@ -80,7 +86,7 @@ export function SolicitudPersonalizada() {
   async function solicitar() {
     const profesor = profesores.find((p) => p.uid === profesorSel)
     const franja = profesor?.franjas[franjaSel]
-    if (!profesor || !franja) return
+    if (!profesor || !franja || !slotSel) return
     setError(null)
     setEnviando(true)
     try {
@@ -90,7 +96,7 @@ export function SolicitudPersonalizada() {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           profesorId: profesor.uid, dow: franja.dow,
-          horaInicio: franja.horaInicio, horaFin: franja.horaFin,
+          horaInicio: slotSel, horaFin: sumarMinutos(slotSel, DURACION_PERSONALIZADA_MIN),
         }),
       })
       const data = await res.json()
@@ -135,6 +141,8 @@ export function SolicitudPersonalizada() {
   }
 
   const profesorActual = profesores.find((p) => p.uid === profesorSel)
+  const franjaActual = profesorActual?.franjas[franjaSel]
+  const slots = franjaActual ? slotsDisponibles(franjaActual.horaInicio, franjaActual.horaFin) : []
 
   return (
     <div>
@@ -184,17 +192,28 @@ export function SolicitudPersonalizada() {
               <label className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">Profesor</label>
               <select
                 value={profesorSel}
-                onChange={(e) => { setProfesorSel(e.target.value); setFranjaSel(0) }}
+                onChange={(e) => {
+                  const uid = e.target.value
+                  setProfesorSel(uid)
+                  setFranjaSel(0)
+                  const f = profesores.find((p) => p.uid === uid)?.franjas[0]
+                  setSlotSel(f ? (slotsDisponibles(f.horaInicio, f.horaFin)[0] ?? '') : '')
+                }}
                 className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white"
               >
                 {profesores.map((p) => <option key={p.uid} value={p.uid}>{p.nombre}</option>)}
               </select>
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">Franja</label>
+              <label className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">Día</label>
               <select
                 value={franjaSel}
-                onChange={(e) => setFranjaSel(Number(e.target.value))}
+                onChange={(e) => {
+                  const i = Number(e.target.value)
+                  setFranjaSel(i)
+                  const f = profesorActual?.franjas[i]
+                  setSlotSel(f ? (slotsDisponibles(f.horaInicio, f.horaFin)[0] ?? '') : '')
+                }}
                 className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white"
               >
                 {profesorActual?.franjas.map((f, i) => (
@@ -202,8 +221,26 @@ export function SolicitudPersonalizada() {
                 ))}
               </select>
             </div>
-            <Button fullWidth loading={enviando} onClick={solicitar}>
-              Solicitar esta franja
+            <div className="flex flex-col gap-1.5">
+              <label className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">Hora</label>
+              {slots.length === 0 ? (
+                <p className="text-xs text-[var(--color-on-surface-variant)]/50">
+                  Este profesor no tiene horarios de {DURACION_PERSONALIZADA_MIN} min disponibles en esta franja.
+                </p>
+              ) : (
+                <select
+                  value={slotSel}
+                  onChange={(e) => setSlotSel(e.target.value)}
+                  className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white"
+                >
+                  {slots.map((s) => (
+                    <option key={s} value={s}>{s} – {sumarMinutos(s, DURACION_PERSONALIZADA_MIN)}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <Button fullWidth loading={enviando} disabled={!slotSel} onClick={solicitar}>
+              Solicitar este horario
             </Button>
           </div>
         </Card>

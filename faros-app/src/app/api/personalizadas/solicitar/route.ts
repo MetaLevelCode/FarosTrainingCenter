@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAdminAuth, getAdminDb } from '@/lib/admin'
 import { rateLimit, clientIp } from '@/lib/ratelimit'
 import { log } from '@/lib/logger'
+import { DURACION_PERSONALIZADA_MIN, sumarMinutos } from '@/lib/recurrencia'
 
 export const runtime = 'nodejs'
 
@@ -53,6 +54,13 @@ export async function POST(req: NextRequest) {
       || !horaFin || !HORA_RE.test(horaFin)
       || horaInicio >= horaFin) {
       return NextResponse.json({ error: 'Datos de la solicitud inválidos' }, { status: 400 })
+    }
+
+    // Cada clase dura DURACION_PERSONALIZADA_MIN, aunque el profesor haya
+    // declarado una franja de disponibilidad más amplia — el alumno pide
+    // un horario de inicio dentro de esa franja, no la franja completa.
+    if (horaFin !== sumarMinutos(horaInicio, DURACION_PERSONALIZADA_MIN)) {
+      return NextResponse.json({ error: 'La clase debe durar exactamente 1 hora' }, { status: 400 })
     }
 
     // Anti-spam: no permitir una segunda solicitud pendiente al mismo
