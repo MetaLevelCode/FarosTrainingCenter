@@ -117,6 +117,19 @@ a, button, [role='button'], input, textarea, select {
   touch-action: manipulation;
 }
 
+/* iOS Safari hace zoom automático al enfocar un input con font-size
+   menor a 16px — y en modo PWA (standalone) ese zoom a veces se queda
+   "pegado" al cerrar el teclado, desarmando el layout. Forzamos 16px
+   SOLO en mobile (donde aplica el bug); en desktop no toca nada del
+   tamaño ya calibrado por componente. !important porque las utilidades
+   de Tailwind (ej. text-[13px] en los inputs de chat) tienen más
+   especificidad que un selector de elemento simple. */
+@media (max-width: 767px) {
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+}
+
 /* En @layer base: sin capa, este reset gana a las utilidades de
    Tailwind (el CSS sin capa siempre vence al CSS en capas) y hacía
    que `mb-*`/`mt-*` no tuvieran efecto en NINGÚN encabezado. */

@@ -12,7 +12,8 @@
 
 import { useEffect, useState } from 'react'
 import { Conversacion } from '@/components/shared/Conversacion'
-import { useCanalMensajes } from '@/hooks/useCanalMensajes'
+import { useCanalMensajes, useUltimoMensaje } from '@/hooks/useCanalMensajes'
+import { cuando } from '@/lib/mensajes'
 import { Spinner } from '@/components/ui'
 
 export interface CanalItem {
@@ -60,25 +61,15 @@ export function ChatShell({ canales, yoId, cargando, onEnviar }: {
             <div className="flex justify-center py-10"><Spinner /></div>
           ) : canales.length === 0 ? (
             <p className="text-center text-sm text-white/40 px-6 py-10">Aún no tienes conversaciones.</p>
-          ) : canales.map((c) => {
-            const seleccionada = c.id === activoId
-            return (
-              <button
-                key={c.id}
-                onClick={() => abrir(c.id)}
-                aria-pressed={seleccionada}
-                className={`w-full flex items-center gap-3 px-5 py-4 text-left border-b border-white/5 transition-colors ${
-                  seleccionada ? 'bg-[rgba(230,255,0,0.08)]' : 'hover:bg-white/[0.03]'
-                }`}
-              >
-                <Avatar url={c.avatarUrl} icon={c.icon} />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold text-white truncate">{c.titulo}</p>
-                  <p className="text-[11px] text-white/40 truncate">{c.subtitulo}</p>
-                </div>
-              </button>
-            )
-          })}
+          ) : canales.map((c) => (
+            <ChatListRow
+              key={c.id}
+              canal={c}
+              yoId={yoId}
+              seleccionada={c.id === activoId}
+              onAbrir={() => abrir(c.id)}
+            />
+          ))}
         </div>
       </div>
 
@@ -122,6 +113,37 @@ export function ChatShell({ canales, yoId, cargando, onEnviar }: {
         )}
       </div>
     </div>
+  )
+}
+
+function ChatListRow({ canal, yoId, seleccionada, onAbrir }: {
+  canal: CanalItem
+  yoId: string
+  seleccionada: boolean
+  onAbrir: () => void
+}) {
+  const ultimo = useUltimoMensaje(canal.id)
+  const preview = ultimo
+    ? `${ultimo.autorId === yoId ? 'Tú: ' : ''}${ultimo.texto}`
+    : canal.subtitulo
+
+  return (
+    <button
+      onClick={onAbrir}
+      aria-pressed={seleccionada}
+      className={`w-full flex items-center gap-3 px-5 py-4 text-left border-b border-white/5 transition-colors ${
+        seleccionada ? 'bg-[rgba(230,255,0,0.08)]' : 'hover:bg-white/[0.03]'
+      }`}
+    >
+      <Avatar url={canal.avatarUrl} icon={canal.icon} />
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-bold text-white truncate">{canal.titulo}</p>
+        <p className="text-[11px] text-white/40 truncate">{preview}</p>
+      </div>
+      {ultimo && (
+        <span className="text-[9px] text-white/30 shrink-0 self-start pt-0.5">{cuando(ultimo.ts)}</span>
+      )}
+    </button>
   )
 }
 
