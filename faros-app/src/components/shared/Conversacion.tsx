@@ -83,13 +83,18 @@ export function Conversacion({
               >
                 <span
                   title={m.autorNombre}
-                  className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${
+                  className={`relative w-8 h-8 rounded-full overflow-hidden flex items-center justify-center text-[10px] font-black shrink-0 ${
                     coach
                       ? 'bg-[var(--color-primary-fixed)] text-black'
                       : 'bg-white/10 text-white border border-white/10'
                   }`}
                 >
-                  {ini(m.autorNombre)}
+                  {m.autorFoto ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={m.autorFoto} alt="" className="absolute inset-0 w-full h-full object-cover" />
+                  ) : (
+                    ini(m.autorNombre)
+                  )}
                 </span>
 
                 <div className={`min-w-0 max-w-[80%] ${mio ? 'items-end text-right' : ''} flex flex-col`}>

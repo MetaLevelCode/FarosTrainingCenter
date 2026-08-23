@@ -70,7 +70,7 @@ export default function MensajesProfesorPage() {
 
   async function enviar(canalId: string, texto: string) {
     if (!user) return
-    await enviarMensaje(canalId, user.uid, displayName(user), 'entrenador', texto)
+    await enviarMensaje(canalId, user.uid, displayName(user), 'entrenador', texto, user.foto_perfil)
   }
 
   return (

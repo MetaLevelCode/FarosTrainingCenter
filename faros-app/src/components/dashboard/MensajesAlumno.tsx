@@ -24,7 +24,9 @@ interface CanalTab {
   placeholder: string
 }
 
-export function MensajesAlumno({ alumnoId, alumnoNombre }: { alumnoId: string; alumnoNombre: string }) {
+export function MensajesAlumno({ alumnoId, alumnoNombre, alumnoFoto }: {
+  alumnoId: string; alumnoNombre: string; alumnoFoto?: string | null
+}) {
   const [cargando, setCargando] = useState(true)
   const [grupos, setGrupos] = useState<{ nombre: string }[]>([])
   const [profesores, setProfesores] = useState<Usuario[]>([])
@@ -71,7 +73,7 @@ export function MensajesAlumno({ alumnoId, alumnoNombre }: { alumnoId: string; a
 
   async function enviar(texto: string) {
     if (!activa) return
-    await enviarMensaje(activa.id, alumnoId, alumnoNombre, 'alumno', texto)
+    await enviarMensaje(activa.id, alumnoId, alumnoNombre, 'alumno', texto, alumnoFoto)
   }
 
   return (

@@ -42,7 +42,7 @@ const NAV: Record<UserRole, NavItem[]> = {
   ],
 }
 
-export function AppShell({ title, children }: { title: string; children: ReactNode }) {
+export function AppShell({ title, children, hideFab = false }: { title: string; children: ReactNode; hideFab?: boolean }) {
   const { user, signOut, offline } = useAuth()
   const router = useRouter()
   const pathname = usePathname()
@@ -181,7 +181,11 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
 
       {/* Magnetic FAB nav — bottom con safe-area: sin esto, en un iPhone
           con home indicator el FAB queda pegado justo en la franja del
-          gesto de "volver al inicio". */}
+          gesto de "volver al inicio". Se oculta en pantallas de chat: al
+          ser `fixed`, cuando iOS desplaza la página para revelar un input
+          enfocado (modo PWA) el FAB queda "flotando" en un punto raro de
+          la pantalla — más simple ocultarlo ahí, como hacen WhatsApp/IG. */}
+      {!hideFab && (
       <div className="fixed right-8 z-[100]" style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 2rem)' }}>
         <AnimatePresence>
           {fabOpen && (
@@ -238,6 +242,7 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
           </span>
         </motion.button>
       </div>
+      )}
     </div>
   )
 }
@@ -249,8 +254,8 @@ export function AppShell({ title, children }: { title: string; children: ReactNo
 // en true desde el primer render (navegación entre pantallas ya
 // autenticadas), así que no puede depender de una animación de salida
 // para revelar el contenido sin arriesgarse a quedar pegado en negro.
-export function GuardedShell({ authorized, loading, title, children }: {
-  authorized: boolean; loading: boolean; title: string; children: ReactNode
+export function GuardedShell({ authorized, loading, title, children, hideFab = false }: {
+  authorized: boolean; loading: boolean; title: string; children: ReactNode; hideFab?: boolean
 }) {
   if (loading || !authorized) {
     return (
@@ -261,7 +266,7 @@ export function GuardedShell({ authorized, loading, title, children }: {
   }
   return (
     <CuentaSuspendida>
-      <AppShell title={title}>{children}</AppShell>
+      <AppShell title={title} hideFab={hideFab}>{children}</AppShell>
     </CuentaSuspendida>
   )
 }

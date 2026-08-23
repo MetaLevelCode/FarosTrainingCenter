@@ -71,7 +71,7 @@ export default function MensajesPage() {
 
   async function enviar(canalId: string, texto: string) {
     if (!user) return
-    await enviarMensaje(canalId, user.uid, user.nombres.split(' ')[0], 'alumno', texto)
+    await enviarMensaje(canalId, user.uid, user.nombres.split(' ')[0], 'alumno', texto, user.foto_perfil)
   }
 
   return (

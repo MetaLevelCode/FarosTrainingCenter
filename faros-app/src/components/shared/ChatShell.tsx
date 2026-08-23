@@ -10,9 +10,10 @@
 // solo arma su propia lista de canales (CanalItem[]) según su rol.
 // ============================================================
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Conversacion } from '@/components/shared/Conversacion'
 import { useCanalMensajes, useUltimoMensaje } from '@/hooks/useCanalMensajes'
+import { useAlturaVisible } from '@/hooks/useAlturaVisible'
 import { cuando } from '@/lib/mensajes'
 import { Spinner } from '@/components/ui'
 
@@ -49,8 +50,28 @@ export function ChatShell({ canales, yoId, cargando, onEnviar }: {
     setVerHilo(true)
   }
 
+  // Alto medido a mano en vez de 100dvh: en iOS/PWA (standalone) el
+  // viewport de LAYOUT no siempre se achica al abrir el teclado (incluso
+  // con interactive-widget=resizes-content declarado), así que un alto
+  // en dvh se queda con el tamaño de ANTES del teclado y el chat termina
+  // "cortado" o con un hueco flotante abajo. window.visualViewport SÍ
+  // refleja el alto real visible; recalculamos cada vez que cambia.
+  const contenedorRef = useRef<HTMLDivElement>(null)
+  const alturaVisible = useAlturaVisible()
+  const [altura, setAltura] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (!alturaVisible || !contenedorRef.current) return
+    const top = contenedorRef.current.getBoundingClientRect().top
+    setAltura(Math.max(360, alturaVisible - top - 16))
+  }, [alturaVisible])
+
   return (
-    <div className="flex h-[calc(100dvh-14rem)] min-h-[480px] rounded-[2rem] overflow-hidden border border-white/10 bg-white/[0.02]">
+    <div
+      ref={contenedorRef}
+      className="flex min-h-[360px] rounded-[2rem] overflow-hidden border border-white/10 bg-white/[0.02]"
+      style={{ height: altura != null ? `${altura}px` : 'calc(100dvh - 14rem)' }}
+    >
       {/* ── Lista de conversaciones ── */}
       <div className={`${verHilo ? 'hidden' : 'flex'} md:flex w-full md:w-[340px] shrink-0 flex-col border-r border-white/10 bg-black/20`}>
         <div className="px-5 py-4 border-b border-white/10 shrink-0">

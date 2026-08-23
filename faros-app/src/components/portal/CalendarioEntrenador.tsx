@@ -329,6 +329,7 @@ export function CalendarioEntrenador() {
                   asistencias={asistenciasPorClase[clase.id] ?? null}
                   coachId={user?.uid ?? ''}
                   coachNombre={user ? displayName(user) : ''}
+                  coachFoto={user?.foto_perfil}
                   onAbrir={() => abrirClase(clase.id)}
                   onGuardarPlan={(bloques) => guardarPlanClase(clase.id, bloques)}
                   onMarcarAsistencia={(uid, asistio) => marcarAsistencia(clase.id, uid, asistio)}
@@ -345,13 +346,14 @@ export function CalendarioEntrenador() {
 
 // ── Tarjeta de una clase: plan + asistencia ──
 function ClaseCard({
-  clase, alumnosMap, asistencias, coachId, coachNombre, onAbrir, onGuardarPlan, onMarcarAsistencia, onFinalizar,
+  clase, alumnosMap, asistencias, coachId, coachNombre, coachFoto, onAbrir, onGuardarPlan, onMarcarAsistencia, onFinalizar,
 }: {
   clase: Clase
   alumnosMap: Map<string, Usuario>
   asistencias: Asistencia[] | null
   coachId: string
   coachNombre: string
+  coachFoto?: string | null
   onAbrir: () => void
   onGuardarPlan: (bloques: string[]) => Promise<void>
   onMarcarAsistencia: (usuarioId: string, asistio: boolean) => void
@@ -373,7 +375,7 @@ function ClaseCard({
   const { mensajes } = useCanalMensajes(canalActivo)
   async function enviar(texto: string) {
     if (!canalActivo) return
-    await enviarMensaje(canalActivo, coachId, coachNombre, 'entrenador', texto)
+    await enviarMensaje(canalActivo, coachId, coachNombre, 'entrenador', texto, coachFoto)
   }
 
   const { hora, ampm } = horaAmPm(clase.fecha_hora_inicio)

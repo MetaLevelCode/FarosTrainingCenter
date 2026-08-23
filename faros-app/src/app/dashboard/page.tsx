@@ -476,6 +476,7 @@ export default function DashboardPage() {
           <MensajesAlumno
             alumnoId={user?.uid ?? ''}
             alumnoNombre={firstName}
+            alumnoFoto={user?.foto_perfil}
           />
         </Reveal>
 

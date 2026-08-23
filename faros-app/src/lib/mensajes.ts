@@ -27,6 +27,7 @@ export interface Mensaje {
   autorId: string
   autorNombre: string
   autorRol: Autor
+  autorFoto?: string | null
   texto: string
   ts: number        // epoch ms
 }
@@ -41,6 +42,7 @@ export const canalPrivado = (coachId: string, alumnoId: string) => `dm:${coachId
 /** Envía un mensaje real a Firestore (client SDK, gobernado por firestore.rules). */
 export async function enviarMensaje(
   canalId: string, autorId: string, autorNombre: string, autorRol: Autor, texto: string,
+  autorFoto?: string | null,
 ): Promise<void> {
   const limpio = texto.trim()
   if (!limpio) return
@@ -49,6 +51,7 @@ export async function enviarMensaje(
   ])
   await addDoc(collection(db, 'mensajes', canalId, 'items'), {
     autorId, autorNombre, autorRol, texto: limpio, ts: Date.now(),
+    ...(autorFoto ? { autorFoto } : {}),
   })
 }
 

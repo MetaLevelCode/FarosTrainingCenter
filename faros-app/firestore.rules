@@ -321,7 +321,7 @@ service cloud.firestore {
 
         allow create: if (isAdmin() || esMiembroCanal(canalId))
           && request.resource.data.autorId == request.auth.uid
-          && request.resource.data.keys().hasOnly(['autorId', 'autorNombre', 'autorRol', 'texto', 'ts'])
+          && request.resource.data.keys().hasOnly(['autorId', 'autorNombre', 'autorRol', 'autorFoto', 'texto', 'ts'])
           && validString('texto', 2000);
 
         // v1: sin editar/borrar mensajes propios.
