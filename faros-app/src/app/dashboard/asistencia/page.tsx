@@ -45,6 +45,40 @@ async function getIdToken(): Promise<string | null> {
   return (await getAuth().currentUser?.getIdToken()) ?? null
 }
 
+/**
+ * POST autenticado con manejo de errores "traducido": cualquier falla
+ * nativa (getIdToken, fetch, parseo de la respuesta) se reemplaza por un
+ * mensaje en español. Sin esto, un DOMException crudo del navegador (ej.
+ * fallas de IndexedDB en Safari al refrescar el token) se mostraba tal
+ * cual en el banner de error — en inglés y sin sentido para el usuario.
+ */
+async function postConToken(url: string, mensajeGenerico: string): Promise<any> {
+  let token: string | null
+  try {
+    token = await getIdToken()
+  } catch {
+    throw new Error('No se pudo verificar tu sesión. Vuelve a iniciar sesión e intenta de nuevo.')
+  }
+  if (!token) throw new Error('No se pudo verificar tu sesión. Vuelve a iniciar sesión e intenta de nuevo.')
+
+  let res: Response
+  try {
+    res = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
+  } catch {
+    throw new Error('No se pudo conectar. Revisa tu conexión e intenta de nuevo.')
+  }
+
+  let data: any = {}
+  try {
+    data = await res.json()
+  } catch {
+    // Respuesta sin JSON válido (ej. error 5xx genérico del servidor) —
+    // se ignora y cae al mensaje genérico de abajo.
+  }
+  if (!res.ok) throw new Error(data?.error ?? mensajeGenerico)
+  return data
+}
+
 export default function AsistenciaPage() {
   const { authorized, loading, user } = useRoleGuard(['estudiante'])
   const { refreshUser } = useAuth()
@@ -148,15 +182,7 @@ export default function AsistenciaPage() {
     setErrorAccion(null)
     setInscribiendo(claseId)
     try {
-      const token = await getIdToken()
-      if (!token) throw new Error('No autenticado')
-
-      const res = await fetch(`/api/clases/${claseId}/inscribir`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Error al inscribirse')
+      await postConToken(`/api/clases/${claseId}/inscribir`, 'Error al inscribirse')
 
       // Actualización optimista: mover la clase a "inscritas"
       setClasesDisponibles((prev) => {
@@ -185,15 +211,7 @@ export default function AsistenciaPage() {
     setErrorAccion(null)
     setCancelando(claseId)
     try {
-      const token = await getIdToken()
-      if (!token) throw new Error('No autenticado')
-
-      const res = await fetch(`/api/clases/${claseId}/cancelar`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? 'Error al cancelar')
+      await postConToken(`/api/clases/${claseId}/cancelar`, 'Error al cancelar')
 
       // Actualización optimista: devolver a disponibles si sigue siendo futura
       setClasesInscritas((prev) => {
