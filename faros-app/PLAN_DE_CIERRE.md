@@ -124,12 +124,14 @@ usa Firebase App Hosting: el backend ya es un servidor Node.js y no necesita des
 - [ ] Reglas de mensajería en `firestore.rules` (miembros del canal leen/escriben)
 - [ ] UI de bandeja de conversaciones en `/dashboard` y `/portal`
 
-### Fase 6 — PWA hardening (1 día)
+### Fase 6 — PWA hardening ✅ COMPLETADA (2026-08-23, ver sección 6.12)
 
-- [ ] Service worker: precache de rutas críticas y assets estáticos
-- [ ] Fallback offline para dashboard con última data cacheada
-- [ ] Background sync para asistencia en modo offline (profesor sin cobertura)
-- [ ] Verificar `InstallPrompt` en iOS Safari y Chrome Android
+- [x] Service worker: precache de rutas críticas y assets estáticos
+- [x] Fallback offline para dashboard con última data cacheada (perfil — alcance
+  final acotado a *best-effort*, ver 6.12)
+- [x] Cola de asistencia offline (sin Background Sync API real — iOS no la
+  soporta — sincroniza a mano con el evento `online`)
+- [x] Verificar `InstallPrompt` en iOS Safari y Chrome Android
 
 ### Fase 7 — QA + deploy (2-3 días)
 
@@ -299,6 +301,71 @@ arrastrar a las otras dos.
 invitados" — un visitante sin cuenta caería siempre al catálogo hardcodeado
 sin darse cuenta, incluyendo precios viejos. Ver pendiente en sección 7.
 
+### 6.12 — Fase 6: PWA hardening completa (2026-08-22/23)
+
+Ver `PWA_ESTADO.md` para el detalle completo con código y razones; acá el
+resumen de lo que se encontró probando **en dispositivos reales** (celular +
+PC), no simulado — varios bugs de fondo solo aparecían así.
+
+**Instalación, splash, branding:** `InstallPrompt` reescrito para iOS (sin
+`beforeinstallprompt`, instrucciones manuales) vs Android (nativo). Splash
+screens de iOS generados por dispositivo. Se reemplazaron los prototipos de
+logo (SVG a mano, texto simulando marca) por los assets reales entregados —
+íconos de la PWA, favicon, splash, todo regenerado desde el logo real.
+
+**Animación de entrada:** se iteró bastante (faro con ripple de anillos,
+llegando a medir la geometría exacta píxel a píxel del PNG real) antes de
+asentar en la versión final — una marea amarilla simple que sube, cubre la
+pantalla y baja revelando la app.
+
+**Service worker — bugs reales encontrados probando offline:**
+1. `getFirebase()` cacheaba la promesa de init para siempre, incluso si
+   fallaba — un solo fallo sin señal rompía Firestore para toda la sesión,
+   aunque volviera la conexión.
+2. `ServiceWorkerRegister` forzaba `window.location.reload()` apenas un SW
+   nuevo tomaba control, sin chequear `navigator.onLine` — si eso coincidía
+   con la prueba offline, la recarga fallaba y aparecía el error nativo del
+   navegador (el "dinosaurio" de Chrome).
+3. `cache.addAll()` en el install del SW es todo-o-nada: si una URL fallaba,
+   ninguna quedaba cacheada, incluida `/offline` (el propio fallback).
+4. El fallback offline no siempre calzaba en `caches.match()` por los headers
+   `Vary` que agrega Next.js (`rsc`, `next-router-state-tree`...) — se agregó
+   `ignoreVary` más un HTML mínimo embebido directo en el SW como última red
+   de seguridad.
+5. Las fuentes de Google (incluye Material Symbols, los íconos del menú)
+   estaban excluidas del cache del SW por un choque con el CSP
+   (`font-src` las permitía, `connect-src` no) — sin señal, los íconos se
+   veían como texto plano ("event_busy"). Se corrigió el CSP y se cachean
+   cache-first.
+6. Falso positivo: el checkbox "Bypass for network" de Chrome DevTools salta
+   el SW aunque figure "activated and running" — no es un bug, pero costó
+   una vuelta completa de debugging descartarlo.
+
+**Decisión de alcance — offline como *best-effort*:** después de perseguir
+varios de estos bugs uno por uno, se decidió no seguir cazando cada fetch sin
+capturar de cada pantalla (la app depende de Firestore para casi todo). Se
+dejó el cache de perfil + banner + cola de asistencia (que sí funcionan bien)
+y se agregó una red de seguridad genérica: `error.tsx`/`global-error.tsx`
+detectan `navigator.onLine` y muestran un aviso simple en vez del error
+genérico cuando algo revienta por falta de señal en una pantalla no cubierta
+explícitamente.
+
+**Detalles finos:** `overscroll-behavior-y: contain` (evita que el scroll en
+el tope encadene al pull-to-refresh nativo), `-webkit-tap-highlight-color` +
+`touch-action: manipulation` (quita el flash gris y el retraso de tap "de
+página web"), safe-area en todos los `fixed` (headers y FABs que faltaban),
+header de marca para la landing en mobile (el de escritorio va `hidden
+md:block` y no quedaba nada arriba en celular).
+
+**Bugs de layout en mobile:** en `/portal/clases`, la cabecera de cada
+tarjeta de clase tenía tres bloques compitiendo en una fila (fecha/hora +
+título/sede + badge de estado) — el texto del medio se truncaba a "T...",
+"ES...". Agregar `truncate` solo tapó el síntoma; el fix real fue
+reestructurar la cabecera a dos filas. Se hizo un barrido por los 32 usos de
+`<Badge>` y 22 usos de `shrink-0` del proyecto buscando el mismo patrón — no
+apareció en ningún otro lado (ya estaban protegidos por `flex-wrap` o tablas
+con scroll horizontal).
+
 ---
 
 ## 7. Pendientes actuales (post-auditoría 2026-08-21)
@@ -320,9 +387,10 @@ sin darse cuenta, incluyendo precios viejos. Ver pendiente en sección 7.
   auto-deploy al hacer push a GitHub. Cada fix requiere correr el rollout a mano
   (`firebase apphosting:rollouts:create`); ya nos mordió una vez esta sesión (un fix
   quedó en el repo sin desplegar).
-- [ ] Fase 5 (Mensajería), Fase 6 (PWA hardening) y Fase 7 (QA + staging) siguen
-  como se describen abajo — no se tocaron en esta auditoría por ser features nuevas,
-  no bugs de algo ya construido.
+- [x] ~~Fase 6 (PWA hardening)~~ — completada 2026-08-23, ver 6.12.
+- [ ] Fase 5 (Mensajería) y Fase 7 (QA + staging) siguen como se describen
+  abajo — no se tocaron en esta auditoría por ser features nuevas, no bugs de
+  algo ya construido.
 - [ ] **`sedes`/`grupos`/`tarifas` exigen login para leerse** pese a que el wizard
   de planes dice estar "abierto a invitados" (ver 6.11) — decidir si se relaja la
   regla a lectura pública (son catálogo/precios, no datos sensibles) o si el
