@@ -10,6 +10,7 @@ import { FieldValue } from 'firebase-admin/firestore'
 import { getAdminAuth, getAdminDb } from '@/lib/admin'
 import { rateLimit, clientIp } from '@/lib/ratelimit'
 import { log } from '@/lib/logger'
+import { canalGrupo } from '@/lib/mensajes'
 
 export const runtime = 'nodejs'
 
@@ -64,10 +65,29 @@ export async function POST(
         return { error: 'Solo puedes cancelar hasta 2 horas antes del inicio de la clase', status: 409 }
       }
 
+      // ¿Sigue inscrito en OTRA sesión del mismo grupo (ej. "Knowill" del
+      // jueves, si esto es la del martes)? Si es así, no lo saques del
+      // muro de mensajería del grupo — solo se sale cuando cancela su
+      // última sesión de ese grupo. Debe leerse antes de cualquier
+      // escritura de la transacción.
+      const otrasSesionesSnap = await tx.get(
+        db.collection('clases')
+          .where('nombre_clase', '==', clase.nombre_clase)
+          .where('estudiantes_inscritos', 'array-contains', uid),
+      )
+      const sigueEnOtraSesion = otrasSesionesSnap.docs.some((d) => d.id !== claseId)
+
       tx.update(claseSnap.ref, {
         estudiantes_inscritos: FieldValue.arrayRemove(uid),
         actualizadoEn: Date.now(),
       })
+
+      if (!sigueEnOtraSesion) {
+        tx.update(db.collection('mensajes').doc(canalGrupo(clase.nombre_clase)), {
+          participantes: FieldValue.arrayRemove(uid),
+          actualizadoEn: Date.now(),
+        })
+      }
 
       const asistidas = (usu.estadisticas?.clasesAsistidas as number) ?? 0
       const clasesReservadas: number = usu.estadisticas?.clasesReservadas ?? 0

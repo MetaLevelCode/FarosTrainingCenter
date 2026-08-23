@@ -36,6 +36,11 @@ rules_version = '2';
 // categorias/{id}    — read: any auth; write: admin only
 //
 // sugerencias/{id}   — write: owner; read: admin only
+//
+// mensajes/{canalId}  — doc de control (Admin SDK only): participantes: [uid]
+//   mensajes/{canalId}/items/{id}
+//     autorId: string, autorNombre: string, autorRol: 'alumno'|'entrenador',
+//     texto: string, ts: number
 // ============================================================
 
 service cloud.firestore {
@@ -272,6 +277,56 @@ service cloud.firestore {
     match /categorias/{catId} {
       allow read: if isAuthenticated();
       allow write: if isAdmin();
+    }
+
+    // ── mensajes ─────────────────────────────────────────────
+    // Fase 5. Dos tipos de canal, codificados en el propio canalId:
+    //   grupo:<slug>      — muro persistente de un grupo (ej. "Knowill").
+    //                       La membresía vive en el doc de control
+    //                       mensajes/{canalId}.participantes, mantenida
+    //                       SOLO por Admin SDK (/api/clases/[id]/inscribir
+    //                       y /cancelar) — nunca por el cliente. Las
+    //                       reglas no pueden "buscar todas las clases de
+    //                       este grupo", así que se apoyan en esa lista
+    //                       denormalizada (mismo precedente de get()
+    //                       cross-doc que ya usa `asistencias` con `clases`).
+    //   dm:<coachId>:<alumnoId> — chat privado; sin doc de control, la
+    //                       membresía se parsea directo del canalId.
+
+    function esMiembroCanalGrupo(canalId) {
+      return exists(/databases/$(database)/documents/mensajes/$(canalId))
+        && request.auth.uid in
+           get(/databases/$(database)/documents/mensajes/$(canalId)).data.participantes;
+    }
+
+    function esMiembroCanalPrivado(canalId) {
+      let partes = canalId.split(':');
+      return request.auth.uid == partes[1] || request.auth.uid == partes[2];
+    }
+
+    function esMiembroCanal(canalId) {
+      return isAuthenticated() && (
+        (canalId.matches('grupo:.*') && esMiembroCanalGrupo(canalId)) ||
+        (canalId.matches('dm:.*') && esMiembroCanalPrivado(canalId))
+      );
+    }
+
+    match /mensajes/{canalId} {
+      // Doc de control: nunca lo lee/escribe el cliente directo — solo
+      // Admin SDK (mantiene `participantes`) y las reglas de arriba (get()).
+      allow read, write: if false;
+
+      match /items/{mensajeId} {
+        allow read: if isAdmin() || esMiembroCanal(canalId);
+
+        allow create: if (isAdmin() || esMiembroCanal(canalId))
+          && request.resource.data.autorId == request.auth.uid
+          && request.resource.data.keys().hasOnly(['autorId', 'autorNombre', 'autorRol', 'texto', 'ts'])
+          && validString('texto', 2000);
+
+        // v1: sin editar/borrar mensajes propios.
+        allow update, delete: if isAdmin();
+      }
     }
 
     // ── sugerencias ──────────────────────────────────────────

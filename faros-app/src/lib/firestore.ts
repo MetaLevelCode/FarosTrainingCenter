@@ -352,6 +352,20 @@ export async function getClasesProfesor(instructorId: string): Promise<Clase[]> 
   return snap.docs.map(docToId<Clase>)
 }
 
+/** Clases (sesiones) donde el alumno está inscrito, programadas o en curso. */
+export async function getClasesAlumno(uid: string): Promise<Clase[]> {
+  const [{ db }, { collection, query, where, getDocs }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  const q = query(
+    collection(db, 'clases'),
+    where('estudiantes_inscritos', 'array-contains', uid),
+    where('estado', 'in', ['programada', 'en_curso']),
+  )
+  const snap = await getDocs(q)
+  return snap.docs.map(docToId<Clase>)
+}
+
 export async function getClasesDisponibles(sede: string): Promise<Clase[]> {
   const [{ db }, { collection, query, where, getDocs }] = await Promise.all([
     getFirebase(), import('firebase/firestore'),

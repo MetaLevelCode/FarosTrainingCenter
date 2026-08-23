@@ -24,10 +24,12 @@ export function Conversacion({
   yoId: string
   placeholder?: string
   vacio?: string
-  onEnviar: (texto: string) => void
+  onEnviar: (texto: string) => void | Promise<void>
   alto?: string
 }) {
   const [texto, setTexto] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const [error, setError] = useState(false)
   const finRef = useRef<HTMLDivElement>(null)
 
   // Baja al último mensaje al abrir y al enviar.
@@ -35,11 +37,21 @@ export function Conversacion({
     finRef.current?.scrollIntoView({ block: 'nearest' })
   }, [mensajes.length])
 
-  function enviar(e: React.FormEvent) {
+  async function enviar(e: React.FormEvent) {
     e.preventDefault()
-    if (!texto.trim()) return
-    onEnviar(texto)
-    setTexto('')
+    const valor = texto.trim()
+    if (!valor || enviando) return
+    setError(false)
+    setEnviando(true)
+    try {
+      await onEnviar(valor)
+      setTexto('')
+    } catch (err) {
+      console.error(err)
+      setError(true)
+    } finally {
+      setEnviando(false)
+    }
   }
 
   return (
@@ -101,17 +113,25 @@ export function Conversacion({
         <div ref={finRef} />
       </div>
 
-      <form onSubmit={enviar} className="flex gap-2 mt-4 pt-4 border-t border-white/5">
-        <input
-          value={texto}
-          onChange={(e) => setTexto(e.target.value)}
-          placeholder={placeholder}
-          aria-label={placeholder}
-          className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-full px-5 py-3 text-[13px] text-white placeholder:text-white/25 focus:border-[rgba(230,255,0,0.5)] focus:outline-none transition-colors"
-        />
-        <Button type="submit" size="sm" disabled={!texto.trim()} className="!rounded-full shrink-0">
-          <span className="material-symbols-outlined text-[18px]">send</span>
-        </Button>
+      <form onSubmit={enviar} className="flex flex-col gap-2 mt-4 pt-4 border-t border-white/5">
+        {error && (
+          <p className="text-[11px] text-[var(--color-danger-crimson)]">
+            No se pudo enviar el mensaje. Intenta de nuevo.
+          </p>
+        )}
+        <div className="flex gap-2">
+          <input
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+            placeholder={placeholder}
+            aria-label={placeholder}
+            disabled={enviando}
+            className="flex-1 min-w-0 bg-white/5 border border-white/10 rounded-full px-5 py-3 text-[13px] text-white placeholder:text-white/25 focus:border-[rgba(230,255,0,0.5)] focus:outline-none transition-colors disabled:opacity-60"
+          />
+          <Button type="submit" size="sm" disabled={!texto.trim() || enviando} loading={enviando} className="!rounded-full shrink-0">
+            <span className="material-symbols-outlined text-[18px]">send</span>
+          </Button>
+        </div>
       </form>
     </div>
   )

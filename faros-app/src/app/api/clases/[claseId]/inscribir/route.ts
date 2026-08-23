@@ -15,6 +15,7 @@ import { FieldValue } from 'firebase-admin/firestore'
 import { getAdminAuth, getAdminDb } from '@/lib/admin'
 import { rateLimit, clientIp } from '@/lib/ratelimit'
 import { log } from '@/lib/logger'
+import { canalGrupo } from '@/lib/mensajes'
 
 export const runtime = 'nodejs'
 
@@ -78,6 +79,16 @@ export async function POST(
         estudiantes_inscritos: FieldValue.arrayUnion(uid),
         actualizadoEn: Date.now(),
       })
+
+      // Muro de mensajería del grupo: agrega al alumno (y re-agrega al
+      // instructor, idempotente) a la lista de miembros del canal. Es el
+      // único lugar donde se mantiene esta lista — ver firestore.rules.
+      tx.set(db.collection('mensajes').doc(canalGrupo(clase.nombre_clase)), {
+        tipo: 'grupo',
+        nombre: clase.nombre_clase,
+        participantes: FieldValue.arrayUnion(uid, clase.instructor_id),
+        actualizadoEn: Date.now(),
+      }, { merge: true })
 
       const asistidas = (usu.estadisticas?.clasesAsistidas as number) ?? 0
       const reservadas = ((usu.estadisticas?.clasesReservadas as number) ?? 0) + 1

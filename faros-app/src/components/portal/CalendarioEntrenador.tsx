@@ -9,9 +9,8 @@
 // real de ese día (registrarAsistencia — la misma función que usa
 // /portal/clases).
 //
-// Los mensajes siguen siendo locales/demo: no existe todavía una
-// colección de mensajería en Firestore (esa es una feature aparte,
-// no un simple "conectar lo que ya existe").
+// Mensajería (Fase 5): muro del grupo + chat privado por alumno,
+// sobre Firestore real (mensajes/{canalId}/items, ver lib/mensajes.ts).
 // ============================================================
 
 import { useEffect, useMemo, useState } from 'react'
@@ -19,6 +18,7 @@ import { motion, AnimatePresence } from 'motion/react'
 import { Card, Button, Badge, Spinner } from '@/components/ui'
 import { Conversacion } from '@/components/shared/Conversacion'
 import { useAuth } from '@/contexts/AuthContext'
+import { useCanalMensajes } from '@/hooks/useCanalMensajes'
 import {
   getClasesProfesor, getAsistenciasClase, registrarAsistencia,
   updateClasePlan, updateObservacionesClase, getUsuarios,
@@ -26,10 +26,7 @@ import {
 import { displayName } from '@/lib/types'
 import type { Clase, Asistencia, Usuario } from '@/lib/types'
 import { encolarAsistencia } from '@/lib/offlineQueue'
-import {
-  mensajesSemilla, delCanal, nuevoMensaje, canalGrupo, canalPrivado,
-  COACH_ID, COACH_NOMBRE, type Mensaje,
-} from '@/lib/mensajes'
+import { canalGrupo, canalPrivado, enviarMensaje } from '@/lib/mensajes'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -88,11 +85,6 @@ function mallaDelMes(anio: number, mes: number, clasesPorDia: Map<string, Clase[
   return semanas
 }
 
-/** Id del muro de mensajes de una clase (demo local — sin backend real todavía). */
-function grupoDeClase(clase: Clase): string {
-  return clase.nombre_clase.toLowerCase().split(' ')[0].replace(/[^a-z0-9]/g, '') || clase.id
-}
-
 export function CalendarioEntrenador() {
   const { user } = useAuth()
   const [mounted, setMounted] = useState(false)
@@ -104,12 +96,6 @@ export function CalendarioEntrenador() {
   const [clases, setClases] = useState<Clase[]>([])
   const [alumnosMap, setAlumnosMap] = useState<Map<string, Usuario>>(new Map())
   const [asistenciasPorClase, setAsistenciasPorClase] = useState<Record<string, Asistencia[]>>({})
-
-  // Mensajes: demo local, sin backend real (ver comentario del archivo).
-  const [mensajes, setMensajes] = useState<Mensaje[]>(() => mensajesSemilla())
-  function enviarMensaje(canalId: string, texto: string) {
-    setMensajes((prev) => [...prev, nuevoMensaje(canalId, COACH_ID, COACH_NOMBRE, 'entrenador', texto)])
-  }
 
   useEffect(() => {
     const hoy = new Date()
@@ -341,9 +327,9 @@ export function CalendarioEntrenador() {
                   clase={clase}
                   alumnosMap={alumnosMap}
                   asistencias={asistenciasPorClase[clase.id] ?? null}
-                  mensajes={mensajes}
+                  coachId={user?.uid ?? ''}
+                  coachNombre={user ? displayName(user) : ''}
                   onAbrir={() => abrirClase(clase.id)}
-                  onEnviarMensaje={enviarMensaje}
                   onGuardarPlan={(bloques) => guardarPlanClase(clase.id, bloques)}
                   onMarcarAsistencia={(uid, asistio) => marcarAsistencia(clase.id, uid, asistio)}
                   onFinalizar={(observaciones) => finalizarClase(clase.id, observaciones)}
@@ -359,14 +345,14 @@ export function CalendarioEntrenador() {
 
 // ── Tarjeta de una clase: plan + asistencia ──
 function ClaseCard({
-  clase, alumnosMap, asistencias, mensajes, onAbrir, onEnviarMensaje, onGuardarPlan, onMarcarAsistencia, onFinalizar,
+  clase, alumnosMap, asistencias, coachId, coachNombre, onAbrir, onGuardarPlan, onMarcarAsistencia, onFinalizar,
 }: {
   clase: Clase
   alumnosMap: Map<string, Usuario>
   asistencias: Asistencia[] | null
-  mensajes: Mensaje[]
+  coachId: string
+  coachNombre: string
   onAbrir: () => void
-  onEnviarMensaje: (canalId: string, texto: string) => void
   onGuardarPlan: (bloques: string[]) => Promise<void>
   onMarcarAsistencia: (usuarioId: string, asistio: boolean) => void
   onFinalizar: (observaciones: string) => Promise<void>
@@ -378,6 +364,17 @@ function ClaseCard({
   const [bloquesText, setBloquesText] = useState((clase.plan ?? []).join('\n'))
   const [observaciones, setObservaciones] = useState(clase.observaciones_profesor ?? '')
   const [finalizando, setFinalizando] = useState(false)
+
+  // Canal activo del panel de mensajes: solo se suscribe mientras la
+  // tarjeta está abierta, para no mantener listeners de clases colapsadas.
+  const canalActivo = abierta
+    ? (chatCon === null ? canalGrupo(clase.nombre_clase) : canalPrivado(coachId, chatCon))
+    : null
+  const { mensajes } = useCanalMensajes(canalActivo)
+  async function enviar(texto: string) {
+    if (!canalActivo) return
+    await enviarMensaje(canalActivo, coachId, coachNombre, 'entrenador', texto)
+  }
 
   const { hora, ampm } = horaAmPm(clase.fecha_hora_inicio)
   const alumnos = clase.estudiantes_inscritos
@@ -598,18 +595,15 @@ function ClaseCard({
                 </div>
 
                 {(() => {
-                  const canalId = chatCon === null
-                    ? canalGrupo(grupoDeClase(clase))
-                    : canalPrivado(chatCon, COACH_ID)
                   const conQuien = chatCon === null
                     ? null
                     : alumnos.find((a) => a.uid === chatCon)?.nombres
                   return (
                     <Conversacion
-                      mensajes={delCanal(mensajes, canalId)}
-                      yoId={COACH_ID}
+                      mensajes={mensajes}
+                      yoId={coachId}
                       alto="max-h-[240px]"
-                      onEnviar={(texto) => onEnviarMensaje(canalId, texto)}
+                      onEnviar={enviar}
                       placeholder={chatCon === null ? 'Escribe a toda la clase…' : `Escríbele a ${conQuien}…`}
                       vacio={chatCon === null ? 'Aún nadie ha comentado en esta clase.' : `Empieza la conversación con ${conQuien}.`}
                     />

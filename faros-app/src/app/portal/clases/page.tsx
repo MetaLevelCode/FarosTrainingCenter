@@ -12,10 +12,11 @@ import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button } from '@/components/ui'
 import {
-  getClasesProfesor, getAsistenciasClase,
+  getClasesProfesor, getAsistenciasClase, getUsuarios,
   registrarAsistencia, updateObservacionesClase,
 } from '@/lib/firestore'
-import type { Clase, Asistencia } from '@/lib/types'
+import { displayName } from '@/lib/types'
+import type { Clase, Asistencia, Usuario } from '@/lib/types'
 import { encolarAsistencia } from '@/lib/offlineQueue'
 import { agruparPorCategoria, labelCategoria, proximaClase } from '@/lib/categoriaClase'
 
@@ -48,6 +49,7 @@ const ESTADO_LABEL: Record<Clase['estado'], string> = {
 export default function ClasesPage() {
   const { authorized, loading, user } = useRoleGuard(['profesor', 'admin'])
   const [clases, setClases] = useState<Clase[]>([])
+  const [alumnosMap, setAlumnosMap] = useState<Map<string, Usuario>>(new Map())
   const [cargando, setCargando] = useState(true)
   const [claseAbierta, setClaseAbierta] = useState<string | null>(null)
   const [tabActiva, setTabActiva] = useState<'plan' | 'asistencia' | 'observaciones'>('plan')
@@ -58,9 +60,10 @@ export default function ClasesPage() {
 
   useEffect(() => {
     if (!user) return
-    getClasesProfesor(user.uid)
-      .then((cs) => {
+    Promise.all([getClasesProfesor(user.uid), getUsuarios('estudiante')])
+      .then(([cs, estudiantes]) => {
         setClases(cs)
+        setAlumnosMap(new Map(estudiantes.map((u) => [u.uid, u])))
         // Inicializar observaciones desde Firestore
         const obs: Record<string, string> = {}
         cs.forEach((c) => { obs[c.id] = c.observaciones_profesor ?? '' })
@@ -85,7 +88,7 @@ export default function ClasesPage() {
     }
   }
 
-  async function toggleAsistencia(claseId: string, usuarioId: string, nombreUsuario: string) {
+  async function toggleAsistencia(claseId: string, usuarioId: string) {
     if (!user) return
     const lista = asistencias[claseId] ?? []
     const existente = lista.find((a) => a.usuarioId === usuarioId)
@@ -244,16 +247,23 @@ export default function ClasesPage() {
                   ) : c.estudiantes_inscritos.map((uid) => {
                     const reg = listaAsistencia.find((a) => a.usuarioId === uid)
                     const presente = reg?.asistio ?? false
+                    const alumno = alumnosMap.get(uid)
+                    const nombre = alumno ? displayName(alumno) : 'Alumno'
                     return (
                       <div key={uid} className="flex items-center justify-between p-4 rounded-2xl border border-white/5 bg-white/[0.02]">
                         <div className="flex items-center gap-3">
-                          <span className="w-9 h-9 rounded-full bg-white/10 flex items-center justify-center text-[11px] font-black text-white">
-                            {uid.substring(0, 2).toUpperCase()}
+                          <span className="relative w-9 h-9 rounded-full bg-white/10 overflow-hidden flex items-center justify-center text-[11px] font-black text-white shrink-0">
+                            {alumno?.foto_perfil ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={alumno.foto_perfil} alt="" className="absolute inset-0 w-full h-full object-cover" />
+                            ) : (
+                              nombre.substring(0, 2).toUpperCase()
+                            )}
                           </span>
-                          <span className="text-sm text-white">{uid}</span>
+                          <span className="text-sm text-white truncate">{nombre}</span>
                         </div>
                         <button
-                          onClick={() => toggleAsistencia(c.id, uid, uid)}
+                          onClick={() => toggleAsistencia(c.id, uid)}
                           className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all duration-200 ${
                             presente
                               ? 'bg-[var(--color-success-emerald)]/20 text-[var(--color-success-emerald)] border border-[var(--color-success-emerald)]/30'

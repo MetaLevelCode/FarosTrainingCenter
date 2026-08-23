@@ -1,20 +1,29 @@
 // ============================================================
 // FAROS — Mensajería alumno ↔ profesor (estilo Classroom)
-// Dos canales:
-//   · grupal  → el muro de la clase; todos los alumnos y el coach
-//               comentan ahí ("qué buena clase", dudas del plan…)
-//   · privado → conversación 1 a 1 entre un alumno y su profesor
+// Dos canales, sobre Firestore real:
+//   · grupo   → el muro del grupo (todos los alumnos inscritos + el
+//               coach). Persistente semana a semana: se identifica por
+//               un slug de `nombre_clase`, NO por el id de una sesión
+//               puntual (`clases/{id}` es una fecha/hora concreta).
+//   · privado → conversación 1 a 1 entre un alumno y un profesor.
 //
-// Lógica pura, lista para Firestore (mismo patrón que el resto de
-// lib/). Los ids de canal son estables para poder mapearlos a
-// colecciones: 'grupo:<claseId>' y 'dm:<alumnoId>:<coachId>'.
+// Colecciones:
+//   mensajes/{canalId}            — doc de control (solo Admin SDK +
+//                                    reglas; el cliente nunca lo lee).
+//   mensajes/{canalId}/items/{id} — los mensajes reales.
+//
+// La membresía del canal grupal (`participantes`) la mantienen las
+// rutas /api/clases/[id]/inscribir y /cancelar — son la única fuente
+// de verdad de `estudiantes_inscritos` (ver esas rutas y
+// firestore.rules). Este módulo NO escribe `participantes`.
 // ============================================================
+
+import { getFirebase } from './firebase'
 
 export type Autor = 'alumno' | 'entrenador'
 
 export interface Mensaje {
   id: string
-  canalId: string
   autorId: string
   autorNombre: string
   autorRol: Autor
@@ -22,71 +31,25 @@ export interface Mensaje {
   ts: number        // epoch ms
 }
 
-/** Canal del muro de una clase (todos los inscritos + el coach). */
-export const canalGrupo = (claseId: string) => `grupo:${claseId}`
+/** Slug estable a partir del nombre de la clase — identidad del muro grupal. */
+export const canalGrupo = (nombreClase: string) =>
+  `grupo:${nombreClase.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'general'}`
 
-/** Canal privado alumno ↔ profesor. Orden fijo → id estable. */
-export const canalPrivado = (alumnoId: string, coachId: string) => `dm:${alumnoId}:${coachId}`
+/** Canal privado alumno ↔ profesor. Orden fijo → id estable y parseable en reglas. */
+export const canalPrivado = (coachId: string, alumnoId: string) => `dm:${coachId}:${alumnoId}`
 
-export const COACH_ID = 'FR-C002'
-export const COACH_NOMBRE = 'Ana Torres'
-
-// ── Semilla de conversación (se reemplaza por Firestore) ──
-const H = 3_600_000
-
-export function mensajesSemilla(ahora = Date.now()): Mensaje[] {
-  return [
-    {
-      id: 'm1', canalId: canalGrupo('knowill'), autorId: COACH_ID, autorNombre: COACH_NOMBRE,
-      autorRol: 'entrenador', ts: ahora - 26 * H,
-      texto: 'Subí el plan de la sesión de mañana. Revisen el bloque de técnica antes de llegar.',
-    },
-    {
-      id: 'm2', canalId: canalGrupo('knowill'), autorId: 'FR-1045', autorNombre: 'Sofía Ruiz',
-      autorRol: 'alumno', ts: ahora - 24 * H,
-      texto: '¡Listo, coach! ¿Los 8 × 100 son con aletas?',
-    },
-    {
-      id: 'm3', canalId: canalGrupo('knowill'), autorId: COACH_ID, autorNombre: COACH_NOMBRE,
-      autorRol: 'entrenador', ts: ahora - 23 * H,
-      texto: 'Sin aletas. La idea es sostener el ritmo con técnica limpia.',
-    },
-    {
-      id: 'm4', canalId: canalGrupo('knowill'), autorId: 'FR-0922', autorNombre: 'Carlos Méndez',
-      autorRol: 'alumno', ts: ahora - 2 * H,
-      texto: '¡Qué buena clase la de hoy! Sentí mucho mejor el codo alto 💪',
-    },
-    {
-      id: 'p1', canalId: canalPrivado('FR-0922', COACH_ID), autorId: COACH_ID, autorNombre: COACH_NOMBRE,
-      autorRol: 'entrenador', ts: ahora - 20 * H,
-      texto: 'Carlos, te vi mejor en los virajes. Sigue trabajando el impulso de pared.',
-    },
-    {
-      id: 'p2', canalId: canalPrivado('FR-0922', COACH_ID), autorId: 'FR-0922', autorNombre: 'Carlos Méndez',
-      autorRol: 'alumno', ts: ahora - 19 * H,
-      texto: 'Gracias coach. ¿Puedo llegar 15 min antes el jueves para practicarlos?',
-    },
-    {
-      id: 'p3', canalId: canalPrivado('FR-0922', COACH_ID), autorId: COACH_ID, autorNombre: COACH_NOMBRE,
-      autorRol: 'entrenador', ts: ahora - 18 * H,
-      texto: 'Claro, nos vemos a las 5:45 en la Piscina A.',
-    },
-  ]
-}
-
-/** Mensajes de un canal, del más antiguo al más reciente. */
-export function delCanal(todos: Mensaje[], canalId: string): Mensaje[] {
-  return todos.filter((m) => m.canalId === canalId).sort((a, b) => a.ts - b.ts)
-}
-
-/** Crea un mensaje nuevo listo para agregarse al hilo. */
-export function nuevoMensaje(
+/** Envía un mensaje real a Firestore (client SDK, gobernado por firestore.rules). */
+export async function enviarMensaje(
   canalId: string, autorId: string, autorNombre: string, autorRol: Autor, texto: string,
-): Mensaje {
-  return {
-    id: `${canalId}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    canalId, autorId, autorNombre, autorRol, texto: texto.trim(), ts: Date.now(),
-  }
+): Promise<void> {
+  const limpio = texto.trim()
+  if (!limpio) return
+  const [{ db }, { collection, addDoc }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  await addDoc(collection(db, 'mensajes', canalId, 'items'), {
+    autorId, autorNombre, autorRol, texto: limpio, ts: Date.now(),
+  })
 }
 
 /** Hora relativa corta: "ahora", "hace 3 h", "ayer", "12 Ago". */

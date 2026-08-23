@@ -2,42 +2,77 @@
 
 // ============================================================
 // FAROS — Mensajes del alumno (estilo Classroom)
-// Dos pestañas: el muro de su clase (todos comentan) y el chat
-// privado con su profesor.
+// Deriva sus canales reales desde sus clases (Firestore): el muro
+// del/los grupo(s) grupales en los que está inscrito, y un chat
+// privado por cada profesor distinto con el que tiene clases.
 // ============================================================
 
-import { useMemo, useState } from 'react'
-import { Card } from '@/components/ui'
+import { useEffect, useMemo, useState } from 'react'
+import { Card, Spinner } from '@/components/ui'
 import { Conversacion } from '@/components/shared/Conversacion'
-import {
-  mensajesSemilla, delCanal, nuevoMensaje, canalGrupo, canalPrivado,
-  COACH_ID, COACH_NOMBRE, type Mensaje,
-} from '@/lib/mensajes'
+import { useCanalMensajes } from '@/hooks/useCanalMensajes'
+import { getClasesAlumno, getUsuario } from '@/lib/firestore'
+import { canalGrupo, canalPrivado, enviarMensaje } from '@/lib/mensajes'
+import { displayName } from '@/lib/types'
+import type { Clase, Usuario } from '@/lib/types'
 
-type Tab = 'muro' | 'privado'
+interface CanalTab {
+  id: string       // canalId
+  label: string
+  icon: string
+  vacio: string
+  placeholder: string
+}
 
-export function MensajesAlumno({
-  alumnoId, alumnoNombre, claseId, claseNombre,
-}: {
-  alumnoId: string
-  alumnoNombre: string
-  claseId: string
-  claseNombre: string
-}) {
-  const [tab, setTab] = useState<Tab>('muro')
-  const [mensajes, setMensajes] = useState<Mensaje[]>(() => mensajesSemilla())
+export function MensajesAlumno({ alumnoId, alumnoNombre }: { alumnoId: string; alumnoNombre: string }) {
+  const [cargando, setCargando] = useState(true)
+  const [grupos, setGrupos] = useState<{ nombre: string }[]>([])
+  const [profesores, setProfesores] = useState<Usuario[]>([])
+  const [tab, setTab] = useState<string | null>(null)
 
-  const canalId = tab === 'muro' ? canalGrupo(claseId) : canalPrivado(alumnoId, COACH_ID)
-  const hilo = useMemo(() => delCanal(mensajes, canalId), [mensajes, canalId])
+  useEffect(() => {
+    if (!alumnoId) return
+    getClasesAlumno(alumnoId)
+      .then(async (clases: Clase[]) => {
+        const nombresGrupo = [...new Set(clases.map((c) => c.nombre_clase))].map((nombre) => ({ nombre }))
+        const instructorIds = [...new Set(clases.map((c) => c.instructor_id).filter(Boolean))]
+        const usuarios = await Promise.all(instructorIds.map((uid) => getUsuario(uid)))
+        setGrupos(nombresGrupo)
+        setProfesores(usuarios.filter((u): u is Usuario => !!u))
+      })
+      .catch(console.error)
+      .finally(() => setCargando(false))
+  }, [alumnoId])
 
-  function enviar(texto: string) {
-    setMensajes((prev) => [...prev, nuevoMensaje(canalId, alumnoId, alumnoNombre, 'alumno', texto)])
+  const tabs: CanalTab[] = useMemo(() => {
+    const grupoTabs: CanalTab[] = grupos.map((g) => ({
+      id: canalGrupo(g.nombre),
+      label: `Muro · ${g.nombre}`,
+      icon: 'forum',
+      vacio: 'Aún nadie ha comentado en este grupo.',
+      placeholder: 'Comenta con tu grupo…',
+    }))
+    const dmTabs: CanalTab[] = profesores.map((p) => ({
+      id: canalPrivado(p.uid, alumnoId),
+      label: `Privado · ${p.nombres.split(' ')[0]}`,
+      icon: 'chat',
+      vacio: `Empieza la conversación con ${displayName(p)}.`,
+      placeholder: `Escríbele a ${p.nombres.split(' ')[0]}…`,
+    }))
+    return [...grupoTabs, ...dmTabs]
+  }, [grupos, profesores, alumnoId])
+
+  useEffect(() => {
+    if (tabs.length > 0 && !tabs.some((t) => t.id === tab)) setTab(tabs[0].id)
+  }, [tabs, tab])
+
+  const activa = tabs.find((t) => t.id === tab) ?? null
+  const { mensajes } = useCanalMensajes(activa?.id ?? null)
+
+  async function enviar(texto: string) {
+    if (!activa) return
+    await enviarMensaje(activa.id, alumnoId, alumnoNombre, 'alumno', texto)
   }
-
-  const tabs: { id: Tab; label: string; icon: string }[] = [
-    { id: 'muro', label: 'Muro de la clase', icon: 'forum' },
-    { id: 'privado', label: `Privado con ${COACH_NOMBRE.split(' ')[0]}`, icon: 'chat' },
-  ]
 
   return (
     <Card padding="lg" className="!rounded-[2.5rem]">
@@ -47,36 +82,46 @@ export function MensajesAlumno({
             Mensajes
           </h3>
           <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mt-1">
-            {tab === 'muro' ? claseNombre : `Conversación privada con ${COACH_NOMBRE}`}
+            {activa ? activa.label : 'Sin conversaciones todavía'}
           </p>
         </div>
 
-        <div className="flex gap-1 p-1 rounded-full bg-black/30 border border-white/10">
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              aria-pressed={tab === t.id}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full label-caps text-[9px] transition-colors duration-200 ${
-                tab === t.id
-                  ? 'bg-[var(--color-primary-fixed)] text-black'
-                  : 'text-[var(--color-on-surface-variant)]/60 hover:text-white'
-              }`}
-            >
-              <span className="material-symbols-outlined text-[15px]">{t.icon}</span>
-              {t.label}
-            </button>
-          ))}
-        </div>
+        {tabs.length > 0 && (
+          <div className="flex flex-wrap gap-1 p-1 rounded-full bg-black/30 border border-white/10">
+            {tabs.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                aria-pressed={tab === t.id}
+                className={`flex items-center gap-2 px-4 py-2 rounded-full label-caps text-[9px] transition-colors duration-200 ${
+                  tab === t.id
+                    ? 'bg-[var(--color-primary-fixed)] text-black'
+                    : 'text-[var(--color-on-surface-variant)]/60 hover:text-white'
+                }`}
+              >
+                <span className="material-symbols-outlined text-[15px]">{t.icon}</span>
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
-      <Conversacion
-        mensajes={hilo}
-        yoId={alumnoId}
-        onEnviar={enviar}
-        placeholder={tab === 'muro' ? 'Comenta con tu clase…' : `Escríbele a ${COACH_NOMBRE.split(' ')[0]}…`}
-        vacio={tab === 'muro' ? 'Aún nadie ha comentado en esta clase.' : 'Empieza la conversación con tu profesor.'}
-      />
+      {cargando ? (
+        <div className="flex justify-center py-10"><Spinner /></div>
+      ) : !activa ? (
+        <p className="text-center text-sm text-[var(--color-on-surface-variant)]/50 py-10">
+          Aún no tienes clases asignadas.
+        </p>
+      ) : (
+        <Conversacion
+          mensajes={mensajes}
+          yoId={alumnoId}
+          onEnviar={enviar}
+          placeholder={activa.placeholder}
+          vacio={activa.vacio}
+        />
+      )}
     </Card>
   )
 }

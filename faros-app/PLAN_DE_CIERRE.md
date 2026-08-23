@@ -25,7 +25,7 @@ Snapshot de qué está terminado vs. qué falta para poder desplegar en producci
 | Admin — planes CRUD | ✅ Listo | Sedes/Grupos/Tarifas/Plantillas persisten a Firestore de verdad |
 | Admin — usuarios CRUD | ✅ Listo | Rol, suspensión; bug crítico de `uid` en cambio de rol corregido (ver 6.6) |
 | Foto de perfil | ✅ Listo | Comprimida en el navegador (`lib/imagen.ts`, Canvas, ~18 KB por foto) antes de subir a Storage; Firestore solo guarda el link. En `/registro` (opcional) y en ambos perfiles (ver 6.10) |
-| Mensajería | 🔴 Falta | Tipos y helpers listos (`lib/mensajes.ts`), UI (`Conversacion.tsx`) no consume Firestore — sigue siendo demo local a propósito dentro del calendario del profesor |
+| Mensajería | ✅ Listo | `mensajes/{canalId}/items` real con `onSnapshot` (ver Fase 5 y 6.14) — muro persistente por grupo + DM alumno↔profesor |
 | Cloud Functions | 🔴 No existen | Sin directorio `functions/`; lógica sensible corre en API Routes (decisión ya tomada, ver Fase 1) |
 | PWA / Service Worker | 🟡 Parcial | `sw.js` presente, sin precache completo ni background sync |
 | Firestore Rules | ✅ Hardened | whitelist create, `activoOk()`, cross-check precio, validación instructor |
@@ -117,12 +117,12 @@ usa Firebase App Hosting: el backend ya es un servidor Node.js y no necesita des
   - Selector de rol (estudiante ↔ profesor) por fila. **2026-08-21**: bug crítico — `getUsuario(s)` nunca fijaba `uid` real, así que cambiar el rol de un usuario podía afectar a OTRA cuenta (la primera de la lista, ej. el propio admin) — corregido (ver 6.6)
   - ~~Sección de códigos de invitación~~ **removida 2026-08-21** (ver 6.4)
 
-### Fase 5 — Mensajería (2 días)
+### Fase 5 — Mensajería ✅ COMPLETADA (2026-08-23, ver 6.14)
 
-- [ ] `Conversacion.tsx`: consumir Firestore con `onSnapshot` sobre `mensajes/{canalId}/items`
-- [ ] Function opcional para notificaciones push cuando hay mensaje nuevo
-- [ ] Reglas de mensajería en `firestore.rules` (miembros del canal leen/escriben)
-- [ ] UI de bandeja de conversaciones en `/dashboard` y `/portal`
+- [x] `Conversacion.tsx`: consume Firestore con `onSnapshot` sobre `mensajes/{canalId}/items`
+- [x] Reglas de mensajería en `firestore.rules` (miembros del canal leen/escriben)
+- [x] Muro grupal persistente + DM alumno↔profesor en `/dashboard` y `/portal`
+- [ ] Function opcional para notificaciones push cuando hay mensaje nuevo — post-lanzamiento (ver sección 8)
 
 ### Fase 6 — PWA hardening ✅ COMPLETADA (2026-08-23, ver sección 6.12)
 
@@ -366,6 +366,85 @@ reestructurar la cabecera a dos filas. Se hizo un barrido por los 32 usos de
 apareció en ningún otro lado (ya estaban protegidos por `flex-wrap` o tablas
 con scroll horizontal).
 
+### 6.13 — Auditoría 2026-08-23 — barrido de datos hardcodeados vs. Firestore
+
+Se pidió confirmar si quedaba algo en el frontend sin conectar a Firestore, más allá
+de lo ya sabido de Mensajería. Barrido completo de `src/`: portal profesor, dashboard
+alumno, admin, componentes compartidos.
+
+**Resultado: prácticamente todo ya está conectado.** Dos hallazgos reales:
+
+- **`VELOCIDAD` en `dashboard/page.tsx`** (línea ~39-42): el gráfico "Tendencia de
+  velocidad" del alumno usa un array hardcodeado de porcentajes inventados (`S1..S6`),
+  no datos derivados de asistencia/rendimiento real. No estaba documentado antes.
+- **Mensajería** (`lib/mensajes.ts`): confirma lo ya sabido — sigue siendo demo local
+  (`mensajesSemilla()`), sin colección `mensajes` en Firestore ni rutas API. Ver Fase 5.
+
+**Código muerto encontrado de paso:** `ROSTER`/`AtletaRoster`/`pctAsistencia` en
+`lib/planes.ts` (~línea 384) no tienen ningún importador en todo `src/` — candidato a
+eliminar en una futura limpieza, no es algo que requiera "conectarse".
+
+Todo lo demás (portal/alumnos, portal/clases, portal/perfil, dashboard completo,
+admin completo, CalendarioEntrenador, SolicitudesPendientes, SolicitudPersonalizada)
+ya lee/escribe Firestore real. Lo estático intencional (landing, testimonios, footer,
+CTAs) es contenido de marketing, correctamente sin tocar.
+
+### 6.14 — Fase 5: Mensajería real sobre Firestore (2026-08-23)
+
+Reemplazado el chat semilla (`mensajesSemilla()`, `COACH_ID` inventado,
+`claseId` falso = id de la suscripción) por mensajería real:
+`mensajes/{canalId}/items/{id}`, leída en tiempo real con `onSnapshot`
+(primer uso de realtime en el proyecto — `src/hooks/useCanalMensajes.ts`).
+
+**El problema de fondo:** `clases/{id}` es una SESIÓN puntual (una
+fecha/hora con su propio `estudiantes_inscritos`), no un curso persistente.
+Un alumno de "Grupal 2x/semana" tiene DOS docs de clase distintos con el
+mismo `nombre_clase` (martes y jueves). Decisión de producto tomada con el
+usuario: el "muro de la clase" debe seguir vivo semana a semana, no
+reiniciarse en cada sesión — así que la identidad del canal grupal es un
+slug estable de `nombre_clase` (`canalGrupo()`, `lib/mensajes.ts`), no el id
+de una sesión.
+
+**Por qué hay un doc de control `mensajes/{canalId}` con `participantes`
+denormalizado:** las reglas de Firestore solo pueden `get()` un documento
+puntual por path, no "busca todas las clases de este grupo" — mismo límite
+que ya forzó el precedente de `asistencias` (`get()` sobre `clases`, ver
+6.x). Por eso `/api/clases/[claseId]/inscribir` y `/cancelar` (las únicas
+rutas que ya tocaban `estudiantes_inscritos`, dentro de su propia
+`runTransaction()`) ahora también mantienen `mensajes/{canalGrupo}.participantes`:
+`arrayUnion` al inscribirse; al cancelar, una query transaccional adicional
+verifica si el alumno sigue inscrito en OTRA sesión del mismo grupo antes de
+sacarlo del muro (si cancela el martes pero sigue yendo el jueves, no pierde
+el hilo).
+
+El DM alumno↔profesor no tiene este problema — `instructor_id` ya es un id
+estable — así que su canal (`dm:<coachId>:<alumnoId>`) no necesita doc de
+control: la membresía se valida parseando el propio `canalId` en las
+reglas.
+
+**Componentes reescritos:** `MensajesAlumno.tsx` ahora deriva sus canales
+reales consultando `clases` (`estudiantes_inscritos array-contains uid`) en
+vez de recibir `claseId`/`claseNombre` falsos por props — muestra una tab de
+muro por cada grupo y una tab de DM por cada profesor distinto con el que
+el alumno realmente tiene clases. `CalendarioEntrenador.tsx` usa el `uid`
+real del profesor logueado en vez de `COACH_ID`.
+
+**Pendiente de verificación antes de producción:** la nueva query de
+`cancelar` (`where('nombre_clase','==',...) + where('estudiantes_inscritos','array-contains',uid)`)
+sigue el mismo patrón (array-contains + una igualdad) que ya usa
+`dashboard/asistencia` sin tener una entrada explícita en
+`firestore.indexes.json` — no se agregó un índice nuevo asumiendo que
+Firestore lo resuelve igual que el caso existente, pero dado el antecedente
+de 6.11 (un índice faltante tumbó todo el catálogo en silencio), **hay que
+probar el flujo de cancelar contra Firestore real antes de dar esto por
+cerrado** — si tira `FAILED_PRECONDITION`, la consola de Firebase da el
+link directo para crear el índice compuesto.
+
+**Fuera de alcance (anotado a propósito, no es un olvido):** editar/borrar
+mensajes propios, notificaciones push, contador de no leídos, y backfill de
+`participantes` para alumnos que ya estaban inscritos antes de este cambio
+(el canal se puebla hacia adelante, desde el próximo inscribir/cancelar).
+
 ---
 
 ## 7. Pendientes actuales (post-auditoría 2026-08-21)
@@ -395,6 +474,15 @@ con scroll horizontal).
   de planes dice estar "abierto a invitados" (ver 6.11) — decidir si se relaja la
   regla a lectura pública (son catálogo/precios, no datos sensibles) o si el
   wizard deja de prometer soporte a invitados.
+- [ ] **`VELOCIDAD` hardcodeado en `dashboard/page.tsx`** (ver 6.13) — el gráfico de
+  "Tendencia de velocidad" del alumno muestra datos inventados, no reales.
+- [ ] **Limpiar código muerto**: `ROSTER`/`AtletaRoster`/`pctAsistencia` en
+  `lib/planes.ts` (ver 6.13) — sin importadores en todo `src/`.
+- [ ] **Desplegar `firestore.rules` y probar Mensajería contra Firestore real**
+  (ver 6.14) — recordar `firebase deploy --only firestore:rules,storage` (no
+  lo hace `apphosting:rollouts:create`, ver 6.10) y verificar si la query
+  nueva de `/cancelar` necesita un índice compuesto que no está en
+  `firestore.indexes.json` todavía.
 
 ---
 

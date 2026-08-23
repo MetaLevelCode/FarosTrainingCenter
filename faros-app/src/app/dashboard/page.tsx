@@ -476,8 +476,6 @@ export default function DashboardPage() {
           <MensajesAlumno
             alumnoId={user?.uid ?? ''}
             alumnoNombre={firstName}
-            claseId={susc?.planId ?? 'knowill'}
-            claseNombre={susc?.nombrePlan ?? 'Tu clase'}
           />
         </Reveal>
 
