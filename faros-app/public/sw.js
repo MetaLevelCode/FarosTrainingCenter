@@ -8,7 +8,7 @@
 //   · Firebase / APIs ............ never intercepted
 // Bump VERSION on every deploy that should invalidate caches.
 // ============================================================
-const VERSION = 'faros-v10'
+const VERSION = 'faros-v11'
 const PRECACHE = `${VERSION}-precache`
 const RUNTIME = `${VERSION}-runtime`
 const MEDIA = `${VERSION}-media`
@@ -41,12 +41,16 @@ const NEVER_CACHE_HOSTS = [
   'identitytoolkit.googleapis.com',
   'securetoken.googleapis.com',
   'firebaseinstallations.googleapis.com',
-  // Fonts externas: dejar que el navegador las descargue directo.
-  // Si el SW hace fetch(), la request cuenta como connect-src y el
-  // CSP la bloquea. Sin interceptación, la font cae en font-src y OK.
-  'fonts.googleapis.com',
-  'fonts.gstatic.com',
 ]
+
+// Google Fonts (incluye el font de Material Symbols que usan los
+// íconos de toda la app) — cache-first, ver más abajo. connect-src
+// en next.config.mjs ya las autoriza para que el fetch() del SW no
+// choque con CSP. Sin este cache, dependían del cache HTTP nativo del
+// navegador, que en iOS (sobre todo instalado como PWA) es mucho
+// menos confiable: sin señal, el font no cargaba y los íconos se
+// veían como texto plano ("event_busy" en vez del glifo).
+const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com']
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
@@ -141,6 +145,13 @@ self.addEventListener('fetch', (e) => {
 
   // Never touch auth/data APIs — they must always hit the network.
   if (NEVER_CACHE_HOSTS.some((h) => url.hostname === h)) return
+
+  // Google Fonts (Material Symbols incluido) — cache-first, casi nunca
+  // cambian de contenido.
+  if (FONT_HOSTS.some((h) => url.hostname === h)) {
+    e.respondWith(cacheFirst(request, RUNTIME))
+    return
+  }
 
   // Page navigations
   if (request.mode === 'navigate') {

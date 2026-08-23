@@ -26,7 +26,11 @@ const CSP = [
   // firebasestorage.googleapis.com: fotos de comprobantes y de perfil.
   "img-src 'self' data: blob: https://*.googleusercontent.com https://firebasestorage.googleapis.com",
   "media-src 'self'",
-  `connect-src 'self' ${FIREBASE_ENDPOINTS}${ES_DEV ? ' ws://localhost:* http://localhost:*' : ''}`,
+  // https://fonts.g*.com también en connect-src (no solo font-src): el
+  // service worker necesita poder cachearlas con fetch() para que el
+  // ícono de Material Symbols no dependa del cache HTTP nativo del
+  // navegador — en iOS ese cache es mucho menos confiable sin señal.
+  `connect-src 'self' https://fonts.googleapis.com https://fonts.gstatic.com ${FIREBASE_ENDPOINTS}${ES_DEV ? ' ws://localhost:* http://localhost:*' : ''}`,
   "worker-src 'self'",
   "manifest-src 'self'",
   // Nadie puede meter la app en un <iframe> (clickjacking).
