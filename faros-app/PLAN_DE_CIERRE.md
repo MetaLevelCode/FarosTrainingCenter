@@ -629,8 +629,8 @@ mensajería en 6.14).
   de planes dice estar "abierto a invitados" (ver 6.11) — decidir si se relaja la
   regla a lectura pública (son catálogo/precios, no datos sensibles) o si el
   wizard deja de prometer soporte a invitados.
-- [ ] **`VELOCIDAD` hardcodeado en `dashboard/page.tsx`** (ver 6.13) — el gráfico de
-  "Tendencia de velocidad" del alumno muestra datos inventados, no reales.
+- [x] ~~`VELOCIDAD` hardcodeado en `dashboard/page.tsx`~~ (ver 6.13 y 6.16) —
+  reemplazado por "Asistencia semanal" con datos reales de `asistencias`.
 - [ ] **Limpiar código muerto**: `ROSTER`/`AtletaRoster`/`pctAsistencia` en
   `lib/planes.ts` (ver 6.13) — sin importadores en todo `src/`.
 - [x] ~~Desplegar `firestore.rules` y probar Mensajería contra Firestore real~~
