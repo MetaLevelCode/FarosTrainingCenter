@@ -8,7 +8,7 @@
 // gestione planes desde su panel.
 // ============================================================
 
-export type TipoPlan = 'grupal' | 'personal' | 'conjunto' | 'vacaciones'
+export type TipoPlan = 'grupal' | 'personal' | 'conjunto' | 'vacaciones' | 'virtual'
 
 export interface OpcionTipo {
   id: TipoPlan
@@ -34,6 +34,10 @@ export const TIPOS: OpcionTipo[] = [
   {
     id: 'vacaciones', nombre: 'Vacaciones deportivas', desc: 'Programa intensivo de 2 semanas para niños.', icon: 'child_care',
     detalle: ['Programa intensivo de 2 semanas', 'Pensado para niños y jóvenes', 'Técnica y diversión en el receso'],
+  },
+  {
+    id: 'virtual', nombre: 'Virtual', desc: 'Rutina remota armada por tu entrenador, a tu ritmo.', icon: 'smart_display',
+    detalle: ['Videos y rutinas de tu coach', 'Acceso ilimitado mientras esté activo', 'Marca tus sesiones a medida que las completas'],
   },
 ]
 
@@ -122,6 +126,8 @@ export const CONJUNTOS: Conjunto[] = [
 
 export const VACACIONES_POR_NINO = 150_000 // 2 semanas
 
+export const VIRTUAL_POR_MES = 120_000 // acceso ilimitado, sin sub-modalidades
+
 // ── Frecuencias ──
 export interface Frecuencia {
   week: number
@@ -144,11 +150,12 @@ export interface SeleccionPlan {
   week: number        // frecuencia semanal
   personas: number    // para modalidades por persona
   ninos: number       // para vacaciones
+  profesorVirtualId: string | null  // para virtual — coach asignado
 }
 
 export const SELECCION_INICIAL: SeleccionPlan = {
   tipo: null, grupoId: null, personalId: null, conjuntoId: null,
-  week: 2, personas: 2, ninos: 1,
+  week: 2, personas: 2, ninos: 1, profesorVirtualId: null,
 }
 
 export interface PrecioCalculado {
@@ -186,6 +193,7 @@ export const TARIFAS_FALLBACK: Tarifas = {
     return acc
   }, {} as Tarifas['conjuntos']),
   vacacionesPorNino: VACACIONES_POR_NINO,
+  virtualPorMes: VIRTUAL_POR_MES,
 }
 
 // Motor de cálculo — la pieza central del flujo. Si se pasa `tarifas`,
@@ -245,6 +253,17 @@ export function calcularPrecio(sel: SeleccionPlan, tarifas: Tarifas = TARIFAS_FA
     }
   }
 
+  if (sel.tipo === 'virtual') {
+    if (!sel.profesorVirtualId) return { ...base, detalleFrecuencia: 'Acceso ilimitado' }
+    return {
+      disponible: true,
+      total: tarifas.virtualPorMes,
+      porPersona: null,
+      personas: 1,
+      detalleFrecuencia: 'Acceso ilimitado mientras esté activo',
+    }
+  }
+
   return base
 }
 
@@ -252,6 +271,7 @@ export function calcularPrecio(sel: SeleccionPlan, tarifas: Tarifas = TARIFAS_FA
 export function sesionesDelPlan(sel: SeleccionPlan): number {
   if (sel.tipo === 'vacaciones') return 10   // programa de 2 semanas ~ 10 clases
   if (sel.tipo === 'conjunto') return (sel.week === 1 ? 4 : 8)
+  if (sel.tipo === 'virtual') return 0       // acceso ilimitado, no se cuenta por sesión
   const freq = FRECUENCIAS.find((f) => f.week === sel.week)
   return freq?.mes ?? 0
 }
@@ -277,6 +297,9 @@ export function resumenPlan(sel: SeleccionPlan): { titulo: string; subtitulo: st
   }
   if (sel.tipo === 'vacaciones') {
     return { titulo: 'Vacaciones deportivas', subtitulo: 'Programa intensivo · 2 semanas', horarios: [] }
+  }
+  if (sel.tipo === 'virtual') {
+    return { titulo: 'Plan Virtual', subtitulo: 'Rutina remota con tu entrenador', horarios: [] }
   }
   return { titulo: '', subtitulo: '', horarios: [] }
 }
@@ -331,6 +354,7 @@ const TIPO_LABEL: Record<TipoPlan, string> = {
   personal: 'Personalizado',
   conjunto: 'Conjunto',
   vacaciones: 'Vacaciones',
+  virtual: 'Virtual',
 }
 
 /** Describe un plan (asignado o en construcción) con cifras coherentes. */
@@ -342,15 +366,18 @@ export function describirPlan(sel: SeleccionPlan): PlanDescrito {
   const sesionesMes =
     sel.tipo === 'vacaciones' ? 10
     : sel.tipo === 'conjunto' ? (sel.week === 1 ? 4 : 8)
+    : sel.tipo === 'virtual' ? 0
     : freq?.mes ?? 0
 
   const frecuenciaLabel =
-    sel.tipo === 'vacaciones' ? 'Programa de 2 semanas' : freq?.label ?? ''
+    sel.tipo === 'vacaciones' ? 'Programa de 2 semanas'
+    : sel.tipo === 'virtual' ? 'Acceso ilimitado'
+    : freq?.label ?? ''
 
   const etiqueta =
-    sel.tipo === 'vacaciones'
-      ? `Vacaciones · ${sel.ninos} ${sel.ninos === 1 ? 'niño' : 'niños'}`
-      : `${resumen.titulo} · ${sel.week}x`
+    sel.tipo === 'vacaciones' ? `Vacaciones · ${sel.ninos} ${sel.ninos === 1 ? 'niño' : 'niños'}`
+    : sel.tipo === 'virtual' ? 'Virtual · acceso ilimitado'
+    : `${resumen.titulo} · ${sel.week}x`
 
   return {
     titulo: resumen.titulo,

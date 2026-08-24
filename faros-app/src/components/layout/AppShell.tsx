@@ -23,6 +23,7 @@ const NAV: Record<UserRole, NavItem[]> = {
     { label: 'Dashboard', href: '/dashboard', icon: 'dashboard' },
     { label: 'Planes', href: '/dashboard/planes', icon: 'fitness_center' },
     { label: 'Asistencia', href: '/dashboard/asistencia', icon: 'calendar_today' },
+    { label: 'Plan Virtual', href: '/dashboard/virtual', icon: 'smart_display' },
     { label: 'Mensajes', href: '/dashboard/mensajes', icon: 'forum' },
     { label: 'Ranking', href: '/dashboard/ranking', icon: 'leaderboard' },
     { label: 'Perfil', href: '/dashboard/perfil', icon: 'account_circle' },
@@ -30,6 +31,7 @@ const NAV: Record<UserRole, NavItem[]> = {
   profesor: [
     { label: 'Portal', href: '/portal', icon: 'dashboard' },
     { label: 'Mis Clases', href: '/portal/clases', icon: 'event_note' },
+    { label: 'Plan Virtual', href: '/portal/virtual', icon: 'smart_display' },
     { label: 'Mensajes', href: '/portal/mensajes', icon: 'forum' },
     { label: 'Estudiantes', href: '/portal/alumnos', icon: 'groups' },
     { label: 'Perfil', href: '/portal/perfil', icon: 'account_circle' },

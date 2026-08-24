@@ -26,6 +26,10 @@ const CSP = [
   // firebasestorage.googleapis.com: fotos de comprobantes y de perfil.
   "img-src 'self' data: blob: https://*.googleusercontent.com https://firebasestorage.googleapis.com",
   "media-src 'self'",
+  // Plan Virtual: los videos de las rutinas se embeben desde YouTube/Vimeo
+  // (nunca se suben a Storage) — sin frame-src, el navegador cae a
+  // default-src 'self' y bloquea el <iframe> en silencio.
+  "frame-src https://www.youtube.com https://player.vimeo.com",
   // https://fonts.g*.com también en connect-src (no solo font-src): el
   // service worker necesita poder cachearlas con fetch() para que el
   // ícono de Material Symbols no dependa del cache HTTP nativo del

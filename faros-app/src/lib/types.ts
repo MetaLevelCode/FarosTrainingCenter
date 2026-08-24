@@ -305,4 +305,42 @@ export interface Tarifas {
   // Conjuntos: precio mensual según frecuencia semanal (1 o 2)
   conjuntos: Record<string, TarifaConjunto>
   vacacionesPorNino: number
+  virtualPorMes: number
+}
+
+// ── rutinas_virtuales/{rutinaId} ──────────────────────────────
+// Plan Virtual: rutina remota armada por un profesor/admin para UN
+// alumno específico. No hay clases/sede/horario — solo contenido y
+// progreso. Ver rutinas_virtuales/{id}/sesiones/{id} para el contenido.
+
+export interface RutinaVirtual {
+  id: string
+  rutinaId: string
+  alumnoId: string
+  profesorId: string
+  nombre: string
+  estado: 'activa' | 'archivada'
+  creadoEn: number
+  actualizadoEn: number
+  // Desnormalizado para mostrar sin join
+  nombre_alumno?: string
+  nombre_profesor?: string
+}
+
+// ── rutinas_virtuales/{rutinaId}/sesiones/{sesionId} ──────────
+// completada/completadaEn son los ÚNICOS campos que el alumno dueño
+// puede escribir (ver firestore.rules) — todo lo demás lo controla
+// el profesor/admin de la rutina.
+
+export interface SesionVirtual {
+  id: string
+  sesionId: string
+  titulo: string
+  descripcion: string
+  videoUrl: string
+  orden: number
+  completada: boolean
+  completadaEn: number | null
+  creadoEn: number
+  actualizadoEn: number
 }

@@ -16,9 +16,10 @@ import { useAuth } from '@/contexts/AuthContext'
 import { FarosWordmark, Spinner, Button } from '@/components/ui'
 import { WaterBackground } from '@/components/shared/WaterBackground'
 import { SubirComprobante } from '@/components/dashboard/SubirComprobante'
-import { getTransaccionesUsuario, getSuscripcionesUsuario, getSedes, getGrupos, getTarifas } from '@/lib/firestore'
+import { getTransaccionesUsuario, getSuscripcionesUsuario, getSedes, getGrupos, getTarifas, getUsuarios } from '@/lib/firestore'
 import { parseVencimiento } from '@/lib/matricula'
-import type { Suscripcion, Sede, Grupo as GrupoFS, Tarifas } from '@/lib/types'
+import { displayName } from '@/lib/types'
+import type { Suscripcion, Sede, Grupo as GrupoFS, Tarifas, Usuario } from '@/lib/types'
 import { Card } from '@/components/ui'
 import {
   TIPOS, GRUPOS as GRUPOS_FALLBACK, PERSONALES, CONJUNTOS, FRECUENCIAS,
@@ -30,7 +31,7 @@ import {
 const EASE = [0.22, 1, 0.36, 1] as const
 
 // Secuencia de pasos según el tipo de plan elegido.
-type StepKey = 'tipo' | 'grupo' | 'personal' | 'conjunto' | 'frecuencia' | 'ninos' | 'resumen'
+type StepKey = 'tipo' | 'grupo' | 'personal' | 'conjunto' | 'frecuencia' | 'ninos' | 'virtual' | 'resumen'
 
 function stepsFor(tipo: TipoPlan | null): StepKey[] {
   switch (tipo) {
@@ -38,6 +39,7 @@ function stepsFor(tipo: TipoPlan | null): StepKey[] {
     case 'personal': return ['tipo', 'personal', 'frecuencia', 'resumen']
     case 'conjunto': return ['tipo', 'conjunto', 'frecuencia', 'resumen']
     case 'vacaciones': return ['tipo', 'ninos', 'resumen']
+    case 'virtual': return ['tipo', 'virtual', 'resumen']
     default: return ['tipo', 'grupo', 'frecuencia', 'resumen']
   }
 }
@@ -49,6 +51,7 @@ const STEP_TITULO: Record<StepKey, string> = {
   conjunto: 'Elige tu combinación',
   frecuencia: '¿Con qué frecuencia entrenas?',
   ninos: '¿Cuántos niños?',
+  virtual: 'Elige tu entrenador',
   resumen: 'Tu plan a la medida',
 }
 
@@ -188,6 +191,7 @@ export default function PlanesFlowPage() {
   // Cuántos alumnos ya ocupan cada grupo (suscripciones activas) — para
   // mostrar cupos disponibles reales, no solo la capacidad máxima.
   const [inscritosPorGrupo, setInscritosPorGrupo] = useState<Record<string, number>>({})
+  const [profesores, setProfesores] = useState<Usuario[]>([])
 
   useEffect(() => {
     // allSettled: si UNA falla (ej. falta un índice), las otras dos no
@@ -195,6 +199,7 @@ export default function PlanesFlowPage() {
     getSedes().then(setSedes).catch(() => {})
     getGrupos().then(setGruposFS).catch(() => {})
     getTarifas().then((t) => { if (t) setTarifas(t) }).catch(() => {})
+    getUsuarios('profesor').then(setProfesores).catch(() => {})
     fetch('/api/grupos/cupos')
       .then((r) => r.json())
       .then((d) => setInscritosPorGrupo(d.inscritosPorGrupo ?? {}))
@@ -277,6 +282,7 @@ export default function PlanesFlowPage() {
       case 'grupo': return !!sel.grupoId
       case 'personal': return !!sel.personalId
       case 'conjunto': return !!sel.conjuntoId
+      case 'virtual': return !!sel.profesorVirtualId
       default: return true
     }
   })()
@@ -829,6 +835,26 @@ export default function PlanesFlowPage() {
                   onChange={(v) => setSel((s) => ({ ...s, ninos: v }))}
                   sufijo={sel.ninos === 1 ? 'niño inscrito' : 'niños inscritos'}
                 />
+              </div>
+            )}
+
+            {/* PASO: VIRTUAL (elegir entrenador) */}
+            {stepKey === 'virtual' && (
+              <div className="space-y-6">
+                {profesores.length === 0 ? (
+                  <p className="text-sm text-[var(--color-on-surface-variant)]/50 text-center py-10">
+                    No hay entrenadores disponibles por ahora.
+                  </p>
+                ) : profesores.map((p) => (
+                  <ChoiceCard
+                    key={p.uid}
+                    selected={sel.profesorVirtualId === p.uid}
+                    onClick={() => setSel((s) => ({ ...s, profesorVirtualId: p.uid }))}
+                    icon="person"
+                    title={displayName(p)}
+                    desc="Te arma y actualiza tu rutina remota."
+                  />
+                ))}
               </div>
             )}
 

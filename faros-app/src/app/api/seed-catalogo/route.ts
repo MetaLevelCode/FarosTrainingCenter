@@ -100,6 +100,7 @@ const TARIFAS_ACTUAL = {
     'rumba':         { precios: { 1: null,    2: null } },
   },
   vacacionesPorNino: 150_000,
+  virtualPorMes: 120_000,
 }
 
 export async function POST(req: NextRequest) {

@@ -4,10 +4,11 @@
 // FAROS — Admin · Catálogo
 // El admin edita AQUÍ el catálogo que alimenta el wizard del alumno.
 //
-// Cuatro pestañas:
+// Cinco pestañas:
 //   Sedes      — CRUD de sedes físicas (Firestore: sedes/)
 //   Grupos     — CRUD de grupos grupales por sede (Firestore: grupos/)
 //   Tarifas    — Matriz de precios (Firestore: tarifas/actual)
+//   Virtual    — Rutinas del Plan Virtual, de cualquier profesor
 //   Plantillas — Planes nombrados ad-hoc (Firestore: planes/) legacy
 // ============================================================
 
@@ -16,14 +17,16 @@ import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button, Spinner } from '@/components/ui'
+import { RutinaVirtualCard } from '@/components/shared/RutinaVirtualCard'
 import { fmtCOP } from '@/lib/planes'
 import {
   getSedes, upsertSede, eliminarSede,
   getGrupos, upsertGrupo, eliminarGrupo,
   getTarifas, actualizarTarifas,
   getPlanes, crearPlan, actualizarPlan, archivarPlan,
+  getTodasRutinasVirtuales,
 } from '@/lib/firestore'
-import type { Sede, Grupo, Tarifas, Plan } from '@/lib/types'
+import type { Sede, Grupo, Tarifas, Plan, RutinaVirtual } from '@/lib/types'
 import { useAuth } from '@/contexts/AuthContext'
 
 const EASE = [0.22, 1, 0.36, 1] as const
@@ -161,11 +164,12 @@ function InputPrecio({ value, onChange, placeholder }: {
 
 // ── Tabs ────────────────────────────────────────────────────
 
-type Tab = 'sedes' | 'grupos' | 'tarifas' | 'plantillas'
+type Tab = 'sedes' | 'grupos' | 'tarifas' | 'virtual' | 'plantillas'
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'sedes',      label: 'Sedes',      icon: 'location_on' },
   { id: 'grupos',     label: 'Grupos',     icon: 'groups' },
   { id: 'tarifas',    label: 'Tarifas',    icon: 'payments' },
+  { id: 'virtual',    label: 'Virtual',    icon: 'smart_display' },
   { id: 'plantillas', label: 'Plantillas', icon: 'database' },
 ]
 
@@ -215,6 +219,7 @@ export default function CatalogoPage() {
         {tab === 'sedes' && <SedesTab />}
         {tab === 'grupos' && <GruposTab />}
         {tab === 'tarifas' && <TarifasTab actualizadoPor={user?.uid} />}
+        {tab === 'virtual' && <VirtualTab />}
         {tab === 'plantillas' && <PlantillasTab />}
       </div>
     </GuardedShell>
@@ -703,6 +708,7 @@ function TarifasTab({ actualizadoPor }: { actualizadoPor?: string }) {
         personales: tarifas.personales,
         conjuntos: tarifas.conjuntos,
         vacacionesPorNino: tarifas.vacacionesPorNino,
+        virtualPorMes: tarifas.virtualPorMes,
       }, actualizadoPor)
       console.log('[TARIFAS_SAVE] OK')
       setDirty(false)
@@ -841,6 +847,53 @@ function TarifasTab({ actualizadoPor }: { actualizadoPor?: string }) {
           </Field>
         </div>
       </Card>
+
+      {/* Virtual */}
+      <Card>
+        <p className="label-caps text-[10px] text-[var(--color-primary-fixed)] mb-1">VIRTUAL</p>
+        <p className="text-sm text-white/60 mb-5">Rutina remota con coach — acceso ilimitado mientras esté activo, precio fijo mensual.</p>
+        <div className="max-w-xs">
+          <Field label="Por mes">
+            <InputPrecio
+              value={tarifas.virtualPorMes}
+              onChange={(v) => update((t) => ({ ...t, virtualPorMes: v ?? 0 }))}
+            />
+          </Field>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+// TAB VIRTUAL — todas las rutinas, de cualquier profesor. Mismo CRUD
+// de sesiones que usa el profesor en /portal/virtual (RutinaVirtualCard).
+// ─────────────────────────────────────────────────────────────
+
+function VirtualTab() {
+  const [rutinas, setRutinas] = useState<RutinaVirtual[]>([])
+  const [cargando, setCargando] = useState(true)
+
+  useEffect(() => {
+    getTodasRutinasVirtuales().then(setRutinas).catch(console.error).finally(() => setCargando(false))
+  }, [])
+
+  if (cargando) return <div className="flex justify-center py-10"><Spinner /></div>
+
+  return (
+    <div className="space-y-6">
+      <p className="text-sm text-white/60">
+        Rutinas del Plan Virtual de todos los alumnos, sin importar el profesor asignado.
+      </p>
+      {rutinas.length === 0 ? (
+        <Card><p className="text-center text-sm text-white/50 py-8">No hay rutinas virtuales todavía.</p></Card>
+      ) : (
+        <div className="space-y-3">
+          {rutinas.map((r) => (
+            <RutinaVirtualCard key={r.id} rutina={r} subtitulo={r.nombre_profesor ? `Coach: ${r.nombre_profesor}` : undefined} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

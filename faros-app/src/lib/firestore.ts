@@ -8,7 +8,7 @@ import { getFirebase } from './firebase'
 import type {
   Usuario, Catalogo, Plan, Suscripcion, Transaccion,
   Clase, Asistencia, Movimiento, Categoria, UserRole,
-  Sede, Grupo, Tarifas,
+  Sede, Grupo, Tarifas, RutinaVirtual, SesionVirtual,
 } from './types'
 
 // ── Utilidades internas ──────────────────────────────────────
@@ -166,6 +166,17 @@ export async function aprobarTransaccion(
     const resumen = resumenPlan(sel)
     const nombrePlan = t.nombre_plan ?? resumen.titulo
 
+    // Lectura del profesor asignado ANTES de cualquier escritura — las
+    // transacciones de Firestore exigen que todos los get() vayan primero.
+    let nombreProfesorVirtual = ''
+    if (sel.tipo === 'virtual' && sel.profesorVirtualId) {
+      const profSnap = await tx.get(doc(db, 'usuarios', sel.profesorVirtualId))
+      if (profSnap.exists()) {
+        const p = profSnap.data()
+        nombreProfesorVirtual = `${p.nombres ?? ''} ${p.apellidos ?? ''}`.trim()
+      }
+    }
+
     // 1. Crear suscripción
     const suscRef = doc(collection(db, 'suscripciones'))
     tx.set(suscRef, {
@@ -224,6 +235,23 @@ export async function aprobarTransaccion(
       transaccionId,
       creadoEn: now,
     })
+
+    // 5. Plan Virtual: crear la rutina para que el profesor vea a su
+    // alumno de inmediato en /portal/virtual, sin sesiones todavía.
+    if (sel.tipo === 'virtual' && sel.profesorVirtualId) {
+      const rutinaRef = doc(collection(db, 'rutinas_virtuales'))
+      tx.set(rutinaRef, {
+        rutinaId: rutinaRef.id,
+        alumnoId: t.usuarioId,
+        profesorId: sel.profesorVirtualId,
+        nombre: 'Plan virtual',
+        estado: 'activa',
+        creadoEn: now,
+        actualizadoEn: now,
+        nombre_alumno: t.nombre_usuario ?? '',
+        nombre_profesor: nombreProfesorVirtual,
+      })
+    }
 
     selAprobada = sel
     usuarioIdAprobado = t.usuarioId
@@ -753,4 +781,125 @@ export async function actualizarTarifas(data: Omit<Tarifas, 'actualizadoEn'>, ac
     ...(actualizadoPor ? { actualizadoPor } : {}),
   })
   await setDoc(doc(db, 'tarifas', 'actual'), payload)
+}
+
+// ── rutinas_virtuales (Plan Virtual) ──────────────────────────
+// Normalmente la rutina se crea sola al aprobar la transacción (ver
+// aprobarTransaccion()) — crearRutinaVirtual() cubre el caso de que un
+// profesor/admin necesite armar una a mano.
+
+export async function crearRutinaVirtual(data: {
+  alumnoId: string; profesorId: string; nombre: string
+  nombreAlumno?: string; nombreProfesor?: string
+}): Promise<string> {
+  const [{ db }, { collection, addDoc, updateDoc }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  const now = Date.now()
+  const ref = await addDoc(collection(db, 'rutinas_virtuales'), {
+    rutinaId: '',
+    alumnoId: data.alumnoId,
+    profesorId: data.profesorId,
+    nombre: data.nombre,
+    estado: 'activa',
+    creadoEn: now,
+    actualizadoEn: now,
+    ...(data.nombreAlumno ? { nombre_alumno: data.nombreAlumno } : {}),
+    ...(data.nombreProfesor ? { nombre_profesor: data.nombreProfesor } : {}),
+  })
+  await updateDoc(ref, { rutinaId: ref.id })
+  return ref.id
+}
+
+/** Todas las rutinas (para la pestaña Virtual del admin) — sin filtrar por profesor. */
+export async function getTodasRutinasVirtuales(): Promise<RutinaVirtual[]> {
+  const [{ db }, { collection, getDocs }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  const snap = await getDocs(collection(db, 'rutinas_virtuales'))
+  return snap.docs.map(docToId<RutinaVirtual>)
+}
+
+/** Rutinas de los alumnos asignados a un profesor (para /portal/virtual). */
+export async function getRutinasProfesor(profesorId: string): Promise<RutinaVirtual[]> {
+  const [{ db }, { collection, query, where, getDocs }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  const snap = await getDocs(query(collection(db, 'rutinas_virtuales'), where('profesorId', '==', profesorId)))
+  return snap.docs.map(docToId<RutinaVirtual>)
+}
+
+/** Rutina activa de un alumno (para /dashboard/virtual). Null si no tiene. */
+export async function getRutinaAlumno(alumnoId: string): Promise<RutinaVirtual | null> {
+  const [{ db }, { collection, query, where, getDocs }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  const snap = await getDocs(query(
+    collection(db, 'rutinas_virtuales'),
+    where('alumnoId', '==', alumnoId),
+    where('estado', '==', 'activa'),
+  ))
+  if (snap.empty) return null
+  return docToId<RutinaVirtual>(snap.docs[0])
+}
+
+export async function getSesionesVirtuales(rutinaId: string): Promise<SesionVirtual[]> {
+  const [{ db }, { collection, query, orderBy, getDocs }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  const snap = await getDocs(query(collection(db, 'rutinas_virtuales', rutinaId, 'sesiones'), orderBy('orden', 'asc')))
+  return snap.docs.map(docToId<SesionVirtual>)
+}
+
+/** Solo el profesor/admin dueño de la rutina puede crear/editar contenido. */
+export async function crearSesionVirtual(rutinaId: string, data: {
+  titulo: string; descripcion: string; videoUrl: string; orden: number
+}): Promise<string> {
+  const [{ db }, { collection, addDoc, updateDoc }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  const now = Date.now()
+  const ref = await addDoc(collection(db, 'rutinas_virtuales', rutinaId, 'sesiones'), {
+    sesionId: '',
+    titulo: data.titulo,
+    descripcion: data.descripcion,
+    videoUrl: data.videoUrl,
+    orden: data.orden,
+    completada: false,
+    completadaEn: null,
+    creadoEn: now,
+    actualizadoEn: now,
+  })
+  await updateDoc(ref, { sesionId: ref.id })
+  return ref.id
+}
+
+export async function actualizarSesionVirtual(rutinaId: string, sesionId: string, data: {
+  titulo?: string; descripcion?: string; videoUrl?: string; orden?: number
+}): Promise<void> {
+  const [{ db }, { doc, updateDoc }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  await updateDoc(doc(db, 'rutinas_virtuales', rutinaId, 'sesiones', sesionId), {
+    ...data,
+    actualizadoEn: Date.now(),
+  })
+}
+
+export async function eliminarSesionVirtual(rutinaId: string, sesionId: string): Promise<void> {
+  const [{ db }, { doc, deleteDoc }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  await deleteDoc(doc(db, 'rutinas_virtuales', rutinaId, 'sesiones', sesionId))
+}
+
+/** El alumno dueño de la rutina — únicos campos que las reglas le dejan tocar. */
+export async function marcarSesionVirtual(rutinaId: string, sesionId: string, completada: boolean): Promise<void> {
+  const [{ db }, { doc, updateDoc }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  await updateDoc(doc(db, 'rutinas_virtuales', rutinaId, 'sesiones', sesionId), {
+    completada,
+    completadaEn: completada ? Date.now() : null,
+  })
 }

@@ -28,6 +28,11 @@ rules_version = '2';
 //   alumnoId: string, profesorId: string, dow: number,
 //   horaInicio/horaFin: string, estado: string ...
 //
+// rutinas_virtuales/{id}  — Plan Virtual: rutina remota, sin clases/sede
+//   alumnoId: string, profesorId: string, nombre: string, estado: string ...
+//   rutinas_virtuales/{id}/sesiones/{id}
+//     titulo, descripcion, videoUrl, orden, completada: bool, completadaEn
+//
 // asistencias/{id}
 //   claseId: string, usuarioId: string, registradoPor: string, asistio: bool
 //
@@ -97,12 +102,15 @@ service cloud.firestore {
     // ── usuarios ────────────────────────────────────────────
 
     match /usuarios/{uid} {
-      // isEstudiante() + rol=='profesor': un alumno necesita poder leer
-      // los docs de profesores para elegir uno al solicitar una clase
-      // personalizada (ve nombre/sede/disponibilidadPersonal) — antes
-      // solo el dueño, un admin u otro profesor podían leer usuarios/{uid}.
+      // rol=='profesor' es lectura pública (sin isEstudiante()) a propósito:
+      // el wizard de planes (/dashboard/planes) es "abierto a invitados" y
+      // el paso de elegir entrenador del Plan Virtual necesita esta lista
+      // ANTES de que el visitante inicie sesión — mismo criterio ya usado
+      // para abrir sedes/grupos/tarifas (nombre/sede de un profesor no es
+      // dato sensible). Sigue sin exponer nada de un alumno a nadie más
+      // que su propio dueño/admin/profesor.
       allow read: if isOwner(uid) || isAdmin() || isProfesor()
-        || (isEstudiante() && resource.data.rol == 'profesor');
+        || resource.data.rol == 'profesor';
 
       // Lista blanca explícita: impide que el estudiante se auto-asigne
       // suscripcionActiva, estadisticas u otros campos sensibles al registrarse.
@@ -272,6 +280,69 @@ service cloud.firestore {
            .hasOnly(['asistio', 'fecha_registro']);
 
       allow delete: if isAdmin();
+    }
+
+    // ── rutinas_virtuales ────────────────────────────────────
+    // Plan Virtual: rutina remota armada por un profesor/admin para UN
+    // alumno específico — sin clases/sede/horario. El alumno dueño solo
+    // puede tocar completada/completadaEn de sus propias sesiones (mismo
+    // patrón que ya usa `transacciones` para dejar tocar solo
+    // comprobante_url); todo lo demás lo controla el profesor asignado
+    // o un admin.
+
+    function esDuenoRutina(rutinaId) {
+      return isAuthenticated()
+        && get(/databases/$(database)/documents/rutinas_virtuales/$(rutinaId)).data.alumnoId == request.auth.uid;
+    }
+    function esProfesorRutina(rutinaId) {
+      return isAuthenticated()
+        && get(/databases/$(database)/documents/rutinas_virtuales/$(rutinaId)).data.profesorId == request.auth.uid;
+    }
+
+    match /rutinas_virtuales/{rutinaId} {
+      allow read: if isAdmin()
+        || (isAuthenticated() && resource.data.profesorId == request.auth.uid)
+        || (isAuthenticated() && resource.data.alumnoId == request.auth.uid);
+
+      // Se crea al aprobar la transacción del plan Virtual (Admin SDK,
+      // ver aprobarTransaccion()) — un profesor también puede crear
+      // rutinas para sus propios alumnos asignados directo desde el
+      // cliente si hace falta gestionarlas fuera de ese flujo.
+      allow create: if isAdminOrProfesor()
+        && (isAdmin() || request.resource.data.profesorId == request.auth.uid)
+        && request.resource.data.keys().hasOnly([
+             'rutinaId', 'alumnoId', 'profesorId', 'nombre', 'estado', 'creadoEn', 'actualizadoEn',
+             'nombre_alumno', 'nombre_profesor',
+           ])
+        && request.resource.data.estado in ['activa', 'archivada'];
+
+      allow update: if isAdmin()
+        || (isProfesor() && resource.data.profesorId == request.auth.uid);
+
+      allow delete: if isAdmin();
+
+      match /sesiones/{sesionId} {
+        allow read: if isAdmin() || esProfesorRutina(rutinaId) || esDuenoRutina(rutinaId);
+
+        // Contenido (título/descripción/video/orden): solo admin o el
+        // profesor dueño de la rutina — nunca el alumno.
+        allow create: if isAdminOrProfesor() && (isAdmin() || esProfesorRutina(rutinaId))
+          && request.resource.data.keys().hasOnly([
+               'sesionId', 'titulo', 'descripcion', 'videoUrl', 'orden',
+               'completada', 'completadaEn', 'creadoEn', 'actualizadoEn',
+             ])
+          && request.resource.data.completada == false;
+
+        allow update: if isAdmin()
+          || (isProfesor() && esProfesorRutina(rutinaId)
+              && !request.resource.data.diff(resource.data).affectedKeys()
+                   .hasAny(['completada', 'completadaEn']))
+          || (isEstudiante() && esDuenoRutina(rutinaId)
+              && request.resource.data.diff(resource.data).affectedKeys()
+                   .hasOnly(['completada', 'completadaEn']));
+
+        allow delete: if isAdmin() || (isProfesor() && esProfesorRutina(rutinaId));
+      }
     }
 
     // ── movimientos ──────────────────────────────────────────
