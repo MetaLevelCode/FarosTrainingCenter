@@ -586,6 +586,21 @@ no bloqueante. Tampoco hay backfill: cancelaciones de ANTES de este
 cambio no generan comodín (mismo límite ya aceptado con el backfill de
 mensajería en 6.14).
 
+**Dos ajustes de UI el mismo día, a pedido del usuario:**
+- La racha vivía como un badge chico dentro del header del gráfico de
+  asistencia semanal — fácil de perderse. Se movió al hero del
+  dashboard (junto a "Hola, {nombre}"), lo primero que se ve al entrar,
+  sin scroll.
+- Se reemplazó el emoji 🔥 por `RachaFaro.tsx`: un beacon animado con
+  motion/react — glow pulsante + un haz de luz girando (conic-gradient
+  enmascarado a anillo, no disco completo) en el amarillo-lima de marca,
+  con el número de la racha en el centro. Aprovecha el nombre "Faros"
+  (literalmente "tu faro encendido") en vez de un ícono de stock, y
+  reusa el mismo lenguaje de glow (`shadow-[0_0_Npx_rgba(230,255,0,X)]`)
+  que ya usa el resto de la app en vez de introducir un estilo nuevo.
+  En racha 0 el faro se apaga (gris, sin glow ni haz) en vez de
+  desaparecer del todo.
+
 ---
 
 ## 7. Pendientes actuales (post-auditoría 2026-08-21)
