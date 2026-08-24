@@ -77,10 +77,15 @@ Pasos:
    de tamaño)
 6. Verificar banner de "Pago en revisión" en `/dashboard`
 
-**Estado:** 🔲 Pendiente
+**Estado:** 🐛 Bugs encontrados (probado por el usuario 2026-08-23)
 
 **Notas / bugs:**
--
+- **(Abierto, no crítico)** Al entrar a `/dashboard` la página no arranca
+  arriba del todo (donde está el saludo) — carga desplazada a la mitad del
+  contenido.
+- **(Corregido)** Durante la prueba se descubrió que en el paso de elegir
+  grupo/horario del wizard los cupos disponibles estaban hardcodeados — ya
+  se corrigió y quedó conectado a los cupos reales.
 
 ---
 
@@ -120,29 +125,37 @@ Pasos:
    contador de sesiones se devolvió
 4. Intentar cancelar una clase dentro de la ventana de 2h → debe bloquearse
 
-**Estado:** 🐛 Bugs encontrados (corregidos, pendiente re-probar)
+**Estado:** 🔄 En progreso (re-probado 2026-08-23 tras los fixes — falta solo el paso 4)
 
-**Notas / bugs:**
+**Notas / bugs (hallazgos originales, todos corregidos):**
 - El contador de sesiones restantes no bajaba al inscribirse (bug de cliente:
   `AuthContext` nunca refrescaba el perfil tras la acción — el backend sí
   descontaba bien). Fix: nueva `refreshUser()`, llamada tras inscribir/cancelar.
-- Se podía ver e inscribirse a clases de OTRA sede (la query no filtraba por
-  sede). Fix: filtro en cliente + validación server-side + índice nuevo.
+- Se podía ver e inscribirse a clases de OTRA sede (mi sede es UTP y podía
+  inscribirme a clases de Tulcán II — la query no filtraba por sede). Fix:
+  filtro en cliente + validación server-side + índice nuevo.
 - "Mis clases" quedaba al final de la página, después de toda la lista de
   disponibles — costaba confirmar que la inscripción funcionó. Fix: se
   reordenó, "Mis clases" va primero.
 - (Encontrado de paso) "Clase del Día" en `/dashboard` era 100% mock. Fix:
   ahora busca la clase real de hoy y muestra el plan real subido por el
   profesor.
-- (Idem) "Tu semana" siempre mostraba los 6 días en gris. Fix: se derivan de
-  sus clases inscritas reales.
+- (Idem) "Tu semana" siempre mostraba los 6 días en gris — no quedaba claro
+  si era porque no estaba conectado o porque la próxima clase real caía
+  varios días después. Fix: se derivan de sus clases inscritas reales (si
+  sigue viéndose gris, confirmar que es porque de verdad no hay clase esa
+  semana, no un bug).
 - Un error nativo del navegador (Safari/iOS, probablemente IndexedDB al
   refrescar el token) se mostraba crudo y en inglés en el banner de error al
   inscribir/cancelar. Fix: `postConToken()` traduce cualquier falla que no
   venga de la API a un mensaje en español.
 
-Pendiente: volver a probar los 4 pasos originales con los fixes ya
-desplegados (especialmente cancelar dentro de la ventana de 2h).
+**Re-prueba del usuario (2026-08-23), con todos los fixes ya desplegados:**
+"Se volvió a intentar y funciona todo perfecto." Los pasos 1-3 quedan
+confirmados sin bugs. El paso 4 (cancelar dentro de la ventana de 2h) **no
+se pudo probar** — no había ninguna clase agendada que empezara en menos de
+2 horas al momento de la prueba. Sigue pendiente encontrar/agendar ese caso
+puntual para confirmarlo.
 
 ---
 
@@ -670,3 +683,4 @@ Pasos:
 | 12 | E11 | Fotos de perfil no se veían en las burbujas de mensaje | Baja | ✅ Corregido |
 | 13 | P2 | `/portal/clases` mostraba uid crudo sin nombre/foto en asistencia | Media | ✅ Corregido |
 | 14 | E12 | Toggle "Mensual" del ranking no cambia la consulta de datos | Baja | 🔲 Por confirmar en pantalla |
+| 15 | E1 | `/dashboard` no arranca con el scroll arriba del todo al entrar | Baja | 🔲 Abierto |
