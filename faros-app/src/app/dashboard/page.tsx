@@ -270,6 +270,22 @@ export default function DashboardPage() {
                 )}
               </div>
             </div>
+
+            <div className="lg:col-span-5 flex lg:justify-end">
+              <div className={`flex items-center gap-4 rounded-3xl border px-6 py-5 ${
+                racha > 0
+                  ? 'border-[rgba(230,255,0,0.25)] bg-[rgba(230,255,0,0.06)]'
+                  : 'border-white/10 bg-white/[0.03]'
+              }`}>
+                <span className={`text-5xl leading-none ${racha === 0 ? 'grayscale opacity-40' : ''}`}>🔥</span>
+                <div>
+                  <span className="block font-display text-4xl font-black text-white leading-none">{racha}</span>
+                  <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/60">
+                    {racha === 1 ? 'semana seguida' : racha === 0 ? 'empieza tu racha esta semana' : 'semanas seguidas'}
+                  </span>
+                </div>
+              </div>
+            </div>
           </section>
         </Reveal>
 
@@ -407,14 +423,7 @@ export default function DashboardPage() {
               <Card padding="lg">
                 <div className="flex justify-between items-center mb-10">
                   <h3 className="label-caps text-[var(--color-on-surface-variant)]/60">Asistencia semanal</h3>
-                  <div className="flex items-center gap-3">
-                    {racha > 0 && (
-                      <span className="label-caps text-[10px] text-white flex items-center gap-1" title="Semanas seguidas con al menos una asistencia">
-                        🔥 {racha} {racha === 1 ? 'semana' : 'semanas'}
-                      </span>
-                    )}
-                    <span className="label-caps text-[10px] text-[var(--color-primary-fixed)]/80">Últimas 6 semanas</span>
-                  </div>
+                  <span className="label-caps text-[10px] text-[var(--color-primary-fixed)]/80">Últimas 6 semanas</span>
                 </div>
                 {asistenciaSemanal.every((s) => s.count === 0) ? (
                   <p className="text-sm text-[var(--color-on-surface-variant)]/50 py-14 text-center">
