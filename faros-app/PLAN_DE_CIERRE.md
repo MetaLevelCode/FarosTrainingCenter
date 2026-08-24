@@ -26,6 +26,7 @@ Snapshot de qué está terminado vs. qué falta para poder desplegar en producci
 | Admin — usuarios CRUD | ✅ Listo | Rol, suspensión; bug crítico de `uid` en cambio de rol corregido (ver 6.6) |
 | Foto de perfil | ✅ Listo | Comprimida en el navegador (`lib/imagen.ts`, Canvas, ~18 KB por foto) antes de subir a Storage; Firestore solo guarda el link. En `/registro` (opcional) y en ambos perfiles (ver 6.10) |
 | Mensajería | ✅ Listo | `mensajes/{canalId}/items` real con `onSnapshot` (ver Fase 5 y 6.14) — muro persistente por grupo + DM alumno↔profesor |
+| Plan Virtual (5º tipo de plan) | ✅ Listo | Rutina remota asignada por coach, video por link (YouTube/Vimeo, sin Storage) — ver 6.18. **Falta probar el flujo end-to-end con cuentas reales** |
 | Cloud Functions | 🔴 No existen | Sin directorio `functions/`; lógica sensible corre en API Routes (decisión ya tomada, ver Fase 1) |
 | PWA / Service Worker | 🟡 Parcial | `sw.js` presente, sin precache completo ni background sync |
 | Firestore Rules | ✅ Hardened | whitelist create, `activoOk()`, cross-check precio, validación instructor |
@@ -636,6 +637,75 @@ GitHub con "rama en vivo" — un paso interactivo con el login del dueño
 del proyecto, no algo scriptable. Se le pasaron los pasos al usuario para
 que lo haga él mismo.
 
+### 6.18 — Plan Virtual: 5º tipo de plan (2026-08-23)
+
+Última pieza funcional pedida antes de pasar a QA (Fase 7). A diferencia
+de los otros 4 tipos (todos presenciales, dependientes de `clases/`), el
+Virtual es una rutina remota: un profesor le asigna a UN alumno una lista
+de sesiones con video, y el alumno las va marcando completadas por su
+cuenta. Decisiones de producto acordadas con el usuario antes de
+construir: **asignado por alumno** (no biblioteca compartida — como el
+plan Personalizado pero remoto), **video por link externo**
+(YouTube/Vimeo, nunca sube a Firebase Storage), **acceso ilimitado**
+mientras el plan esté activo (sin contador de sesiones restantes), y
+**admin y profesores** pueden gestionar contenido.
+
+**Por qué es una colección nueva y no reusa `clases`/`asistencias`:**
+investigado a fondo antes de tocar código (dos agentes Explore). `Clase`
+exige `instructor_id`/`sede`/`fecha_hora_inicio`/`cupo_maximo` no
+opcionales — forzar lo virtual ahí habría roto todas las queries que
+filtran por esos campos. `asistencias` está acoplado en tres capas
+simultáneas (schema `hasOnly`, reglas que exigen que sea el profesor
+quien atestigua — `registradoPor == auth.uid` — y el algoritmo de
+`lib/racha.ts`) a un modelo "el profesor certifica la asistencia de
+otro", incompatible con un alumno auto-reportando su propio progreso.
+Se optó por `rutinas_virtuales/{id}/sesiones/{id}` nueva, sin tocar
+ninguna de las dos.
+
+**El único campo que el alumno puede escribir** en una sesión es
+`completada`/`completadaEn` — mismo patrón exacto que ya usaba
+`transacciones` para dejar al dueño tocar solo `comprobante_url`
+(`diff().affectedKeys().hasOnly([...])` + cross-check por `get()` de que
+es el `alumnoId` de la rutina padre). Todo lo demás (título, descripción,
+link de video) solo lo escribe el profesor asignado (`profesorId` de la
+rutina) o un admin.
+
+**Flujo real:** alumno elige "Virtual" en el wizard → nuevo paso elige
+su entrenador de una lista (`getUsuarios('profesor')`, sin selector de
+frecuencia) → admin aprueba el pago en `/admin/finanzas` (flujo genérico,
+sin tocar) → `aprobarTransaccion()` crea la rutina automáticamente dentro
+de la misma transacción, así el profesor ya ve a su alumno sin pasos
+extra → profesor agrega sesiones desde `/portal/virtual` (o admin desde
+la nueva pestaña "Virtual" en `/admin/planes`, mismo componente
+`RutinaVirtualCard` reusado en ambos) → alumno las ve y marca completadas
+en `/dashboard/virtual`.
+
+**Video:** `lib/video.ts` convierte un link normal de YouTube/Vimeo
+(`watch?v=`, `youtu.be/`, `vimeo.com/ID`) a su URL `/embed/` para un
+`<iframe>`. Se agregó `frame-src` al CSP en `next.config.mjs` — sin eso
+el navegador bloquea el iframe en silencio (no había ningún `frame-src`
+declarado, así que caía al `default-src 'self'` restrictivo).
+
+**Cambio de alcance en `usuarios`:** el wizard es "abierto a invitados"
+(confirmado: `/dashboard/planes` no usa `useRoleGuard`) y el paso de
+elegir entrenador necesita leer `usuarios` donde `rol=='profesor'` ANTES
+de iniciar sesión. Se quitó el requisito `isEstudiante()` de esa rama de
+la regla — mismo criterio ya aplicado a `sedes`/`grupos`/`tarifas` en
+6.16 (nombre de un profesor no es dato sensible; el resto de `usuarios`
+sigue exigiendo dueño/admin/profesor).
+
+**Fuera de alcance v1 (anotado a propósito):** sin biblioteca de
+contenido reusable entre alumnos, sin notificación al alumno cuando el
+profesor sube algo nuevo, sin validación de servidor de que el link sea
+realmente YouTube/Vimeo (solo ayuda de UX en el cliente). El progreso
+virtual NO alimenta la Racha semanal ni el gráfico de asistencia —
+modelos de confianza distintos, mezclarlos debilitaría el actual.
+
+**Pendiente real:** todo pasó `tsc`/`build` y producción responde 200 en
+`/dashboard/virtual` y `/portal/virtual`, pero el flujo completo
+(wizard → aprobación → profesor agrega sesiones → alumno completa)
+**no se probó con cuentas reales** — queda para la sesión de QA.
+
 ---
 
 ## 7. Pendientes actuales (post-auditoría 2026-08-21)
@@ -688,6 +758,12 @@ que lo haga él mismo.
 **Con esto, ya no queda ningún pendiente de código conocido** — lo único
 que falta para el lanzamiento es Fase 7 (QA + staging, ver sección 3) y
 las tareas de proceso/infra ya anotadas (auto-deploy, Dependabot).
+
+- [ ] **Probar el Plan Virtual end-to-end con cuentas reales** (ver
+  6.18) — alumno solicita eligiendo entrenador → admin aprueba → el
+  profesor le agrega sesiones desde `/portal/virtual` → el alumno las ve
+  y marca completadas en `/dashboard/virtual`. Solo se verificó que
+  compila y que las rutas responden 200 en producción, no el flujo real.
 
 ---
 
