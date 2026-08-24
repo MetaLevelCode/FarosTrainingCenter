@@ -17,6 +17,36 @@ function parseHora(hhmm: string): { h: number; m: number } {
 // no la franja completa (ver slotsDisponibles).
 export const DURACION_PERSONALIZADA_MIN = 60
 
+// Colombia opera con zona horaria UTC-5 fija (sin horario de verano).
+export const COLOMBIA_OFFSET_HOURS = -5
+export const COLOMBIA_OFFSET_MS = COLOMBIA_OFFSET_HOURS * 60 * 60 * 1000
+
+/** Convierte una fecha o timestamp a componentes locales de Colombia. */
+export function toColombiaDate(dateOrTs: Date | number): Date {
+  const utc = typeof dateOrTs === 'number' ? dateOrTs : dateOrTs.getTime()
+  return new Date(utc + COLOMBIA_OFFSET_MS)
+}
+
+/** Construye un timestamp UTC a partir de componentes de fecha/hora en Colombia. */
+export function fromColombiaComponents(
+  year: number, month: number, day: number, hours: number, minutes: number = 0,
+): number {
+  return Date.UTC(year, month, day, hours - COLOMBIA_OFFSET_HOURS, minutes, 0, 0)
+}
+
+/** Extrae la hora local de Colombia en formato HH:mm a partir de un timestamp. */
+export function horaColombia(ts: number): string {
+  const d = toColombiaDate(ts)
+  const hh = String(d.getUTCHours()).padStart(2, '0')
+  const mm = String(d.getUTCMinutes()).padStart(2, '0')
+  return `${hh}:${mm}`
+}
+
+/** Extrae el día de la semana (0=Dom...6=Sáb) en Colombia a partir de un timestamp. */
+export function dowColombia(ts: number): number {
+  return toColombiaDate(ts).getUTCDay()
+}
+
 export function sumarMinutos(hhmm: string, minutos: number): string {
   const { h, m } = parseHora(hhmm)
   const total = h * 60 + m + minutos
@@ -38,17 +68,24 @@ export function slotsDisponibles(
   return slots
 }
 
-/** Próxima fecha (Date) para un dow+hora, N semanas adelante de `desde`. */
+/** Próxima fecha (Date) para un dow+hora en Colombia, N semanas adelante de `desde`. */
 function proximaFecha(dow: number, horaStr: string, semanaOffset: number, desde: Date): Date {
   const { h, m } = parseHora(horaStr)
-  const d = new Date(desde)
-  d.setHours(0, 0, 0, 0)
-  let diff = (dow - d.getDay() + 7) % 7
-  const yaPaso = desde.getHours() > h || (desde.getHours() === h && desde.getMinutes() >= m)
+  const colDesde = toColombiaDate(desde)
+  const colYear = colDesde.getUTCFullYear()
+  const colMonth = colDesde.getUTCMonth()
+  const colDay = colDesde.getUTCDate()
+  const colDow = colDesde.getUTCDay()
+  const colHours = colDesde.getUTCHours()
+  const colMinutes = colDesde.getUTCMinutes()
+
+  let diff = (dow - colDow + 7) % 7
+  const yaPaso = colHours > h || (colHours === h && colMinutes >= m)
   if (diff === 0 && yaPaso) diff = 7
-  d.setDate(d.getDate() + diff + semanaOffset * 7)
-  d.setHours(h, m, 0, 0)
-  return d
+
+  const targetDay = colDay + diff + semanaOffset * 7
+  const targetTs = fromColombiaComponents(colYear, colMonth, targetDay, h, m)
+  return new Date(targetTs)
 }
 
 export interface Ocurrencia {
@@ -62,7 +99,7 @@ const MAX_OCURRENCIAS = 60
 
 /**
  * Todas las ocurrencias semanales de un dow+franja horaria entre `desde`
- * (inclusive) y `hastaTs` (exclusivo).
+ * (inclusive) y `hastaTs` (exclusivo) calculadas en hora local de Colombia.
  */
 export function ocurrenciasSemanales(
   dow: number,
@@ -74,11 +111,19 @@ export function ocurrenciasSemanales(
   const { h: hFin, m: mFin } = parseHora(horaFinStr)
   const ocurrencias: Ocurrencia[] = []
   for (let semana = 0; ocurrencias.length < MAX_OCURRENCIAS; semana++) {
-    const inicio = proximaFecha(dow, horaInicioStr, semana, desde)
-    if (inicio.getTime() >= hastaTs) break
-    const fin = new Date(inicio)
-    fin.setHours(hFin, mFin, 0, 0)
-    ocurrencias.push({ inicio: inicio.getTime(), fin: fin.getTime() })
+    const inicioDate = proximaFecha(dow, horaInicioStr, semana, desde)
+    const inicio = inicioDate.getTime()
+    if (inicio >= hastaTs) break
+
+    const colInicio = toColombiaDate(inicio)
+    const fin = fromColombiaComponents(
+      colInicio.getUTCFullYear(),
+      colInicio.getUTCMonth(),
+      colInicio.getUTCDate(),
+      hFin,
+      mFin,
+    )
+    ocurrencias.push({ inicio, fin })
   }
   return ocurrencias
 }

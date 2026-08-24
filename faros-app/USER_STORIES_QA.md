@@ -32,12 +32,15 @@ Pasos:
 4. Revisar la grilla de media (las imágenes son decorativas, sin acción) y
    la sección de testimonios
 
-**Estado:** 🔲 Pendiente
+**Estado:** 🐛 Bugs encontrados (ver notas)
 
 **Notas / bugs:**
 -
+Bug 1. = En la parte de los planes en la pwa El logo de faors y la x de salida choca con la hora
+Bug 2. = Los botones de redes sociales, abajo del todo en la pwa, no llevan a ningun lado 
 
 ---
+
 
 ### V2 — Arma un plan como invitado y lo recupera al loguearse
 **Como** visitante sin cuenta, **quiero** poder armar mi plan en el wizard
@@ -51,11 +54,17 @@ Pasos:
 4. Registrarse/loguearse → verificar que el plan armado se restaura solo y
    salta directo al resumen (localStorage `faros-plan-pendiente` o similar)
 
-**Estado:** 🔲 Pendiente
+**Estado:** Bugs encontrados (ver notas)
 
 **Notas / bugs:**
 -
+Bug 1. = La foto de perfil no deja centrarla, pone la foto tal cual, no deja tiene opción de edición basica, hacerle zoom, centrarla, rotarla.
 
+Bug 2. = Si es un plan personalizado, o de conjuntos, cuando me registro aparecen las sedes ya predeterminadas (todas), si es de conjunto la sede deberia ser los conjuntos que se tienen, o el de ellos donde se va adquirir el servicio. Lo mismo con el personalizado. Y el virtual. 
+
+Bug 3. = Me manda al dashbboard y me dice que no tengo plan, cuando lo solicito si se guarda. Pero seria bueno que arranque en la parte donde solicito el plan para luego pagar, no al dashboard.
+
+Bug 4. = En mi plan a la medida donde subo el comprobante no me dicen cuentas bancarias para hacer la tranferencia. crea un espacio para poner las cuentas y debajo del titulo (TU PLAN A LA MEDIDA) el valor para tener en cuental.
 ---
 
 ## Estudiante
@@ -105,11 +114,11 @@ Pasos:
 5. Con la app ya iniciada como PWA instalada y sesión activa, confirmar que
    `/` redirige solo al home del rol
 
-**Estado:** 🔲 Pendiente
+**Estado:** ✅ Sin bugs
 
 **Notas / bugs:**
 -
-
+Todo funciona a la perfección
 ---
 
 ### E3 — Alumno con plan activo se inscribe y cancela una clase
@@ -125,37 +134,36 @@ Pasos:
    contador de sesiones se devolvió
 4. Intentar cancelar una clase dentro de la ventana de 2h → debe bloquearse
 
-**Estado:** 🔄 En progreso (re-probado 2026-08-23 tras los fixes — falta solo el paso 4)
+**Estado:** 🐛 Bugs encontrados (corregidos, pendiente re-probar)
 
-**Notas / bugs (hallazgos originales, todos corregidos):**
+**Notas / bugs:**
 - El contador de sesiones restantes no bajaba al inscribirse (bug de cliente:
   `AuthContext` nunca refrescaba el perfil tras la acción — el backend sí
   descontaba bien). Fix: nueva `refreshUser()`, llamada tras inscribir/cancelar.
-- Se podía ver e inscribirse a clases de OTRA sede (mi sede es UTP y podía
-  inscribirme a clases de Tulcán II — la query no filtraba por sede). Fix:
-  filtro en cliente + validación server-side + índice nuevo.
+- Se podía ver e inscribirse a clases de OTRA sede (la query no filtraba por
+  sede). Fix: filtro en cliente + validación server-side + índice nuevo.
 - "Mis clases" quedaba al final de la página, después de toda la lista de
   disponibles — costaba confirmar que la inscripción funcionó. Fix: se
   reordenó, "Mis clases" va primero.
 - (Encontrado de paso) "Clase del Día" en `/dashboard` era 100% mock. Fix:
   ahora busca la clase real de hoy y muestra el plan real subido por el
   profesor.
-- (Idem) "Tu semana" siempre mostraba los 6 días en gris — no quedaba claro
-  si era porque no estaba conectado o porque la próxima clase real caía
-  varios días después. Fix: se derivan de sus clases inscritas reales (si
-  sigue viéndose gris, confirmar que es porque de verdad no hay clase esa
-  semana, no un bug).
+- (Idem) "Tu semana" siempre mostraba los 6 días en gris. Fix: se derivan de
+  sus clases inscritas reales.
 - Un error nativo del navegador (Safari/iOS, probablemente IndexedDB al
   refrescar el token) se mostraba crudo y en inglés en el banner de error al
   inscribir/cancelar. Fix: `postConToken()` traduce cualquier falla que no
   venga de la API a un mensaje en español.
 
-**Re-prueba del usuario (2026-08-23), con todos los fixes ya desplegados:**
-"Se volvió a intentar y funciona todo perfecto." Los pasos 1-3 quedan
-confirmados sin bugs. El paso 4 (cancelar dentro de la ventana de 2h) **no
-se pudo probar** — no había ninguna clase agendada que empezara en menos de
-2 horas al momento de la prueba. Sigue pendiente encontrar/agendar ese caso
-puntual para confirmarlo.
+Pendiente: volver a probar los 4 pasos originales con los fixes ya
+desplegados (especialmente cancelar dentro de la ventana de 2h).
+
+Segundo Intento de esta User Story:
+
+- Funciona bien todo, pero se tiene configuarado que se muestre solo la clase mas proxima y las demas mas agrupadas, pero en ningun texto aparece eso. Tiene el titulo de mis clases y solo aparece esa y mas abajo las otras agrupadas por grupo. Quiero que tenga sus respectivos titulos para que sea claro, "Proxima clase", demas clases.
+
+- No me gusta que el boton sea "asistencia" ya que es mas que eso, desde ahi se maneja todo lo de clases, el boton deberia decir clases y asi 
+
 
 ---
 
@@ -170,10 +178,11 @@ Pasos:
 3. Elegir frecuencia (1x/2x/3x semana) → el precio debe recalcularse en vivo
 4. Confirmar resumen y precio final antes de solicitar
 
-**Estado:** 🔲 Pendiente
+**Estado:** ✅ Sin bugs 
 
 **Notas / bugs:**
 -
+Todo funciona a la perfección.
 
 ---
 
@@ -197,6 +206,31 @@ Pasos, agendar franja (una vez el plan está activo, en
 6. Probar pedir dos horarios al mismo profesor mientras el primero sigue
    pendiente → debe rechazarlo (409)
 7. Cancelar la solicitud pendiente → debe volver a poder pedir otra
+8. Cuando el profesor acepta, verificar que se generen automáticamente las
+   clases recurrentes del mes y aparezca el mensaje de horario fijo asignado.
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+-
+
+---
+
+### E5.1 — Alumno cancela una sesión puntual de clase personalizada
+**Como** alumno con plan personalizado y horario semanal fijo acordado,
+**quiero** poder cancelar una clase específica (ej. un viernes puntual) con
+más de 2 horas de anticipación, **para** liberar al profesor ese día y
+recuperar mi sesión sin perder las clases de las siguientes semanas.
+
+Pasos:
+1. Con un horario personalizado activo y clases generadas (ej. 4 viernes del mes),
+   entrar a `/dashboard/asistencia` (sección Mis clases)
+2. Cancelar la inscripción de UNA sola sesión (con > 2h de anticipación)
+3. Verificar que el contador de sesiones restantes del alumno aumenta en +1
+4. Verificar que SOLO esa sesión se retira de "Mis clases", y que las sesiones
+   de los viernes de las semanas siguientes permanecen intactas y programadas
+5. Verificar que el banner de horario fijo acordado se mantiene visible (la franja
+   semanal no se altera por cancelar una fecha puntual)
 
 **Estado:** 🔲 Pendiente
 
@@ -482,6 +516,28 @@ Pasos:
 
 ---
 
+### P4.1 — Profesor visualiza cancelación puntual de clase personalizada
+**Como** profesor, **quiero** ver en mi calendario diario de `/portal` cuándo
+una sesión personalizada quedó sin alumnos (0 alumnos) porque el estudiante
+canceló puntualmente esa fecha, **para** saber con anticipación que no debo
+desplazarme ese día sin que se afecte el resto del mes.
+
+Pasos:
+1. Con una clase personalizada recurrente activa (ej. generada en P4/E5), hacer
+   que el alumno cancele solo la sesión de hoy o de esta semana (ver E5.1)
+2. Entrar a `/portal` con la cuenta de profesor y seleccionar la fecha cancelada
+3. Verificar que la tarjeta de la clase en ese día indica claramente "0 alumnos"
+   (o estado sin inscritos)
+4. Navegar en el calendario a la semana siguiente y confirmar que la clase
+   personalizada de ese día sigue programada y con el alumno inscrito normalmente
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+-
+
+---
+
 ### P5 — Profesor gestiona el Plan Virtual de sus alumnos
 **Como** profesor, **quiero** armar y editar la rutina virtual de cada uno de
 mis alumnos, **para** que tengan contenido para entrenar remoto.
@@ -683,4 +739,3 @@ Pasos:
 | 12 | E11 | Fotos de perfil no se veían en las burbujas de mensaje | Baja | ✅ Corregido |
 | 13 | P2 | `/portal/clases` mostraba uid crudo sin nombre/foto en asistencia | Media | ✅ Corregido |
 | 14 | E12 | Toggle "Mensual" del ranking no cambia la consulta de datos | Baja | 🔲 Por confirmar en pantalla |
-| 15 | E1 | `/dashboard` no arranca con el scroll arriba del todo al entrar | Baja | 🔲 Abierto |

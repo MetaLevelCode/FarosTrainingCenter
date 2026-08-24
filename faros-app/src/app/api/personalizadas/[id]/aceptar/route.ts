@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAdminAuth, getAdminDb } from '@/lib/admin'
 import { rateLimit, clientIp } from '@/lib/ratelimit'
 import { log } from '@/lib/logger'
-import { ocurrenciasSemanales } from '@/lib/recurrencia'
+import { ocurrenciasSemanales, dowColombia, horaColombia } from '@/lib/recurrencia'
 
 export const runtime = 'nodejs'
 
@@ -104,11 +104,9 @@ export async function POST(
       const choque = clasesSnap.docs.some((d) => {
         const c = d.data()
         if (c.estado === 'cancelada') return false
-        const inicio = new Date(c.fecha_hora_inicio)
-        const fin = new Date(c.fecha_hora_fin)
-        if (inicio.getDay() !== sol.dow) return false
-        const horaInicioC = inicio.toTimeString().slice(0, 5)
-        const horaFinC = fin.toTimeString().slice(0, 5)
+        if (dowColombia(c.fecha_hora_inicio) !== sol.dow) return false
+        const horaInicioC = horaColombia(c.fecha_hora_inicio)
+        const horaFinC = horaColombia(c.fecha_hora_fin)
         return haySolape(sol.horaInicio, sol.horaFin, horaInicioC, horaFinC)
       })
       if (choque) return { error: 'Este horario ya está ocupado por otra clase', status: 409 }
