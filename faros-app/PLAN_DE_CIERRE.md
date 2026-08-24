@@ -625,21 +625,28 @@ mensajería en 6.14).
 - [x] ~~Fase 6 (PWA hardening)~~ — completada 2026-08-23, ver 6.12.
 - [x] ~~Fase 5 (Mensajería)~~ — completada y probada en dispositivo real
   2026-08-23, ver 6.14 y 6.15. Fase 7 (QA + staging) sigue pendiente.
-- [ ] **`sedes`/`grupos`/`tarifas` exigen login para leerse** pese a que el wizard
-  de planes dice estar "abierto a invitados" (ver 6.11) — decidir si se relaja la
-  regla a lectura pública (son catálogo/precios, no datos sensibles) o si el
-  wizard deja de prometer soporte a invitados.
+- [x] ~~`sedes`/`grupos`/`tarifas` exigen login para leerse~~ — resuelto
+  2026-08-23: se abrieron a lectura pública (`allow read: if true`) en
+  `firestore.rules`. Confirmado que `/dashboard/planes` sí es alcanzable
+  sin login (no usa `useRoleGuard`), así que el problema era real, no
+  teórico. Es catálogo/precios, no datos sensibles.
 - [x] ~~`VELOCIDAD` hardcodeado en `dashboard/page.tsx`~~ (ver 6.13 y 6.16) —
   reemplazado por "Asistencia semanal" con datos reales de `asistencias`.
-- [ ] **Limpiar código muerto**: `ROSTER`/`AtletaRoster`/`pctAsistencia` en
-  `lib/planes.ts` (ver 6.13) — sin importadores en todo `src/`.
+- [x] ~~Limpiar código muerto: `ROSTER`/`AtletaRoster`/`pctAsistencia`~~ —
+  borrado 2026-08-23, confirmado sin importadores en todo `src/`.
 - [x] ~~Desplegar `firestore.rules` y probar Mensajería contra Firestore real~~
   — desplegado y verificado en dispositivo real 2026-08-23 (ver 6.14 y
   6.15): backfill corrido, muro grupal y DM funcionando, fotos de perfil
   en los mensajes, teclado de iOS ya no corta el chat.
-- [ ] **Verificar el índice compuesto de `/cancelar`** con el caso puntual
-  de un alumno en dos sesiones del mismo grupo (ver nota al final de
-  6.15) — no bloqueante, no se ha visto el error todavía.
+- [x] ~~Verificar el índice compuesto de `/cancelar`~~ — confirmado
+  2026-08-23 corriendo la query tal cual contra Firestore real (script
+  puntual con Admin SDK, no quedó en el repo): `nombre_clase == X` +
+  `estudiantes_inscritos array-contains uid` corre sin pedir índice
+  compuesto. No hace falta tocar `firestore.indexes.json`.
+
+**Con esto, ya no queda ningún pendiente de código conocido** — lo único
+que falta para el lanzamiento es Fase 7 (QA + staging, ver sección 3) y
+las tareas de proceso/infra ya anotadas (auto-deploy, Dependabot).
 
 ---
 
