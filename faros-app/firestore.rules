@@ -155,14 +155,19 @@ service cloud.firestore {
     // ── sedes ───────────────────────────────────────────────
 
     match /sedes/{sedeId} {
-      allow read: if isAuthenticated();
+      // Lectura pública a propósito: el wizard de planes dice estar
+      // "abierto a invitados" — sin esto, un visitante sin cuenta caía
+      // siempre al catálogo hardcodeado de fallback (ver 6.11 y 7 en
+      // PLAN_DE_CIERRE.md). Es catálogo/precios, no datos sensibles.
+      allow read: if true;
       allow write: if isAdmin();
     }
 
     // ── grupos (grupales con horario) ───────────────────────
 
     match /grupos/{grupoId} {
-      allow read: if isAuthenticated();
+      // Lectura pública a propósito — ver nota en `sedes` arriba.
+      allow read: if true;
       allow write: if isAdmin();
     }
 
@@ -170,7 +175,8 @@ service cloud.firestore {
     // Solo existe el doc 'actual' — matriz de precios que consume el wizard.
 
     match /tarifas/{docId} {
-      allow read: if isAuthenticated();
+      // Lectura pública a propósito — ver nota en `sedes` arriba.
+      allow read: if true;
       allow write: if isAdmin();
     }
 
