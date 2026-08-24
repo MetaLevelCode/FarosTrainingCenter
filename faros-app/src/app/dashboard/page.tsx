@@ -20,6 +20,7 @@ import { BrandImageStrip } from '@/components/shared/BrandImageStrip'
 import type { Transaccion, Clase } from '@/lib/types'
 import { Semanario } from '@/components/dashboard/Semanario'
 import { MensajesPreview } from '@/components/dashboard/MensajesPreview'
+import { RachaFaro } from '@/components/dashboard/RachaFaro'
 import { faseDeSuscripcion, cuposDisponibles, parseVencimiento } from '@/lib/matricula'
 import { calcularRacha } from '@/lib/racha'
 
@@ -272,19 +273,7 @@ export default function DashboardPage() {
             </div>
 
             <div className="lg:col-span-5 flex lg:justify-end">
-              <div className={`flex items-center gap-4 rounded-3xl border px-6 py-5 ${
-                racha > 0
-                  ? 'border-[rgba(230,255,0,0.25)] bg-[rgba(230,255,0,0.06)]'
-                  : 'border-white/10 bg-white/[0.03]'
-              }`}>
-                <span className={`text-5xl leading-none ${racha === 0 ? 'grayscale opacity-40' : ''}`}>🔥</span>
-                <div>
-                  <span className="block font-display text-4xl font-black text-white leading-none">{racha}</span>
-                  <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/60">
-                    {racha === 1 ? 'semana seguida' : racha === 0 ? 'empieza tu racha esta semana' : 'semanas seguidas'}
-                  </span>
-                </div>
-              </div>
+              <RachaFaro racha={racha} />
             </div>
           </section>
         </Reveal>
