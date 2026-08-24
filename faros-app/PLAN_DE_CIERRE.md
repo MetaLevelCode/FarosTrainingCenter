@@ -31,7 +31,7 @@ Snapshot de qué está terminado vs. qué falta para poder desplegar en producci
 | Firestore Rules | ✅ Hardened | whitelist create, `activoOk()`, cross-check precio, validación instructor |
 | Landing + Login | ✅ Auditado | Sin bugs de fondo — contenido de marketing estático, guard de open-redirect en `?next=` bien hecho, suspensión de cuenta confirmada como diseño intencional (ver 6.9) |
 | Deploy config | 🟡 Funcional pero manual | `apphosting.yaml` OK, pero `ABIU: Disabled` — sin auto-deploy al hacer push, cada fix requiere rollout manual. Además, `apphosting:rollouts:create` NO despliega `firestore.rules`/`storage.rules` — es un paso aparte (`firebase deploy --only firestore:rules,storage`) que se venía olvidando (ver 6.10 y 7) |
-| Dependencias (GitHub Dependabot) | 🟡 Parcial | De 14 bajado a 8 (ver 6.8). Las 8 restantes solo se resuelven con un upgrade mayor (Next 15→16) o no tienen fix real disponible aún (`firebase-admin`) |
+| Dependencias (GitHub Dependabot) | 🟡 Parcial | De 14 bajado a 8 (ver 6.8), y a 5 con el upgrade a Next 16 (ver 6.17). Las 5 restantes (`firebase-admin`/`uuid`) no tienen fix real disponible aún sin regresión |
 
 ---
 
@@ -601,6 +601,41 @@ mensajería en 6.14).
   En racha 0 el faro se apaga (gris, sin glow ni haz) en vez de
   desaparecer del todo.
 
+### 6.17 — Upgrade Next.js 15 → 16.3.2 + intento de activar ABIU (2026-08-23)
+
+**Next 16.** `next` + `eslint-config-next` a `16.3.2`; React 19 ya era
+compatible con el rango de peer deps de Next 16, sin tocar nada ahí.
+Cambios mecánicos exigidos por el propio build (no decisiones): `tsconfig.json`
+(`jsx: "react-jsx"`, ahora obligatorio) y `next-env.d.ts` regenerados.
+También aparecieron `AGENTS.md`/`CLAUDE.md` en la raíz del proyecto —
+feature nuevo de `next dev` (`generate-agent-files.js`) que deja una nota
+para agentes de IA sobre breaking changes de esta versión; la propia
+guía dice comitearlos, si no se regeneran solos cada vez que alguien
+corre `next dev` localmente.
+
+Dado el historial de fragilidad de esta app con hydration/service worker
+en cambios grandes (ver 6.12), no se desplegó solo con "compiló bien":
+se corrió `next dev` de verdad y se navegó `/` y `/login` con Playwright
+(headless, instalado puntualmente para esto) — ambas páginas renderizan
+completas, cero errores de consola ni de hidratación. Recién ahí se
+desplegó, y se confirmó con un `curl` a la URL real de producción que
+respondía 200 con el build nuevo.
+
+Resultado en `npm audit`: de 8 a 5 vulnerabilidades — las 3 que vivían
+empaquetadas dentro de `next` (`postcss`/`sharp`) se resolvieron solas.
+Quedan las 5 de la cadena `firebase-admin`→`@google-cloud/storage`→`uuid`,
+sin cambios (ver 6.8: el único "fix" que sugiere `npm audit` es una
+versión más vieja de `firebase-admin`, una regresión real).
+
+**ABIU (auto-deploy).** Se intentó activar por CLI y se confirmó que
+**no es posible**: `firebase apphosting:backends --help` no tiene un
+comando `update`, y `apphosting:backends:create --help` no expone
+ninguna flag para esto (ni siquiera al crear un backend nuevo). Activarlo
+requiere la consola web de Firebase — conectar/autorizar el repo de
+GitHub con "rama en vivo" — un paso interactivo con el login del dueño
+del proyecto, no algo scriptable. Se le pasaron los pasos al usuario para
+que lo haga él mismo.
+
 ---
 
 ## 7. Pendientes actuales (post-auditoría 2026-08-21)
@@ -610,8 +645,10 @@ mensajería en 6.14).
 - [ ] **Incluir `firestore:rules,storage` en el checklist de deploy**: no se
   despliegan con `apphosting:rollouts:create` (ver 6.10) — hay que acordarse de
   correrlo aparte cada vez que se toque `firestore.rules` o `storage.rules`.
-- [x] ~~Revisar las 14 vulnerabilidades de Dependabot~~ — bajado a 8, ver 6.8. Las
-  8 restantes quedan pendientes de un upgrade mayor de Next (decisión aparte).
+- [x] ~~Revisar las 14 vulnerabilidades de Dependabot~~ — bajado a 8 (ver 6.8) y
+  luego a 5 con el upgrade a Next 16 (ver 6.17). Las 5 restantes son la cadena
+  `firebase-admin`/`uuid` — no se tocan a propósito, el único "fix" es una
+  regresión a una versión más vieja.
 - [x] ~~Decidir el alcance de `/portal/alumnos`~~ — resuelto 2026-08-21: se acotó a
   "mis alumnos" (inscritos en clases donde el profesor es `instructor_id`); el admin
   sigue viendo a todos. No existe campo "profesor asignado" en `Usuario`, así que la
@@ -621,7 +658,11 @@ mensajería en 6.14).
 - [ ] **Deploy manual**: `apphosting.yaml` está bien, pero `ABIU: Disabled` — no hay
   auto-deploy al hacer push a GitHub. Cada fix requiere correr el rollout a mano
   (`firebase apphosting:rollouts:create`); ya nos mordió una vez esta sesión (un fix
-  quedó en el repo sin desplegar).
+  quedó en el repo sin desplegar). **Confirmado 2026-08-23: no se puede activar por
+  CLI** — no existe `apphosting:backends:update` ni una flag para esto en
+  `apphosting:backends:create`. Solo se activa desde la consola web de
+  Firebase (conectar/autorizar el repo de GitHub con "rama en vivo"), un
+  paso manual que requiere el login del dueño del proyecto.
 - [x] ~~Fase 6 (PWA hardening)~~ — completada 2026-08-23, ver 6.12.
 - [x] ~~Fase 5 (Mensajería)~~ — completada y probada en dispositivo real
   2026-08-23, ver 6.14 y 6.15. Fase 7 (QA + staging) sigue pendiente.
