@@ -10,6 +10,52 @@ arreglarlo después (o el link al commit que lo arregló).
 
 Estados: 🔲 Pendiente · 🔄 En progreso · ✅ Sin bugs · 🐛 Bugs encontrados (ver notas)
 
+**Cobertura:** esta versión (2026-08-23) cubre TODO lo que hay en la app hoy —
+los 5 tipos de plan, mensajería, plan virtual, racha, clases personalizadas,
+PWA, y cada pantalla de los 3 roles. Si agregas una función nueva, agrégale
+su historia acá antes de darla por terminada.
+
+---
+
+## Visitante (sin cuenta)
+
+### V1 — Explora la landing
+**Como** visitante, **quiero** navegar la página de inicio sin cuenta,
+**para** entender qué ofrece el club antes de registrarme.
+
+Pasos:
+1. `/` → probar el nav de escritorio (Inicio/Info/Planes/Media) — el link
+   activo debe resaltar según la sección visible al hacer scroll
+2. En mobile, probar el dock flotante inferior (mismos 4 accesos)
+3. Botones "Iniciar Sesión" y "Comenzar" (o "Mi Panel" si ya hay sesión) →
+   deben llevar a `/login` o al home del rol correspondiente
+4. Revisar la grilla de media (las imágenes son decorativas, sin acción) y
+   la sección de testimonios
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+-
+
+---
+
+### V2 — Arma un plan como invitado y lo recupera al loguearse
+**Como** visitante sin cuenta, **quiero** poder armar mi plan en el wizard
+ANTES de registrarme, **para** no perder lo que ya elegí si tengo que crear
+cuenta a mitad de camino.
+
+Pasos:
+1. Sin sesión iniciada, entrar directo a `/dashboard/planes`
+2. Armar cualquier plan hasta el paso de resumen → "Solicitar"
+3. Debe pedir crear cuenta o iniciar sesión (no debe perder la selección)
+4. Registrarse/loguearse → verificar que el plan armado se restaura solo y
+   salta directo al resumen (localStorage `faros-plan-pendiente` o similar)
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+-
+
 ---
 
 ## Estudiante
@@ -20,10 +66,16 @@ comprobante de pago, **para** quedar en revisión y que el club active mi plan.
 
 Pasos:
 1. Landing → "Comenzar" / "Inscríbete ahora" → `/registro`
-2. Llenar formulario de registro (estudiante)
-3. Armar plan en el wizard (`/dashboard/planes`)
-4. Confirmar solicitud → subir comprobante
-5. Verificar banner de "Pago en revisión" en `/dashboard`
+2. Llenar formulario: nombres, apellidos, tipo/número de documento, teléfono,
+   teléfono de emergencia, sede, EPS, dificultades médicas (opcional), correo,
+   contraseña + confirmar — probar cada validación (campo vacío, email sin
+   `@`, contraseña <6 caracteres, contraseñas que no coinciden)
+3. Probar la foto de perfil opcional (subir, ver preview) — el registro no
+   debe fallar si la foto falla al subir
+4. Armar plan en el wizard (`/dashboard/planes`)
+5. Confirmar solicitud → subir comprobante (imagen y PDF, y probar el límite
+   de tamaño)
+6. Verificar banner de "Pago en revisión" en `/dashboard`
 
 **Estado:** 🔲 Pendiente
 
@@ -32,7 +84,30 @@ Pasos:
 
 ---
 
-### E2 — Alumno con plan activo se inscribe y cancela una clase
+### E2 — Login
+**Como** usuario con cuenta, **quiero** iniciar sesión y llegar a donde
+corresponde, **para** entrar directo a mi rol sin pasos extra.
+
+Pasos:
+1. `/login` con credenciales incorrectas → debe mostrar el error, no crashear
+2. Login correcto sin `?next=` → debe ir al home de su rol (alumno→`/dashboard`,
+   profesor→`/portal`, admin→`/admin`)
+3. Entrar a una URL protegida sin sesión (ej. `/dashboard/planes`) → debe
+   redirigir a `/login?next=/dashboard/planes` y, tras loguearse, volver ahí
+4. Probar manualmente `?next=` con una URL externa (ej.
+   `/login?next=https://evil.com`) → debe IGNORARSE ese destino (guard
+   anti open-redirect) y mandar al home del rol
+5. Con la app ya iniciada como PWA instalada y sesión activa, confirmar que
+   `/` redirige solo al home del rol
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+-
+
+---
+
+### E3 — Alumno con plan activo se inscribe y cancela una clase
 **Como** alumno con plan activo, **quiero** ver las clases disponibles,
 inscribirme a una, y poder cancelarla, **para** organizar mi semana de
 entrenamiento.
@@ -56,27 +131,250 @@ Pasos:
 - "Mis clases" quedaba al final de la página, después de toda la lista de
   disponibles — costaba confirmar que la inscripción funcionó. Fix: se
   reordenó, "Mis clases" va primero.
-- (Encontrado de paso, no estaba en los pasos de esta historia pero salió al
-  navegar desde acá) "Clase del Día" en `/dashboard` era 100% mock. Fix:
+- (Encontrado de paso) "Clase del Día" en `/dashboard` era 100% mock. Fix:
   ahora busca la clase real de hoy y muestra el plan real subido por el
   profesor.
-- (Idem) "Tu semana" siempre mostraba los 6 días en gris — nunca recibía qué
-  días entrena el alumno. Fix: se derivan de sus clases inscritas reales.
+- (Idem) "Tu semana" siempre mostraba los 6 días en gris. Fix: se derivan de
+  sus clases inscritas reales.
+- Un error nativo del navegador (Safari/iOS, probablemente IndexedDB al
+  refrescar el token) se mostraba crudo y en inglés en el banner de error al
+  inscribir/cancelar. Fix: `postConToken()` traduce cualquier falla que no
+  venga de la API a un mensaje en español.
 
 Pendiente: volver a probar los 4 pasos originales con los fixes ya
-desplegados (especialmente el paso 4, cancelar dentro de la ventana de 2h,
-que no se alcanzó a probar).
+desplegados (especialmente cancelar dentro de la ventana de 2h).
 
 ---
 
-### E3 — Alumno revisa su dashboard
-**Como** alumno, **quiero** ver mi estado de suscripción, mi ranking y mi
-historial, **para** hacer seguimiento a mi progreso.
+### E4 — Wizard: Plan Grupal
+**Como** alumno, **quiero** armar un plan Grupal, **para** entrenar en grupo
+en una sede fija.
 
 Pasos:
-1. `/dashboard` → revisar banner de estado, "Tu semana", ranking de compañeros
-2. `/dashboard/perfil` → revisar datos personales
-3. `/dashboard/planes` (con plan activo) → debe mostrar resumen, no el wizard
+1. `/dashboard/planes` → elegir "Grupal UTP"
+2. Elegir un grupo (verificar que muestra cupos disponibles REALES, no la
+   capacidad total fija — y que bloquea si está lleno)
+3. Elegir frecuencia (1x/2x/3x semana) → el precio debe recalcularse en vivo
+4. Confirmar resumen y precio final antes de solicitar
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+-
+
+---
+
+### E5 — Wizard: Plan Personalizado (armar + agendar franja con profesor)
+**Como** alumno, **quiero** armar un plan Personalizado y luego agendar mi
+horario con un profesor específico, **para** entrenar 1-a-1 (o en pareja,
+familia, grupo reducido) a mi medida.
+
+Pasos, wizard:
+1. Elegir "Personalizado" → elegir modalidad (Individual/Pareja/Familia/Grupo
+   reducido) → si es por persona, probar el contador de personas (mín/máx)
+2. Elegir frecuencia → precio recalculado (por persona si aplica)
+
+Pasos, agendar franja (una vez el plan está activo, en
+`SolicitudPersonalizada` dentro de `/dashboard/asistencia`):
+3. Elegir un profesor (solo deben aparecer los que tienen franjas de
+   disponibilidad declaradas)
+4. Elegir día y horario dentro de la disponibilidad de ese profesor
+5. "Solicitar este horario" → debe quedar en estado "Esperando respuesta del
+   profesor" con botón "Cancelar solicitud"
+6. Probar pedir dos horarios al mismo profesor mientras el primero sigue
+   pendiente → debe rechazarlo (409)
+7. Cancelar la solicitud pendiente → debe volver a poder pedir otra
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+-
+
+---
+
+### E6 — Wizard: Plan Conjunto
+**Como** alumno, **quiero** armar un plan Conjunto, **para** combinar
+natación con otra disciplina.
+
+Pasos:
+1. Elegir "Conjuntos" → probar las 3 combinaciones (Natación+Acuagym,
+   Ejercicio funcional, Rumbaterapia)
+2. Rumbaterapia no tiene precio cargado — debe mostrar "Por confirmar", no
+   romper el wizard ni dejar solicitar con un precio inventado
+3. Elegir frecuencia (solo 1x/2x, no debe ofrecer 3x) → precio en vivo
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+-
+
+---
+
+### E7 — Wizard: Vacaciones deportivas
+**Como** padre/alumno, **quiero** inscribir niños al programa de vacaciones,
+**para** el receso escolar.
+
+Pasos:
+1. Elegir "Vacaciones deportivas"
+2. Probar el contador de niños (1 a 10) → precio = tarifa × niños, en vivo
+3. Confirmar que el resumen dice "Programa de 2 semanas", no una frecuencia
+   semanal (no aplica acá)
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+-
+
+---
+
+### E8 — Wizard: Plan Virtual (nuevo)
+**Como** alumno, **quiero** armar un plan Virtual eligiendo mi entrenador,
+**para** tener una rutina remota sin ir a una sede.
+
+Pasos:
+1. Elegir "Virtual" → NO debe pedir sede, grupo ni frecuencia
+2. Elegir un entrenador de la lista (debe listar profesores reales)
+3. Confirmar que el precio es fijo mensual y dice "Acceso ilimitado mientras
+   esté activo" (no una cantidad de sesiones)
+4. Solicitar → admin aprueba en `/admin/finanzas` (ver A1)
+5. Verificar que apenas se aprueba, el alumno ya tiene su rutina creada (aún
+   sin sesiones) — chequear como el profesor asignado en `/portal/virtual`
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+- Feature construida esta sesión, nunca probada con cuentas reales — ver
+  PLAN_DE_CIERRE.md 6.18.
+
+---
+
+### E9 — Plan Virtual: ver rutina y completar sesiones
+**Como** alumno con Plan Virtual activo, **quiero** ver mi rutina y marcar
+las sesiones que ya hice, **para** llevar mi propio progreso.
+
+Pasos (requiere que un profesor ya haya agregado sesiones — ver P6):
+1. `/dashboard/virtual` → si no hay rutina asignada, debe mostrar el estado
+   vacío correspondiente, no un error
+2. Con sesiones cargadas: cada una debe mostrar el video (si el link es de
+   YouTube/Vimeo, embebido directo en la página; si no lo reconoce, un link
+   "Ver video" en vez de romper)
+3. Marcar una sesión como completada → la barra de progreso y el contador
+   ("X de Y completadas") deben actualizarse al toque
+4. Desmarcarla → debe volver atrás sin problema
+5. Confirmar que el alumno NO puede editar título/descripción/video de una
+   sesión (solo el check de completada existe en su vista)
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+-
+
+---
+
+### E10 — Dashboard general del alumno
+**Como** alumno, **quiero** ver mi estado de suscripción, mi racha, mi
+asistencia y mi ranking, **para** hacer seguimiento a mi progreso.
+
+Pasos:
+1. `/dashboard` → revisar banner de estado del plan (activo/vencido/pendiente)
+2. Revisar la Racha (el faro animado junto a "Hola, {nombre}") — debe verse
+   apagado (gris, sin glow) en 0, y encendido con glow + haz girando cuando
+   hay racha activa
+3. Revisar el gráfico "Asistencia semanal" — debe mostrar datos reales de las
+   últimas 6 semanas, no un patrón fijo
+4. Revisar "Tu semana" (Semanario) — debe marcar los días reales en los que
+   el alumno tiene clase
+5. Revisar la tarjeta "Mensajes" (vista previa) → botón "Ver mensajes" lleva
+   a `/dashboard/mensajes`
+6. `/dashboard/planes` con plan activo → debe mostrar resumen, no el wizard
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+-
+
+---
+
+### E11 — Mensajería del alumno (muro grupal + privado)
+**Como** alumno, **quiero** comentar en el muro de mi grupo y escribirle en
+privado a mi profesor, **para** comunicarme sin depender de otro canal.
+
+Pasos:
+1. `/dashboard/mensajes` → confirmar que aparece una tab de "Muro" por cada
+   grupo en el que está inscrito, y una tab de DM por cada profesor distinto
+   con el que tiene clases
+2. Enviar un mensaje al muro grupal → debe verse en tiempo real desde otra
+   sesión (ej. el profesor en `/portal`)
+3. Enviar un DM al profesor → debe verse solo entre esos dos
+4. Cambiar de una conversación a otra → NO debe seguir mostrando los
+   mensajes de la conversación anterior mientras carga la nueva
+5. En mobile, confirmar que la lista y el chat se turnan la pantalla completa
+   (con botón de volver), no un bloque chico
+6. Abrir el teclado para escribir → no debe hacer zoom raro ni cortar el chat
+   (probar específicamente en iPhone/Safari)
+7. Confirmar que las burbujas de mensaje muestran la foto de perfil real (si
+   el usuario tiene una), no solo iniciales
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+- Ya probado y corregido en sesión de desarrollo (permisos de grupo, chat
+  cortado por teclado, fotos, conversación vieja al cambiar de chat) — esta
+  pasada es para confirmar que sigue sin regresiones.
+
+---
+
+### E12 — Ranking
+**Como** alumno, **quiero** ver mi posición frente a mis compañeros de sede,
+**para** motivarme.
+
+Pasos:
+1. `/dashboard/ranking` → revisar podio (top 3), tarjeta "Tu posición", tabla
+   completa
+2. Probar el toggle "General" / "Mensual"
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+- ⚠️ Revisar en código: el toggle "Mensual" no parece cambiar realmente la
+  consulta de datos (queda igual que "General") — confirmar en pantalla si
+  es un bug real o si ya se resolvió.
+
+---
+
+### E13 — Perfil del alumno
+**Como** alumno, **quiero** ver mis datos, cambiar mi foto y mandar una
+sugerencia, **para** mantener mi cuenta al día y dar feedback.
+
+Pasos:
+1. `/dashboard/perfil` → cambiar la foto de perfil (debe comprimirse y
+   reflejarse en el header/avatar en todos lados)
+2. Revisar que los datos (cédula, celular, correo, sede, nivel, emergencia)
+   se ven correctos y son de solo lectura
+3. Escribir y enviar una sugerencia → botón debe deshabilitarse y mostrar
+   "Enviada ✓" un momento
+4. "Cerrar sesión" → debe volver a `/login`
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+-
+
+---
+
+### E14 — Instalar la PWA
+**Como** alumno, **quiero** instalar la app en mi teléfono, **para** usarla
+como una app nativa.
+
+Pasos:
+1. En Android/Chrome: esperar el banner de instalación (~4s), probar
+   "Instalar" y también la "X" de descartar (no debe volver a aparecer por
+   14 días)
+2. En iPhone/Safari: debe mostrar instrucciones manuales ("Toca compartir →
+   Agregar a inicio"), no el prompt nativo (no existe en iOS)
+3. Con la app ya instalada, abrirla — no debe mostrar el banner de nuevo
+4. Desconectar internet y navegar → debe mostrar la pantalla "Sin conexión"
+   en vez de un error genérico del navegador, con botón "Reintentar"
 
 **Estado:** 🔲 Pendiente
 
@@ -98,12 +396,15 @@ Pasos:
 3. Marcar asistencia de uno o más alumnos
 4. Escribir observaciones y "Guardar y finalizar clase"
 5. Verificar en `/portal/perfil` que "Clases dictadas" subió
-6. Probar el muro de mensajes (demo local, no debería prometer persistencia)
+6. Probar el muro de mensajes y el chat privado con un alumno DENTRO de la
+   tarjeta de la clase — ya es real (Firestore, tiempo real), no demo local
 
 **Estado:** 🔲 Pendiente
 
 **Notas / bugs:**
--
+- (Corrección al texto original de esta historia) La mensajería dejó de ser
+  "demo local" — ahora es real con `onSnapshot`. Revisar paso 6 con eso en
+  mente.
 
 ---
 
@@ -113,8 +414,93 @@ mis alumnos, **para** tener otra forma de revisar mi carga.
 
 Pasos:
 1. `/portal/clases` → verificar que las clases y el estado coinciden con `/portal`
-2. `/portal/alumnos` → verificar que solo aparecen alumnos inscritos en sus
-   clases (no todos los del club)
+2. Abrir la tab de Asistencia de una clase → los nombres y fotos de los
+   alumnos deben verse reales (no un uid crudo sin foto)
+3. `/portal/alumnos` → verificar que solo aparecen alumnos inscritos en sus
+   clases (no todos los del club); probar el buscador y los filtros
+   (Todos/Activos/Vencidos/Sin plan)
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+-
+
+---
+
+### P3 — Mensajería dedicada del profesor
+**Como** profesor, **quiero** un lugar centralizado para ver todos mis chats,
+**para** no tener que entrar clase por clase a buscar un mensaje.
+
+Pasos:
+1. `/portal/mensajes` → confirmar que lista TODOS los grupos que dicta (no
+   solo el de la clase seleccionada en el calendario) + un DM por cada
+   alumno distinto entre todas sus clases
+2. Enviar un mensaje al muro de un grupo y un DM → deben coincidir con lo que
+   ve el alumno del otro lado (ver E11)
+3. Confirmar que la lista muestra el último mensaje real + hora de cada
+   conversación, no un subtítulo genérico
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+-
+
+---
+
+### P4 — Profesor gestiona disponibilidad y solicitudes de clase personalizada
+**Como** profesor, **quiero** declarar mis horarios disponibles y aceptar o
+rechazar solicitudes de alumnos, **para** organizar mis clases 1-a-1.
+
+Pasos:
+1. `/portal/perfil` → agregar una franja de disponibilidad (día + desde/hasta)
+2. Probar validaciones: hora de inicio después de la de fin (debe
+   rechazarlo), franja que se solapa con una ya agregada (debe rechazarlo)
+3. Quitar una franja → "Guardar disponibilidad"
+4. Con una solicitud pendiente de un alumno (ver E5): aceptarla → debe
+   generar las clases recurrentes reales hasta el vencimiento del plan del
+   alumno, y chocar si ya hay una clase en ese horario
+5. Rechazar otra solicitud sin escribir motivo → debe bloquearlo (400); con
+   motivo, debe guardarlo y notificar el rechazo
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+-
+
+---
+
+### P5 — Profesor gestiona el Plan Virtual de sus alumnos
+**Como** profesor, **quiero** armar y editar la rutina virtual de cada uno de
+mis alumnos, **para** que tengan contenido para entrenar remoto.
+
+Pasos:
+1. `/portal/virtual` → confirmar que solo aparecen SUS alumnos asignados
+   (no los de otros profesores)
+2. Abrir un alumno → agregar una sesión (título, descripción, link de
+   YouTube o Vimeo) → confirmar que se guarda y aparece en la lista
+3. Editar una sesión existente (cambiar título/descripción/link)
+4. Borrar una sesión → debe pedir confirmación
+5. Pegar un link que NO sea de YouTube/Vimeo → debe avisar que no lo
+   reconoce (pero igual guardarlo como link plano, sin romper nada)
+6. Confirmar que el profesor NO puede marcar una sesión como completada por
+   el alumno (ese control no debe existir de este lado)
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+- Feature construida esta sesión, nunca probada con cuentas reales — ver
+  PLAN_DE_CIERRE.md 6.18.
+
+---
+
+### P6 — Perfil del profesor
+**Como** profesor, **quiero** ver mis datos y cambiar mi foto, **para**
+mantener mi cuenta al día.
+
+Pasos:
+1. `/portal/perfil` → cambiar foto de perfil
+2. Revisar "Acumulado del mes" (clases dictadas)
+3. "Cerrar sesión"
 
 **Estado:** 🔲 Pendiente
 
@@ -133,6 +519,9 @@ Pasos:
 1. `/admin/finanzas` → abrir una transacción pendiente, ver comprobante
 2. Aprobar → verificar que el alumno pasa a "Activo" y aparece el movimiento
 3. (con otra tx) Rechazar con motivo → verificar que el alumno lo ve reflejado
+4. Aprobar específicamente una solicitud de Plan Virtual → confirmar que se
+   crea la rutina automáticamente y el profesor elegido ya la ve en
+   `/portal/virtual` (ver E8/P5)
 
 **Estado:** 🔲 Pendiente
 
@@ -141,13 +530,120 @@ Pasos:
 
 ---
 
-### A2 — Admin gestiona catálogo y usuarios
-**Como** admin, **quiero** editar sedes/grupos/tarifas y gestionar roles de
-usuarios, **para** mantener el catálogo y el equipo al día.
+### A2 — Dashboard admin
+**Como** admin, **quiero** ver el estado general del negocio y accesos
+rápidos, **para** tener una vista de control.
 
 Pasos:
-1. `/admin/planes` → crear/editar una sede, un grupo, ajustar una tarifa
-2. `/admin/usuarios` → cambiar el rol de un usuario, suspender/reactivar una cuenta
+1. `/admin` → revisar las 4 KPIs (ingresos/egresos del mes, atletas activos,
+   pagos pendientes) y el gráfico de ingresos de los últimos 6 meses
+2. Revisar la cola de "Pagos pendientes" → "Ver todas en Finanzas"
+3. Probar los 4 accesos rápidos (Usuarios/Finanzas/Planes/Clases)
+4. Probar los 3 botones de siembra (con confirmación cada uno):
+   - "Sembrar catálogo" → repuebla sedes/grupos/tarifas
+   - "Crear clases" → pide un correo de profesor, genera 4 semanas de clases
+   - "Reparar canales de mensajes" → agrega miembros faltantes a los muros
+     de grupo (solo agrega, nunca quita)
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+-
+
+---
+
+### A3 — Admin gestiona catálogo: Sedes y Grupos
+**Como** admin, **quiero** crear/editar sedes y grupos, **para** mantener la
+oferta física al día.
+
+Pasos:
+1. `/admin/planes` → tab Sedes: crear una sede, editarla, marcarla
+   inactiva/activa
+2. Tab Grupos: crear un grupo asociado a una sede, con horarios; editarlo
+3. Probar "Diagnóstico Firestore" (botón arriba a la derecha) → debe hacer un
+   ciclo de escritura+lectura+borrado y mostrar éxito o el error real
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+-
+
+---
+
+### A4 — Admin gestiona Tarifas (los 5 tipos de plan)
+**Como** admin, **quiero** ajustar los precios de cada tipo de plan,
+**para** mantener el catálogo de precios al día.
+
+Pasos:
+1. Tab Tarifas → editar el precio de Grupal (por sesión, las 3 frecuencias)
+2. Editar precios de cada modalidad Personal (individual/pareja/familia/
+   reducido/funcional)
+3. Editar precios de los 3 Conjuntos (dejar Rumbaterapia en blanco = "por
+   confirmar" y verificar que el wizard lo respeta, ver E6)
+4. Editar precio de Vacaciones (por niño)
+5. Editar precio de Virtual (mensual fijo, nuevo)
+6. "Guardar cambios" → volver al wizard del alumno y confirmar que el precio
+   nuevo se refleja ahí
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+-
+
+---
+
+### A5 — Admin gestiona el Plan Virtual de cualquier alumno
+**Como** admin, **quiero** poder gestionar la rutina virtual de cualquier
+alumno (no solo las de mis propios alumnos, porque el admin no tiene
+alumnos propios), **para** cubrir a un profesor si hace falta.
+
+Pasos:
+1. `/admin/planes` → tab Virtual → confirmar que aparecen las rutinas de
+   TODOS los alumnos, de cualquier profesor asignado
+2. Agregar/editar/borrar una sesión de un alumno que NO es del profesor con
+   el que estás logueado (o sea, probando como admin) → debe funcionar igual
+   que en `/portal/virtual` (mismo componente)
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+- Feature construida esta sesión, nunca probada con cuentas reales — ver
+  PLAN_DE_CIERRE.md 6.18.
+
+---
+
+### A6 — Admin gestiona Plantillas (legacy)
+**Como** admin, **quiero** crear planes ad-hoc con nombre propio, **para**
+casos especiales (promos, descuentos) que no encajan en los 5 tipos
+estándar.
+
+Pasos:
+1. Tab Plantillas → crear una plantilla (nombre, sesiones, precio, duración,
+   sede)
+2. Editarla, archivarla
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+- Esta tab está marcada en el propio código como que el wizard del alumno
+  NO la usa — confirmar que sigue siendo así a propósito, no un olvido.
+
+---
+
+### A7 — Admin gestiona usuarios
+**Como** admin, **quiero** cambiar el rol de un usuario y suspender cuentas,
+**para** mantener el equipo y la membresía al día.
+
+Pasos:
+1. `/admin/usuarios` → buscar por nombre/cédula/email, probar los filtros
+   (Todos/Estudiantes/Profesores)
+2. Cambiar el rol de un estudiante a profesor (con el diálogo de
+   confirmación) → verificar que afecta a la cuenta CORRECTA (bug crítico ya
+   corregido, ver PLAN_DE_CIERRE 6.6 — re-probar igual)
+3. Suspender una cuenta → esa persona no debe poder usar la app (ver
+   `CuentaSuspendida`); reactivarla
+4. Confirmar que NO hay ningún control de rol/suspensión sobre una cuenta de
+   admin (ni la propia ni otra) — no deben aparecer botones ahí
 
 **Estado:** 🔲 Pendiente
 
@@ -160,8 +656,17 @@ Pasos:
 
 | # | Historia | Bug | Severidad | Estado |
 |---|---|---|---|---|
-| 1 | E2 | Contador de sesiones no baja al inscribirse (cliente no refresca perfil) | Alta | ✅ Corregido (`ce9c8a8`) |
-| 2 | E2 | Se puede inscribir a clases de otra sede | Media | ✅ Corregido (`ce9c8a8`) |
-| 3 | E2 | "Mis clases" al final de la página, difícil confirmar inscripción | Baja | ✅ Corregido (`ce9c8a8`) |
-| 4 | E2/E3 | "Clase del Día" en dashboard 100% hardcodeada | Alta | ✅ Corregido (`ce9c8a8`) |
-| 5 | E2/E3 | "Tu semana" siempre en gris, sin días reales | Media | ✅ Corregido (`ce9c8a8`) |
+| 1 | E3 | Contador de sesiones no baja al inscribirse (cliente no refresca perfil) | Alta | ✅ Corregido (`ce9c8a8`) |
+| 2 | E3 | Se puede inscribir a clases de otra sede | Media | ✅ Corregido (`ce9c8a8`) |
+| 3 | E3 | "Mis clases" al final de la página, difícil confirmar inscripción | Baja | ✅ Corregido (`ce9c8a8`) |
+| 4 | E3 | "Clase del Día" en dashboard 100% hardcodeada | Alta | ✅ Corregido (`ce9c8a8`) |
+| 5 | E3 | "Tu semana" siempre en gris, sin días reales | Media | ✅ Corregido (`ce9c8a8`) |
+| 6 | E3 | Error nativo del navegador (en inglés) se mostraba crudo al inscribir/cancelar | Media | ✅ Corregido |
+| 7 | E11 | Mensajería grupal no dejaba enviar (alumnos pre-existentes sin backfill) | Alta | ✅ Corregido |
+| 8 | E11 | Cancelar clase fallaba si el canal de mensajes del grupo no existía aún | Media | ✅ Corregido |
+| 9 | E11 | Conversación anterior seguía visible al cambiar de chat | Media | ✅ Corregido |
+| 10 | E11/E14 | Zoom raro de iOS al enfocar inputs del chat | Media | ✅ Corregido |
+| 11 | E11/E14 | Chat cortado por el teclado en iOS (modo PWA) | Alta | ✅ Corregido |
+| 12 | E11 | Fotos de perfil no se veían en las burbujas de mensaje | Baja | ✅ Corregido |
+| 13 | P2 | `/portal/clases` mostraba uid crudo sin nombre/foto en asistencia | Media | ✅ Corregido |
+| 14 | E12 | Toggle "Mensual" del ranking no cambia la consulta de datos | Baja | 🔲 Por confirmar en pantalla |
