@@ -61,6 +61,7 @@ export function SolicitudPersonalizada() {
   const [profesorSel, setProfesorSel] = useState<string>('')
   const [franjaSel, setFranjaSel] = useState<number>(0)
   const [slotSel, setSlotSel] = useState<string>('')
+  const [direccion, setDireccion] = useState('')
   // Horarios (dow+horaInicio) que ya tienen una Clase real del profesor
   // encima — otro alumno personalizado ya aceptado, o una clase grupal.
   const [ocupados, setOcupados] = useState<Set<string>>(new Set())
@@ -120,7 +121,7 @@ export function SolicitudPersonalizada() {
   async function solicitar() {
     const profesor = profesores.find((p) => p.uid === profesorSel)
     const franja = profesor?.franjas[franjaSel]
-    if (!profesor || !franja || !slotSel) return
+    if (!profesor || !franja || !slotSel || !direccion.trim()) return
     setError(null)
     setEnviando(true)
     try {
@@ -131,6 +132,7 @@ export function SolicitudPersonalizada() {
         body: JSON.stringify({
           profesorId: profesor.uid, dow: franja.dow,
           horaInicio: slotSel, horaFin: sumarMinutos(slotSel, DURACION_PERSONALIZADA_MIN),
+          direccion: direccion.trim(),
         }),
       })
       const data = await res.json()
@@ -194,6 +196,7 @@ export function SolicitudPersonalizada() {
           <p className="text-sm text-white mb-1">
             {DIAS[solicitud.dow]} · {solicitud.horaInicio} – {solicitud.horaFin}
           </p>
+          <p className="text-xs text-[var(--color-on-surface-variant)]/60 mb-1">{solicitud.direccion}</p>
           <p className="text-xs text-[var(--color-on-surface-variant)]/50 mb-4">
             Te avisaremos apenas el profesor responda.
           </p>
@@ -209,7 +212,13 @@ export function SolicitudPersonalizada() {
           <p className="text-sm text-white">
             {DIAS[solicitud.dow]} · {solicitud.horaInicio} – {solicitud.horaFin}
           </p>
-          <p className="text-xs text-[var(--color-on-surface-variant)]/50 mt-1">
+          <p className="text-xs text-[var(--color-on-surface-variant)]/60 mt-1">{solicitud.direccion}</p>
+          {solicitud.mensajeProfesor && (
+            <p className="text-xs text-[var(--color-on-surface-variant)]/50 italic mt-2">
+              &ldquo;{solicitud.mensajeProfesor}&rdquo;
+            </p>
+          )}
+          <p className="text-xs text-[var(--color-on-surface-variant)]/50 mt-2">
             Tus clases ya aparecen en &ldquo;Mis clases&rdquo; arriba.
           </p>
         </Card>
@@ -275,7 +284,22 @@ export function SolicitudPersonalizada() {
                 </select>
               )}
             </div>
-            <Button fullWidth loading={enviando} disabled={!slotSel} onClick={solicitar}>
+            <div className="flex flex-col gap-1.5">
+              <label className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">
+                Dirección donde será la clase
+              </label>
+              <input
+                value={direccion}
+                onChange={(e) => setDireccion(e.target.value)}
+                placeholder="Casa, conjunto, torre/apto, punto de referencia…"
+                maxLength={300}
+                className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder:text-white/30"
+              />
+              <p className="text-[11px] text-[var(--color-on-surface-variant)]/40">
+                El profesor va a tu casa o conjunto — necesita saber dónde llegar.
+              </p>
+            </div>
+            <Button fullWidth loading={enviando} disabled={!slotSel || !direccion.trim()} onClick={solicitar}>
               Solicitar este horario
             </Button>
           </div>

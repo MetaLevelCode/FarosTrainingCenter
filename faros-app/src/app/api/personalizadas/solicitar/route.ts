@@ -35,12 +35,14 @@ export async function POST(req: NextRequest) {
     const db = getAdminDb()
 
     const body = await req.json().catch(() => null) as {
-      profesorId?: string; dow?: number; horaInicio?: string; horaFin?: string; mensaje?: string
+      profesorId?: string; dow?: number; horaInicio?: string; horaFin?: string
+      direccion?: string; mensaje?: string
     } | null
     const profesorId = body?.profesorId
     const dow = body?.dow
     const horaInicio = body?.horaInicio
     const horaFin = body?.horaFin
+    const direccion = body?.direccion?.trim().slice(0, 300)
     const mensaje = body?.mensaje?.trim().slice(0, 500) || null
 
     if (!profesorId || typeof dow !== 'number' || dow < 0 || dow > 6
@@ -48,6 +50,12 @@ export async function POST(req: NextRequest) {
       || !horaFin || !HORA_RE.test(horaFin)
       || horaInicio >= horaFin) {
       return NextResponse.json({ error: 'Datos de la solicitud inválidos' }, { status: 400 })
+    }
+
+    // La clase personalizada ocurre en la casa/conjunto del alumno, no en
+    // una sede fija — sin dirección el profesor no sabe a dónde ir.
+    if (!direccion) {
+      return NextResponse.json({ error: 'Indica la dirección donde será la clase' }, { status: 400 })
     }
 
     // Cada clase dura DURACION_PERSONALIZADA_MIN, aunque el profesor haya
@@ -128,10 +136,12 @@ export async function POST(req: NextRequest) {
         dow,
         horaInicio,
         horaFin,
+        direccion,
         personas: susc.personas ?? 1,
         estado: 'pendiente',
         mensaje,
         motivoRechazo: null,
+        mensajeProfesor: null,
         creadoEn: now,
         respondidoEn: null,
         clasesGeneradas: [],

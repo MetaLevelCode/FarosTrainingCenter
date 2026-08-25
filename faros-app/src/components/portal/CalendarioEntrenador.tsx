@@ -428,7 +428,7 @@ function ClaseCard({
             <Badge variant={ESTADO_BADGE[clase.estado]}>{ESTADO_LABEL[clase.estado]}</Badge>
           </div>
           <p className="font-display text-sm font-extrabold text-white uppercase tracking-tight truncate">{clase.nombre_clase}</p>
-          <p className="text-[11px] text-[var(--color-on-surface-variant)]/60 mt-0.5 truncate">{clase.sede} · {clase.estudiantes_inscritos.length} alumnos</p>
+          <p className="text-[11px] text-[var(--color-on-surface-variant)]/60 mt-0.5 truncate">{clase.direccion || clase.sede} · {clase.estudiantes_inscritos.length} alumnos</p>
         </div>
         <div className="flex flex-col items-end gap-1 shrink-0">
           <span className={`material-symbols-outlined text-[16px] ${tienePlan ? 'text-[var(--color-success-emerald)]' : 'text-white/20'}`} title={tienePlan ? 'Plan cargado' : 'Sin plan'}>

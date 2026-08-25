@@ -46,8 +46,10 @@ export interface SolicitudPersonalizada {
   horaFin: string
   personas: number
   estado: 'pendiente' | 'aceptada' | 'rechazada' | 'cancelada'
+  direccion: string   // casa/conjunto donde el profesor debe ir a dar la clase
   mensaje?: string | null
   motivoRechazo?: string | null
+  mensajeProfesor?: string | null   // nota opcional del profesor al aceptar
   creadoEn: number
   respondidoEn?: number | null
   clasesGeneradas?: string[]
@@ -193,6 +195,9 @@ export interface Clase {
   observaciones_profesor?: string | null
   creadoEn: number
   actualizadoEn: number
+  // Denormalizado desde solicitudes_personalizadas al aceptar — la clase
+  // personalizada ocurre en la casa/conjunto del alumno, no en una sede fija.
+  direccion?: string
   // Desnormalizado
   nombre_instructor?: string
 }

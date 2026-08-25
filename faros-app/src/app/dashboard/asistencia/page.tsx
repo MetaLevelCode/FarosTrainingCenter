@@ -267,9 +267,9 @@ export default function AsistenciaPage() {
             <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mt-1 capitalize truncate">
               {dia} · {hora}
             </p>
-            {c.sede && (
+            {(c.direccion || c.sede) && (
               <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/40 mt-0.5 truncate">
-                {c.sede}
+                {c.direccion || c.sede}
               </p>
             )}
           </div>

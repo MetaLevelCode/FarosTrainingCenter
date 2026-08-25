@@ -34,6 +34,9 @@ export async function POST(
     const { id } = await params
     const db = getAdminDb()
 
+    const body = await req.json().catch(() => null) as { mensaje?: string } | null
+    const mensajeProfesor = body?.mensaje?.trim().slice(0, 500) || null
+
     const resultado = await db.runTransaction(async (tx) => {
       const solRef = db.collection('solicitudes_personalizadas').doc(id)
       const [solSnap, requesterSnap] = await Promise.all([
@@ -112,6 +115,7 @@ export async function POST(
           instructor_id: sol.profesorId,
           nombre_instructor: nombreInstructor || undefined,
           sede: profesor.sede ?? alumno.sede ?? '',
+          direccion: sol.direccion ?? null,
           fecha_hora_inicio: oc.inicio,
           fecha_hora_fin: oc.fin,
           cupo_maximo: sol.personas ?? 1,
@@ -128,6 +132,7 @@ export async function POST(
         respondidoEn: ahora,
         clasesGeneradas,
         rangoGeneradoHasta: hasta,
+        mensajeProfesor,
       })
 
       return { ok: true as const, clasesCreadas: clasesGeneradas.length }

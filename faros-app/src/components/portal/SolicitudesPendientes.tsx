@@ -27,6 +27,7 @@ export function SolicitudesPendientes() {
   const [procesando, setProcesando] = useState<string | null>(null)
   const [rechazando, setRechazando] = useState<string | null>(null)
   const [motivo, setMotivo] = useState('')
+  const [mensajesAceptar, setMensajesAceptar] = useState<Record<string, string>>({})
   const [error, setError] = useState<{ id: string; texto: string } | null>(null)
 
   useEffect(() => {
@@ -60,7 +61,8 @@ export function SolicitudesPendientes() {
       const token = await getIdToken()
       const res = await fetch(`/api/personalizadas/${id}/aceptar`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mensaje: mensajesAceptar[id]?.trim() || undefined }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'No se pudo aceptar')
@@ -114,8 +116,12 @@ export function SolicitudesPendientes() {
                 {s.personas} {s.personas === 1 ? 'persona' : 'personas'}
               </span>
             </div>
-            <p className="text-sm text-[var(--color-on-surface-variant)]/70 mb-3">
+            <p className="text-sm text-[var(--color-on-surface-variant)]/70 mb-1">
               {DIAS[s.dow]} · {s.horaInicio} – {s.horaFin}
+            </p>
+            <p className="flex items-center gap-1 text-xs text-[var(--color-on-surface-variant)]/60 mb-3">
+              <span className="material-symbols-outlined text-[14px]">location_on</span>
+              {s.direccion}
             </p>
             {s.mensaje && (
               <p className="text-xs text-[var(--color-on-surface-variant)]/50 italic mb-3">&ldquo;{s.mensaje}&rdquo;</p>
@@ -148,13 +154,21 @@ export function SolicitudesPendientes() {
                 </div>
               </div>
             ) : (
-              <div className="flex gap-2">
-                <Button size="sm" fullWidth loading={procesando === s.id} onClick={() => aceptar(s.id)}>
-                  Aceptar
-                </Button>
-                <Button variant="outline" size="sm" fullWidth onClick={() => setRechazando(s.id)}>
-                  Rechazar
-                </Button>
+              <div className="space-y-2">
+                <input
+                  value={mensajesAceptar[s.id] ?? ''}
+                  onChange={(e) => setMensajesAceptar((prev) => ({ ...prev, [s.id]: e.target.value }))}
+                  placeholder="Mensaje para el alumno al aceptar (opcional)…"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder:text-white/30"
+                />
+                <div className="flex gap-2">
+                  <Button size="sm" fullWidth loading={procesando === s.id} onClick={() => aceptar(s.id)}>
+                    Aceptar
+                  </Button>
+                  <Button variant="outline" size="sm" fullWidth onClick={() => setRechazando(s.id)}>
+                    Rechazar
+                  </Button>
+                </div>
               </div>
             )}
           </div>
