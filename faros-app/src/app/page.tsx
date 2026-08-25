@@ -17,9 +17,11 @@ import { useAuth } from '@/contexts/AuthContext'
 import { FarosWordmark } from '@/components/ui'
 import { WaterBackground } from '@/components/shared/WaterBackground'
 import { FloatingPaths } from '@/components/shared/FloatingPaths'
-import { NadarCTA } from '@/components/shared/NadarCTA'
-import { AnimatedFooter } from '@/components/shared/AnimatedFooter'
-import { TestimonialsMarquee } from '@/components/shared/TestimonialsMarquee'
+import dynamic from 'next/dynamic'
+
+const NadarCTA = dynamic(() => import('@/components/shared/NadarCTA').then((mod) => mod.NadarCTA))
+const AnimatedFooter = dynamic(() => import('@/components/shared/AnimatedFooter').then((mod) => mod.AnimatedFooter))
+const TestimonialsMarquee = dynamic(() => import('@/components/shared/TestimonialsMarquee').then((mod) => mod.TestimonialsMarquee))
 
 const EASE = [0.23, 1, 0.32, 1] as const
 
