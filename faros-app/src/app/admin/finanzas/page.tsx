@@ -393,75 +393,136 @@ export default function FinanzasPage() {
       </div>
 
       {/* ── Modal comprobante ── */}
-      {comprobanteModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
-          onClick={() => setComprobanteModal(null)}
-        >
+      {comprobanteModal && (() => {
+        const isPdf = comprobanteModal.toLowerCase().includes('.pdf') || comprobanteModal.toLowerCase().includes('%2fpdf')
+        const displayUrl = comprobanteProxyUrl || comprobanteModal
+        return (
           <div
-            className="relative w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl overflow-hidden bg-[#111] border border-white/10"
-            onClick={(e) => e.stopPropagation()}
+            onClick={() => {
+              if (comprobanteProxyUrl) URL.revokeObjectURL(comprobanteProxyUrl)
+              setComprobanteModal(null)
+              setComprobanteProxyUrl(null)
+            }}
+            className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
           >
-            <div className="flex items-center justify-between px-5 py-3 border-b border-white/10 shrink-0">
-              <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/60">Comprobante de pago</span>
-              <div className="flex items-center gap-2">
-                <a
-                  href={comprobanteModal}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--color-on-surface-variant)] hover:text-white hover:bg-white/10 transition-colors"
-                  title="Abrir en nueva pestaña"
-                >
-                  <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-                </a>
-                <button
-                  onClick={() => setComprobanteModal(null)}
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-[var(--color-on-surface-variant)] hover:text-white hover:bg-white/10 transition-colors"
-                >
-                  <span className="material-symbols-outlined text-[18px]">close</span>
-                </button>
-              </div>
-            </div>
-            <div className="flex-1 flex items-center justify-center p-4 min-h-[300px] bg-black/20 overflow-auto">
-              {comprobanteModal.includes('.pdf') || comprobanteModal.includes('%2Fpdf') ? (
-                <iframe
-                  src={comprobanteModal}
-                  className="w-full h-[70vh] rounded-lg"
-                  title="Comprobante PDF"
-                />
-              ) : imgError ? (
-                <div className="text-center space-y-4 py-8">
-                  <span className="material-symbols-outlined text-[48px] text-white/20">broken_image</span>
-                  <p className="text-sm text-[var(--color-on-surface-variant)]/60">No se pudo cargar el comprobante.</p>
+            <div
+              className="relative w-full max-w-4xl max-h-[92vh] flex flex-col rounded-2xl overflow-hidden bg-[#111] border border-white/10 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/10 bg-white/[0.02] shrink-0">
+                <div className="flex items-center gap-2">
+                  <span className={`material-symbols-outlined text-[20px] ${isPdf ? 'text-[var(--color-danger-crimson)]' : 'text-[var(--color-primary-fixed)]'}`}>
+                    {isPdf ? 'picture_as_pdf' : 'receipt_long'}
+                  </span>
+                  <span className="label-caps text-xs text-white font-bold">
+                    {isPdf ? 'Comprobante PDF' : 'Comprobante de pago'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
                   <a
-                    href={comprobanteModal}
+                    href={displayUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 text-[var(--color-primary-fixed)] text-sm hover:underline"
+                    className="h-8 px-3 rounded-lg flex items-center gap-1.5 text-xs text-white bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
+                    title="Abrir en nueva pestaña"
                   >
-                    <span className="material-symbols-outlined text-[16px]">open_in_new</span>
-                    Abrir directamente
+                    <span className="material-symbols-outlined text-[15px]">open_in_new</span>
+                    <span>Abrir</span>
                   </a>
+                  {isPdf && (
+                    <a
+                      href={displayUrl}
+                      download="comprobante.pdf"
+                      className="h-8 px-3 rounded-lg flex items-center gap-1.5 text-xs text-white bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
+                      title="Descargar PDF"
+                    >
+                      <span className="material-symbols-outlined text-[15px]">download</span>
+                      <span>Descargar</span>
+                    </a>
+                  )}
+                  <button
+                    onClick={() => {
+                      if (comprobanteProxyUrl) URL.revokeObjectURL(comprobanteProxyUrl)
+                      setComprobanteModal(null)
+                      setComprobanteProxyUrl(null)
+                    }}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--color-on-surface-variant)] hover:text-white hover:bg-white/10 transition-colors ml-1"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">close</span>
+                  </button>
                 </div>
-              ) : imgLoading ? (
-                <div className="flex items-center justify-center py-12">
-                  <span className="w-8 h-8 border-2 border-white/20 border-t-[var(--color-primary-fixed)] rounded-full animate-spin" />
-                </div>
-              ) : comprobanteProxyUrl ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={comprobanteProxyUrl}
-                  alt="Comprobante de pago"
-                  className="max-w-full max-h-full rounded-lg object-contain select-none"
-                  onError={() => setImgError(true)}
-                  onClick={(e) => e.preventDefault()}
-                  draggable={false}
-                />
-              ) : null}
+              </div>
+
+              <div className="flex-1 flex items-center justify-center p-4 min-h-[420px] bg-black/30 overflow-auto">
+                {imgLoading ? (
+                  <div className="flex flex-col items-center justify-center py-16 gap-3">
+                    <span className="w-8 h-8 border-2 border-white/20 border-t-[var(--color-primary-fixed)] rounded-full animate-spin" />
+                    <p className="text-xs text-[var(--color-on-surface-variant)]/60">Cargando comprobante seguro…</p>
+                  </div>
+                ) : imgError ? (
+                  <div className="text-center space-y-4 py-8 max-w-sm">
+                    <span className="material-symbols-outlined text-[48px] text-[var(--color-danger-crimson)]">broken_image</span>
+                    <p className="text-sm text-white font-semibold">No se pudo cargar la vista previa directa.</p>
+                    <p className="text-xs text-[var(--color-on-surface-variant)]/60">Puedes abrir el archivo directamente en una pestaña nueva o descargarlo.</p>
+                    <div className="flex justify-center gap-2 pt-2">
+                      <a
+                        href={comprobanteModal}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--color-primary-fixed)] text-black font-bold text-xs hover:opacity-90 transition-opacity"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                        Abrir comprobante
+                      </a>
+                    </div>
+                  </div>
+                ) : isPdf ? (
+                  <div className="w-full h-full flex flex-col">
+                    <object
+                      data={displayUrl}
+                      type="application/pdf"
+                      className="w-full h-[72vh] rounded-xl border border-white/10 shadow-lg"
+                    >
+                      <div className="flex flex-col items-center justify-center h-full p-8 text-center space-y-4 bg-white/[0.02] rounded-xl border border-white/5">
+                        <span className="material-symbols-outlined text-[48px] text-[var(--color-primary-fixed)]">picture_as_pdf</span>
+                        <p className="text-sm text-white font-medium">Este navegador o dispositivo no soporta previsualización de PDF incrustada.</p>
+                        <div className="flex gap-3">
+                          <a
+                            href={displayUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--color-primary-fixed)] text-black font-bold text-xs hover:opacity-90 transition-opacity"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                            Abrir PDF en pestaña nueva
+                          </a>
+                          <a
+                            href={displayUrl}
+                            download="comprobante.pdf"
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 text-white font-bold text-xs hover:bg-white/20 transition-colors"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">download</span>
+                            Descargar
+                          </a>
+                        </div>
+                      </div>
+                    </object>
+                  </div>
+                ) : comprobanteProxyUrl ? (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img
+                    src={comprobanteProxyUrl}
+                    alt="Comprobante de pago"
+                    className="max-w-full max-h-[75vh] rounded-lg object-contain select-none shadow-lg"
+                    onError={() => setImgError(true)}
+                    draggable={false}
+                  />
+                ) : null}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
     </GuardedShell>
   )
 }

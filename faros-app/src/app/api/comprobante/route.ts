@@ -71,11 +71,20 @@ export async function GET(req: NextRequest) {
     const contentType = upstream.headers.get('content-type') ?? 'application/octet-stream'
     const buffer = Buffer.from(await upstream.arrayBuffer())
 
-    // PDFs se devuelven tal cual
-    if (contentType.includes('pdf')) {
+    const isPdf = contentType.toLowerCase().includes('pdf')
+      || url.toLowerCase().includes('.pdf')
+      || url.toLowerCase().includes('%2fpdf')
+      || (buffer.length > 4 && buffer.slice(0, 4).toString('ascii') === '%PDF')
+
+    // PDFs se devuelven tal cual con headers correctos para visualización inline
+    if (isPdf) {
       setCached(url, buffer, 'application/pdf')
       return new NextResponse(buffer, {
-        headers: { 'Content-Type': 'application/pdf', 'Cache-Control': 'private, max-age=3600' },
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': 'inline; filename="comprobante.pdf"',
+          'Cache-Control': 'private, max-age=3600',
+        },
       })
     }
 
