@@ -88,6 +88,20 @@ function proximaFecha(dow: number, horaStr: string, semanaOffset: number, desde:
   return new Date(targetTs)
 }
 
+/** ¿La franja pedida (dow+horaInicio+horaFin) cabe dentro de alguna franja declarada? */
+export function franjaContenida(
+  dow: number, horaInicio: string, horaFin: string,
+  franjas: Array<{ dow: number; horaInicio: string; horaFin: string }>,
+): boolean {
+  return franjas.some((f) =>
+    f.dow === dow && f.horaInicio <= horaInicio && f.horaFin >= horaFin)
+}
+
+/** ¿Los rangos horarios [aInicio,aFin) y [bInicio,bFin) (strings 'HH:mm') se solapan? */
+export function haySolape(aInicio: string, aFin: string, bInicio: string, bFin: string): boolean {
+  return aInicio < bFin && bInicio < aFin
+}
+
 export interface Ocurrencia {
   inicio: number
   fin: number

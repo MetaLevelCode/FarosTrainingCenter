@@ -10,19 +10,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAdminAuth, getAdminDb } from '@/lib/admin'
 import { rateLimit, clientIp } from '@/lib/ratelimit'
 import { log } from '@/lib/logger'
-import { DURACION_PERSONALIZADA_MIN, sumarMinutos } from '@/lib/recurrencia'
+import {
+  DURACION_PERSONALIZADA_MIN, sumarMinutos, franjaContenida, haySolape, dowColombia, horaColombia,
+} from '@/lib/recurrencia'
 
 export const runtime = 'nodejs'
 
 const HORA_RE = /^([01][0-9]|2[0-3]):[0-5][0-9]$/
-
-function franjaContenida(
-  dow: number, horaInicio: string, horaFin: string,
-  franjas: Array<{ dow: number; horaInicio: string; horaFin: string }>,
-): boolean {
-  return franjas.some((f) =>
-    f.dow === dow && f.horaInicio <= horaInicio && f.horaFin >= horaFin)
-}
 
 export async function POST(req: NextRequest) {
   const ip = clientIp(req)
@@ -99,6 +93,29 @@ export async function POST(req: NextRequest) {
       if (!franjaContenida(dow, horaInicio, horaFin, franjas)) {
         return { error: 'Esta franja no está en la disponibilidad del profesor', status: 409 }
       }
+
+      // Anti-choque: no dejar crear una solicitud condenada a ser rechazada
+      // porque el horario ya quedó ocupado por otra Clase real del profesor
+      // (grupal o de otro alumno personalizado ya aceptado). Mismo chequeo
+      // que hace aceptar/route.ts, adelantado aquí para no hacerle perder
+      // el tiempo al alumno ni ensuciarle la bandeja de pendientes al profesor.
+      const ahora = Date.now()
+      const hasta = susc.fechaVencimiento as number
+      const clasesQuery = db.collection('clases')
+        .where('instructor_id', '==', profesorId)
+        .where('fecha_hora_inicio', '>=', ahora)
+        .where('fecha_hora_inicio', '<', hasta)
+        .orderBy('fecha_hora_inicio', 'desc')
+      const clasesSnap = await tx.get(clasesQuery)
+      const choque = clasesSnap.docs.some((d) => {
+        const c = d.data()
+        if (c.estado === 'cancelada') return false
+        if (dowColombia(c.fecha_hora_inicio) !== dow) return false
+        const horaInicioC = horaColombia(c.fecha_hora_inicio)
+        const horaFinC = horaColombia(c.fecha_hora_fin)
+        return haySolape(horaInicio, horaFin, horaInicioC, horaFinC)
+      })
+      if (choque) return { error: 'Este horario ya está ocupado, elige otro', status: 409 }
 
       const nombreAlumno = `${alumno.nombres ?? ''} ${alumno.apellidos ?? ''}`.trim() || 'Alumno'
       const solRef = db.collection('solicitudes_personalizadas').doc()

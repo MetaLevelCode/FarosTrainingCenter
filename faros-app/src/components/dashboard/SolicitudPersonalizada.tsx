@@ -12,7 +12,9 @@ import { useEffect, useState } from 'react'
 import { Card, Badge, Button, Spinner } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { getFirebase } from '@/lib/firebase'
-import { DURACION_PERSONALIZADA_MIN, slotsDisponibles, sumarMinutos } from '@/lib/recurrencia'
+import {
+  DURACION_PERSONALIZADA_MIN, slotsDisponibles, sumarMinutos, dowColombia, horaColombia,
+} from '@/lib/recurrencia'
 import type { FranjaDisponibilidad, SolicitudPersonalizada as Solicitud } from '@/lib/types'
 
 const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
@@ -24,6 +26,33 @@ async function getIdToken(): Promise<string | null> {
   return (await getAuth().currentUser?.getIdToken()) ?? null
 }
 
+/** Set de `${dow}:${horaInicio}` ya cubiertos por una Clase real futura del profesor. */
+async function cargarOcupados(profesorId: string): Promise<Set<string>> {
+  const [{ db }, { collection, query, where, orderBy, getDocs }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  const snap = await getDocs(
+    query(
+      collection(db, 'clases'),
+      where('instructor_id', '==', profesorId),
+      where('fecha_hora_inicio', '>=', Date.now()),
+      orderBy('fecha_hora_inicio', 'desc'),
+    ),
+  )
+  const ocupados = new Set<string>()
+  snap.docs.forEach((d) => {
+    const c = d.data()
+    if (c.estado === 'cancelada') return
+    ocupados.add(`${dowColombia(c.fecha_hora_inicio)}:${horaColombia(c.fecha_hora_inicio)}`)
+  })
+  return ocupados
+}
+
+function slotsLibres(franja: FranjaDisponibilidad, ocupados: Set<string>): string[] {
+  return slotsDisponibles(franja.horaInicio, franja.horaFin)
+    .filter((s) => !ocupados.has(`${franja.dow}:${s}`))
+}
+
 export function SolicitudPersonalizada() {
   const { user } = useAuth()
   const [cargando, setCargando] = useState(true)
@@ -32,6 +61,9 @@ export function SolicitudPersonalizada() {
   const [profesorSel, setProfesorSel] = useState<string>('')
   const [franjaSel, setFranjaSel] = useState<number>(0)
   const [slotSel, setSlotSel] = useState<string>('')
+  // Horarios (dow+horaInicio) que ya tienen una Clase real del profesor
+  // encima — otro alumno personalizado ya aceptado, o una clase grupal.
+  const [ocupados, setOcupados] = useState<Set<string>>(new Set())
   const [enviando, setEnviando] = useState(false)
   const [cancelando, setCancelando] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -70,8 +102,10 @@ export function SolicitudPersonalizada() {
         setProfesores(lista)
         if (lista[0]) {
           setProfesorSel(lista[0].uid)
+          const ocupadosSet = await cargarOcupados(lista[0].uid)
+          setOcupados(ocupadosSet)
           const primeraFranja = lista[0].franjas[0]
-          setSlotSel(slotsDisponibles(primeraFranja.horaInicio, primeraFranja.horaFin)[0] ?? '')
+          setSlotSel(slotsLibres(primeraFranja, ocupadosSet)[0] ?? '')
         }
       }
     } catch (err) {
@@ -142,7 +176,7 @@ export function SolicitudPersonalizada() {
 
   const profesorActual = profesores.find((p) => p.uid === profesorSel)
   const franjaActual = profesorActual?.franjas[franjaSel]
-  const slots = franjaActual ? slotsDisponibles(franjaActual.horaInicio, franjaActual.horaFin) : []
+  const slots = franjaActual ? slotsLibres(franjaActual, ocupados) : []
 
   return (
     <div>
@@ -192,12 +226,14 @@ export function SolicitudPersonalizada() {
               <label className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">Profesor</label>
               <select
                 value={profesorSel}
-                onChange={(e) => {
+                onChange={async (e) => {
                   const uid = e.target.value
                   setProfesorSel(uid)
                   setFranjaSel(0)
+                  const ocupadosSet = await cargarOcupados(uid)
+                  setOcupados(ocupadosSet)
                   const f = profesores.find((p) => p.uid === uid)?.franjas[0]
-                  setSlotSel(f ? (slotsDisponibles(f.horaInicio, f.horaFin)[0] ?? '') : '')
+                  setSlotSel(f ? (slotsLibres(f, ocupadosSet)[0] ?? '') : '')
                 }}
                 className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white"
               >
@@ -212,7 +248,7 @@ export function SolicitudPersonalizada() {
                   const i = Number(e.target.value)
                   setFranjaSel(i)
                   const f = profesorActual?.franjas[i]
-                  setSlotSel(f ? (slotsDisponibles(f.horaInicio, f.horaFin)[0] ?? '') : '')
+                  setSlotSel(f ? (slotsLibres(f, ocupados)[0] ?? '') : '')
                 }}
                 className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white"
               >

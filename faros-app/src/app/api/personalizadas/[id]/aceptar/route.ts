@@ -10,21 +10,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAdminAuth, getAdminDb } from '@/lib/admin'
 import { rateLimit, clientIp } from '@/lib/ratelimit'
 import { log } from '@/lib/logger'
-import { ocurrenciasSemanales, dowColombia, horaColombia } from '@/lib/recurrencia'
+import { ocurrenciasSemanales, dowColombia, horaColombia, franjaContenida, haySolape } from '@/lib/recurrencia'
 
 export const runtime = 'nodejs'
-
-function franjaContenida(
-  dow: number, horaInicio: string, horaFin: string,
-  franjas: Array<{ dow: number; horaInicio: string; horaFin: string }>,
-): boolean {
-  return franjas.some((f) =>
-    f.dow === dow && f.horaInicio <= horaInicio && f.horaFin >= horaFin)
-}
-
-function haySolape(aInicio: string, aFin: string, bInicio: string, bFin: string): boolean {
-  return aInicio < bFin && bInicio < aFin
-}
 
 export async function POST(
   req: NextRequest,
