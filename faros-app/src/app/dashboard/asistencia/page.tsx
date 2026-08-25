@@ -96,58 +96,65 @@ export default function AsistenciaPage() {
 
   useEffect(() => {
     if (!user) return
+    let unsubHistorial = () => {}
+    let unsubInscritas = () => {}
+    let unsubDisponibles = () => {}
+    let cancelado = false
 
     ;(async () => {
       try {
-        const [{ db }, { collection, query, where, getDocs, orderBy, limit, getDoc, doc }] = await Promise.all([
+        const [{ db }, { collection, query, where, orderBy, limit, doc, getDoc, onSnapshot }] = await Promise.all([
           getFirebase(), import('firebase/firestore'),
         ])
+        if (cancelado) return
         const ahora = Date.now()
 
         // Historial de asistencias
-        const asistSnap = await getDocs(
+        unsubHistorial = onSnapshot(
           query(
             collection(db, 'asistencias'),
             where('usuarioId', '==', user.uid),
             orderBy('fecha_registro', 'desc'),
             limit(20),
           ),
+          async (asistSnap) => {
+            const items: HistorialItem[] = []
+            for (const d of asistSnap.docs) {
+              const a = d.data()
+              let nombreClase = 'Clase'
+              try {
+                const claseDoc = await getDoc(doc(db, 'clases', a.claseId))
+                if (claseDoc.exists()) nombreClase = claseDoc.data()?.nombre_clase ?? 'Clase'
+              } catch {}
+              items.push({
+                id: d.id,
+                fecha: new Date(a.fecha_registro).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }).toUpperCase(),
+                clase: nombreClase,
+                tipo: 'Grupal',
+                asistio: a.asistio,
+              })
+            }
+            if (!cancelado) setHistorial(items)
+          },
+          console.error
         )
 
-        const items: HistorialItem[] = []
-        for (const d of asistSnap.docs) {
-          const a = d.data()
-          let nombreClase = 'Clase'
-          try {
-            const claseDoc = await getDoc(doc(db, 'clases', a.claseId))
-            if (claseDoc.exists()) nombreClase = claseDoc.data()?.nombre_clase ?? 'Clase'
-          } catch {}
-          items.push({
-            id: d.id,
-            fecha: new Date(a.fecha_registro).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }).toUpperCase(),
-            clase: nombreClase,
-            tipo: 'Grupal',
-            asistio: a.asistio,
-          })
-        }
-        setHistorial(items)
-
         // Clases donde está inscrito (futuras o en curso)
-        const inscritasSnap = await getDocs(
+        unsubInscritas = onSnapshot(
           query(
             collection(db, 'clases'),
             where('estudiantes_inscritos', 'array-contains', user.uid),
             where('estado', 'in', ['programada', 'en_curso']),
           ),
+          (inscritasSnap) => {
+            const inscritas = inscritasSnap.docs.map((d) => ({ id: d.id, ...d.data() }) as Clase)
+            if (!cancelado) setClasesInscritas(inscritas)
+          },
+          console.error
         )
-        const inscritas = inscritasSnap.docs.map((d) => ({ id: d.id, ...d.data() }) as Clase)
-        setClasesInscritas(inscritas)
 
-        // Clases disponibles: de SU sede, programadas en el futuro, sin
-        // inscribir aún — antes no filtraba por sede y un alumno de una
-        // sede veía (y podía inscribirse a) clases de otra.
-        const inscritasIds = new Set(inscritas.map((c) => c.id))
-        const disponiblesSnap = await getDocs(
+        // Clases disponibles
+        unsubDisponibles = onSnapshot(
           user.sede
             ? query(
                 collection(db, 'clases'),
@@ -164,18 +171,34 @@ export default function AsistenciaPage() {
                 orderBy('fecha_hora_inicio', 'asc'),
                 limit(12),
               ),
+          (disponiblesSnap) => {
+            if (cancelado) return
+            setClasesInscritas((prevInscritas) => {
+              const inscritasIds = new Set(prevInscritas.map((c) => c.id))
+              setClasesDisponibles(
+                disponiblesSnap.docs
+                  .map((d) => ({ id: d.id, ...d.data() }) as Clase)
+                  .filter((c) => !inscritasIds.has(c.id)),
+              )
+              return prevInscritas
+            })
+          },
+          console.error
         )
-        setClasesDisponibles(
-          disponiblesSnap.docs
-            .map((d) => ({ id: d.id, ...d.data() }) as Clase)
-            .filter((c) => !inscritasIds.has(c.id)),
-        )
+
+        setCargando(false)
       } catch (err) {
         console.error(err)
-      } finally {
         setCargando(false)
       }
     })()
+
+    return () => {
+      cancelado = true
+      unsubHistorial()
+      unsubInscritas()
+      unsubDisponibles()
+    }
   }, [user])
 
   async function inscribirse(claseId: string) {

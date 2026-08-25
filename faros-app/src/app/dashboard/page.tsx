@@ -111,44 +111,57 @@ export default function DashboardPage() {
   // no lo sube), en vez de datos de ejemplo.
   useEffect(() => {
     if (!user?.uid) return
+    let unsub = () => {}
+    let cancelado = false
     ;(async () => {
       try {
-        const [{ db }, { collection, query, where, getDocs }] = await Promise.all([
+        const [{ db }, { collection, query, where, onSnapshot }] = await Promise.all([
           getFirebase(), import('firebase/firestore'),
         ])
-        const snap = await getDocs(
+        if (cancelado) return
+        unsub = onSnapshot(
           query(
             collection(db, 'clases'),
             where('estudiantes_inscritos', 'array-contains', user.uid),
             where('estado', 'in', ['programada', 'en_curso']),
           ),
+          (snap) => {
+            const todas = snap.docs
+              .map((d) => ({ id: d.id, ...d.data() }) as Clase)
+              .sort((a, b) => a.fecha_hora_inicio - b.fecha_hora_inicio)
+
+            const hoy = new Date()
+            const inicioDia = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()).getTime()
+            const finDia = inicioDia + 24 * 60 * 60 * 1000
+            const deHoy = todas.filter((c) => c.fecha_hora_inicio >= inicioDia && c.fecha_hora_inicio < finDia)
+            setClaseHoy(deHoy[0] ?? null)
+
+            // "Tu semana" (Semanario) mostraba siempre los 6 días en gris —
+            // no recibía diasIniciales/horaInicial de ningún lado (reportado
+            // en QA manual). El plan del wizard solo guarda la FRECUENCIA
+            // (cuántos días/semana), no cuáles — así que se derivan de las
+            // clases en las que el alumno ya está inscrito de verdad.
+            const futuras = todas.filter((c) => c.fecha_hora_inicio > Date.now())
+            setDiasSemana([...new Set(futuras.map((c) => new Date(c.fecha_hora_inicio).getDay()))])
+            if (futuras[0]) {
+              setHoraSemana(new Date(futuras[0].fecha_hora_inicio).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' }))
+            }
+            setClaseHoyCargada(true)
+          },
+          (err) => {
+            console.error(err)
+            setClaseHoyCargada(true)
+          }
         )
-        const todas = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }) as Clase)
-          .sort((a, b) => a.fecha_hora_inicio - b.fecha_hora_inicio)
-
-        const hoy = new Date()
-        const inicioDia = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()).getTime()
-        const finDia = inicioDia + 24 * 60 * 60 * 1000
-        const deHoy = todas.filter((c) => c.fecha_hora_inicio >= inicioDia && c.fecha_hora_inicio < finDia)
-        setClaseHoy(deHoy[0] ?? null)
-
-        // "Tu semana" (Semanario) mostraba siempre los 6 días en gris —
-        // no recibía diasIniciales/horaInicial de ningún lado (reportado
-        // en QA manual). El plan del wizard solo guarda la FRECUENCIA
-        // (cuántos días/semana), no cuáles — así que se derivan de las
-        // clases en las que el alumno ya está inscrito de verdad.
-        const futuras = todas.filter((c) => c.fecha_hora_inicio > Date.now())
-        setDiasSemana([...new Set(futuras.map((c) => new Date(c.fecha_hora_inicio).getDay()))])
-        if (futuras[0]) {
-          setHoraSemana(new Date(futuras[0].fecha_hora_inicio).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' }))
-        }
       } catch (err) {
         console.error(err)
-      } finally {
         setClaseHoyCargada(true)
       }
     })()
+    return () => {
+      cancelado = true
+      unsub()
+    }
   }, [user?.uid])
 
   useEffect(() => {

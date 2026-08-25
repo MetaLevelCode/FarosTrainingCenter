@@ -117,17 +117,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     let unsubAuth: (() => void) | undefined
+    let unsubDoc: (() => void) | undefined
     let cancelado = false
 
     ;(async () => {
-      const [{ auth, db }, { onAuthStateChanged }, { doc, getDoc }] = await Promise.all([
+      const [{ auth, db }, { onAuthStateChanged }, { doc, onSnapshot }] = await Promise.all([
         getFirebase(),
         import('firebase/auth'),
         import('firebase/firestore'),
       ])
       if (cancelado) return
 
-      unsubAuth = onAuthStateChanged(auth, async (fbUser) => {
+      unsubAuth = onAuthStateChanged(auth, (fbUser) => {
+        if (unsubDoc) {
+          unsubDoc()
+          unsubDoc = undefined
+        }
+
         if (!fbUser) {
           setUser(null)
           setLoading(false)
@@ -135,50 +141,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         const cacheKey = `usuario-${fbUser.uid}`
-        try {
-          const snap = await getDoc(doc(db, 'usuarios', fbUser.uid))
-          const data = snap.data()
-          if (data) {
-            const usuario = construirUsuario(fbUser, data)
-            setUser(usuario)
-            setOffline(false)
-            guardarCache(cacheKey, usuario)
-          } else {
-            setUser({
-              uid: fbUser.uid,
-              nombres: fbUser.displayName?.split(' ')[0] ?? '',
-              apellidos: fbUser.displayName?.split(' ').slice(1).join(' ') ?? '',
-              cedula: '',
-              email: fbUser.email ?? '',
-              rol: 'estudiante',
-            })
-            setOffline(false)
+        unsubDoc = onSnapshot(
+          doc(db, 'usuarios', fbUser.uid),
+          (snap) => {
+            const data = snap.data()
+            if (data) {
+              const usuario = construirUsuario(fbUser, data)
+              setUser(usuario)
+              setOffline(false)
+              guardarCache(cacheKey, usuario)
+            } else {
+              setUser({
+                uid: fbUser.uid,
+                nombres: fbUser.displayName?.split(' ')[0] ?? '',
+                apellidos: fbUser.displayName?.split(' ').slice(1).join(' ') ?? '',
+                cedula: '',
+                email: fbUser.email ?? '',
+                rol: 'estudiante',
+              })
+              setOffline(false)
+            }
+            setLoading(false)
+          },
+          (err) => {
+            // Sin conexión (u otro error de lectura): usar la última versión
+            // buena conocida en vez de mostrar un perfil vacío/equivocado.
+            const cache = leerCache<Usuario>(cacheKey)
+            if (cache) {
+              setUser(cache.data)
+              setOffline(true)
+            } else {
+              setUser({
+                uid: fbUser.uid,
+                nombres: fbUser.displayName?.split(' ')[0] ?? '',
+                apellidos: fbUser.displayName?.split(' ').slice(1).join(' ') ?? '',
+                cedula: '',
+                email: fbUser.email ?? '',
+                rol: 'estudiante',
+              })
+            }
+            setLoading(false)
           }
-        } catch {
-          // Sin conexión (u otro error de lectura): usar la última versión
-          // buena conocida en vez de mostrar un perfil vacío/equivocado.
-          const cache = leerCache<Usuario>(cacheKey)
-          if (cache) {
-            setUser(cache.data)
-            setOffline(true)
-          } else {
-            setUser({
-              uid: fbUser.uid,
-              nombres: fbUser.displayName?.split(' ')[0] ?? '',
-              apellidos: fbUser.displayName?.split(' ').slice(1).join(' ') ?? '',
-              cedula: '',
-              email: fbUser.email ?? '',
-              rol: 'estudiante',
-            })
-          }
-        }
-        setLoading(false)
+        )
       })
     })().catch(() => setLoading(false))
 
     return () => {
       cancelado = true
       unsubAuth?.()
+      unsubDoc?.()
     }
   }, [])
 

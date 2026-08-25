@@ -32,26 +32,39 @@ export function SolicitudesPendientes() {
 
   useEffect(() => {
     if (!user?.uid) return
+    let unsub = () => {}
+    let cancelado = false
     ;(async () => {
       try {
-        const [{ db }, { collection, query, where, orderBy, getDocs }] = await Promise.all([
+        const [{ db }, { collection, query, where, orderBy, onSnapshot }] = await Promise.all([
           getFirebase(), import('firebase/firestore'),
         ])
-        const snap = await getDocs(
+        if (cancelado) return
+        unsub = onSnapshot(
           query(
             collection(db, 'solicitudes_personalizadas'),
             where('profesorId', '==', user.uid),
             where('estado', '==', 'pendiente'),
             orderBy('creadoEn', 'desc'),
           ),
+          (snap) => {
+            setSolicitudes(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as SolicitudPersonalizada))
+            setCargando(false)
+          },
+          (err) => {
+            console.error(err)
+            setCargando(false)
+          }
         )
-        setSolicitudes(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as SolicitudPersonalizada))
       } catch (err) {
         console.error(err)
-      } finally {
         setCargando(false)
       }
     })()
+    return () => {
+      cancelado = true
+      unsub()
+    }
   }, [user?.uid])
 
   async function aceptar(id: string) {

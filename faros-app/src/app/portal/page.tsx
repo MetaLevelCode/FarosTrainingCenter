@@ -13,7 +13,7 @@ import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
-import { getClasesProfesor } from '@/lib/firestore'
+import { getFirebase } from '@/lib/firebase'
 import type { Clase } from '@/lib/types'
 import { CalendarioEntrenador } from '@/components/portal/CalendarioEntrenador'
 import { SolicitudesPendientes } from '@/components/portal/SolicitudesPendientes'
@@ -38,7 +38,29 @@ export default function PortalPage() {
 
   useEffect(() => {
     if (!user?.uid) return
-    getClasesProfesor(user.uid).then(setClases).catch(console.error)
+    let unsub = () => {}
+    let cancelado = false
+    ;(async () => {
+      const [{ db }, { collection, query, where, orderBy, onSnapshot }] = await Promise.all([
+        getFirebase(), import('firebase/firestore')
+      ])
+      if (cancelado) return
+      unsub = onSnapshot(
+        query(
+          collection(db, 'clases'),
+          where('instructor_id', '==', user.uid),
+          orderBy('fecha_hora_inicio', 'desc')
+        ),
+        (snap) => {
+          setClases(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Clase))
+        },
+        console.error
+      )
+    })()
+    return () => {
+      cancelado = true
+      unsub()
+    }
   }, [user?.uid])
 
   const { sesionesMes, horasTotales } = useMemo(() => {
