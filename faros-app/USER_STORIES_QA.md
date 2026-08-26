@@ -239,6 +239,39 @@ Pasos:
 
 ---
 
+### E5.2 — Plan Personalizado grupal: código para invitar y ver a tu grupo
+**Como** alumno que compra un plan Pareja/Familia/Grupo reducido, **quiero**
+recibir un código para invitar al resto de mi grupo y ver quién ya se unió,
+**para** que no sea yo el único inscrito aunque pagué por varias personas.
+
+Pasos:
+1. Comprar un plan Pareja (2 personas) o Familia/Grupo reducido (elegir de 3
+   a 5 en el contador) con "Adquirir plan" → esperar aprobación del admin
+2. Con el plan ya activo, entrar a `/dashboard/planes` → debe aparecer la
+   tarjeta "Tu grupo" con un código de 6 caracteres y botón de copiar
+3. Con otra cuenta de alumno SIN plan activo, ir al wizard → elegir la misma
+   modalidad → "Ya tengo un código — unirme a un plan" → pegar el código →
+   debe quedar con plan activo de inmediato, sin pasar por admin ni subir
+   comprobante (es gratis, ya está pagado por el jefe)
+4. Verificar en ambas cuentas que la tarjeta "Tu grupo" lista a los dos (el
+   jefe con badge "Jefe")
+5. Probar unirse con un código ya lleno (ej. Pareja con 2/2) → debe
+   rechazarlo (409 "Este grupo ya está lleno")
+6. Probar unirse con un código inventado → debe rechazarlo (404 "Código
+   inválido")
+7. Probar unirse con una cuenta que ya tiene un plan activo propio → debe
+   rechazarlo (409 "Ya tienes un plan activo")
+8. El jefe agenda su horario (ver E5) → una vez el profesor acepta, verificar
+   que TODOS los miembros del grupo (no solo el jefe) queden con "Tus clases
+   ya aparecen en Mis clases arriba"
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+-
+
+---
+
 ### E6 — Wizard: Plan Conjunto
 **Como** alumno, **quiero** armar un plan Conjunto, **para** combinar
 natación con otra disciplina.
@@ -538,6 +571,31 @@ Pasos:
 
 ---
 
+### P4.2 — Profesor pasa lista a todo el grupo de un plan personalizado compartido
+**Como** profesor, **quiero** ver a TODOS los integrantes de un grupo
+Pareja/Familia/Grupo reducido en la clase generada, **para** llamar a lista
+completa y no solo a quien compró el plan.
+
+Pasos:
+1. Con un grupo de al menos 2 personas ya unidas (ver E5.2) y el jefe con
+   horario ya aceptado (ver P4)
+2. Entrar a `/portal/clases`, abrir esa clase personalizada → pestaña
+   "Asistencia"
+3. Verificar que aparecen TODOS los miembros del grupo, no solo el jefe que
+   agendó el horario
+4. Marcar asistencia de cada uno por separado → debe guardarse
+   individualmente
+5. Que se una una persona nueva al grupo DESPUÉS de que el horario ya estaba
+   aceptado (con clases futuras ya generadas) → verificar que aparece en las
+   próximas clases (no en las que ya pasaron)
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+-
+
+---
+
 ### P5 — Profesor gestiona el Plan Virtual de sus alumnos
 **Como** profesor, **quiero** armar y editar la rutina virtual de cada uno de
 mis alumnos, **para** que tengan contenido para entrenar remoto.
@@ -618,6 +676,22 @@ Pasos:
 
 **Notas / bugs:**
 -
+
+---
+
+### A3 — Vista detallada del usuario en el directorio
+**Como** admin, **quiero** poder ver la información detallada de los estudiantes y profesores directamente desde el directorio de usuarios, **para** no tener que navegar entre diferentes vistas y gestionar rápidamente sus accesos y conocer su estado.
+
+Pasos:
+1. `/admin/usuarios` → revisar la tabla y constatar que aparece la columna de "Plan Activo".
+2. Tocar sobre una fila de usuario → debe abrirse un modal centrado con la ficha completa del usuario.
+3. Verificar que el modal muestra la información correcta de identidad, plan actual, estadísticas de asistencia y nivel/dificultades.
+4. Interactuar con el botón del modal para suspender o reactivar al usuario y ver que el cambio se aplica correctamente y se cierra el modal.
+
+**Estado:** ✅ Implementado y probado
+
+**Notas / bugs:**
+- 
 
 ---
 
