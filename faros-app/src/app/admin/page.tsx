@@ -239,15 +239,16 @@ export default function AdminPage() {
 
         {/* ── Accesos rápidos ── */}
         <Reveal delay={0.28}>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             {[
               { label: 'Usuarios', icon: 'people', href: '/admin/usuarios' },
               { label: 'Finanzas', icon: 'account_balance', href: '/admin/finanzas' },
               { label: 'Planes', icon: 'workspace_premium', href: '/admin/planes' },
               { label: 'Clases', icon: 'pool', href: '/portal/clases' },
+              { label: 'Sugerencias', icon: 'forum', href: '/admin/sugerencias' },
             ].map((a) => (
               <Link key={a.label} href={a.href}>
-                <Card hover className="flex flex-col items-center gap-3 py-6 text-center cursor-pointer group">
+                <Card hover className="flex flex-col items-center gap-3 py-6 text-center cursor-pointer group h-full">
                   <span className="material-symbols-outlined text-[28px] text-[var(--color-on-surface-variant)]/50 group-hover:text-[var(--color-primary-fixed)] transition-colors duration-200">
                     {a.icon}
                   </span>

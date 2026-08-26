@@ -61,7 +61,6 @@ export default function RankingPage() {
   const { authorized, loading, user } = useRoleGuard(['estudiante'])
   const [ranking, setRanking] = useState<RankEntry[]>([])
   const [cargando, setCargando] = useState(true)
-  const [rango, setRango] = useState<'general' | 'mensual'>('general')
 
   useEffect(() => {
     if (!user?.uid) return
@@ -92,22 +91,6 @@ export default function RankingPage() {
               <h2 className="font-display text-display-lg text-white leading-none tracking-tighter uppercase">
                 Ranking
               </h2>
-            </div>
-            <div className="flex p-1 bg-black/40 border border-white/10 rounded-xl" role="group">
-              {(['general', 'mensual'] as const).map((r) => (
-                <button
-                  key={r}
-                  onClick={() => setRango(r)}
-                  aria-pressed={rango === r}
-                  className={`px-5 py-2 text-[10px] font-black rounded-lg uppercase tracking-widest transition-colors duration-200 ${
-                    rango === r
-                      ? 'bg-[var(--color-primary-fixed)] text-black shadow-[0_0_15px_rgba(230,255,0,0.2)]'
-                      : 'text-white/40 hover:text-white'
-                  }`}
-                >
-                  {r === 'general' ? 'General' : 'Mensual'}
-                </button>
-              ))}
             </div>
           </div>
         </Reveal>

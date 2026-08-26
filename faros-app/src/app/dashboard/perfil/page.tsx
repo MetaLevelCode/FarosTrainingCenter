@@ -6,15 +6,16 @@
 // Buzón de sugerencias escribe a colección `sugerencias`.
 // ============================================================
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
-import { Card, Badge, Button } from '@/components/ui'
+import { Card, Badge, Button, Spinner } from '@/components/ui'
 import { AvatarFoto } from '@/components/shared/AvatarFoto'
 import { useAuth } from '@/contexts/AuthContext'
 import { getFirebase } from '@/lib/firebase'
+import type { Sugerencia } from '@/lib/types'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -38,10 +39,32 @@ export default function PerfilPage() {
   const [enviada, setEnviada] = useState(false)
   const [cerrando, setCerrando] = useState(false)
   const [fotoLocal, setFotoLocal] = useState<string | null>(null)
+  
+  const [historialSugerencias, setHistorialSugerencias] = useState<Sugerencia[]>([])
+  const [cargandoHistorial, setCargandoHistorial] = useState(true)
 
   const nombre = user ? `${user.nombres} ${user.apellidos}` : 'Atleta'
   const susc = user?.suscripcionActiva
   const iniciales = user ? `${user.nombres.charAt(0)}${user.apellidos.charAt(0)}`.toUpperCase() : 'A'
+
+  useEffect(() => {
+    if (!user?.uid) return
+    fetchHistorialSugerencias()
+  }, [user?.uid])
+
+  async function fetchHistorialSugerencias() {
+    if (!user?.uid) return
+    setCargandoHistorial(true)
+    try {
+      const { getSugerenciasUsuario } = await import('@/lib/firestore')
+      const res = await getSugerenciasUsuario(user.uid)
+      setHistorialSugerencias(res)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setCargandoHistorial(false)
+    }
+  }
 
   async function enviarSugerencia(e: React.FormEvent) {
     e.preventDefault()
@@ -60,6 +83,7 @@ export default function PerfilPage() {
       })
       setEnviada(true)
       setSugerencia('')
+      fetchHistorialSugerencias()
       setTimeout(() => setEnviada(false), 3500)
     } catch (err) {
       console.error(err)
@@ -211,6 +235,47 @@ export default function PerfilPage() {
             </form>
           </Card>
         </Reveal>
+
+        {/* Historial de Sugerencias */}
+        {historialSugerencias.length > 0 && (
+          <Reveal delay={0.22}>
+            <Card padding="lg">
+              <h3 className="font-display text-lg font-extrabold text-white uppercase tracking-tight mb-5">
+                Mis sugerencias enviadas
+              </h3>
+              <div className="space-y-4">
+                {historialSugerencias.map((s) => (
+                  <div key={s.id} className="bg-white/5 border border-white/10 rounded-2xl p-4 md:p-5">
+                    <div className="flex items-start justify-between gap-4 mb-3">
+                      <p className="text-sm text-white/90 italic">"{s.mensaje}"</p>
+                      <Badge variant={s.respuesta ? 'success' : 'default'} className="shrink-0">
+                        {s.respuesta ? 'Respondida' : 'Pendiente'}
+                      </Badge>
+                    </div>
+                    <p className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50 mb-3">
+                      {new Date(s.createdAt).toLocaleDateString('es-CO')}
+                    </p>
+                    
+                    {s.respuesta && (
+                      <div className="bg-[rgba(230,255,0,0.05)] border border-[rgba(230,255,0,0.15)] rounded-xl p-4 mt-2">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="material-symbols-outlined text-[14px] text-[var(--color-primary-fixed)]">forum</span>
+                          <span className="label-caps text-[10px] text-[var(--color-primary-fixed)]">Respuesta de Admin</span>
+                        </div>
+                        <p className="text-sm text-white/80">{s.respuesta}</p>
+                        {s.respondidaAt && (
+                          <p className="label-caps text-[8px] text-[var(--color-primary-fixed)]/50 mt-2">
+                            {new Date(s.respondidaAt).toLocaleDateString('es-CO')}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </Reveal>
+        )}
 
         {/* Cerrar sesión */}
         <Reveal delay={0.24}>

@@ -424,3 +424,18 @@ export interface SesionVirtual {
   creadoEn: number
   actualizadoEn: number
 }
+
+// ── sugerencias/{sugerenciaId} ──────────
+// Feedback enviado por los usuarios desde su perfil.
+// Los administradores pueden leer y responder.
+
+export interface Sugerencia {
+  id?: string
+  uid: string
+  displayName: string
+  mensaje: string
+  createdAt: number
+  leida: boolean
+  respuesta?: string
+  respondidaAt?: number
+}

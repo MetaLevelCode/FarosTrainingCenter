@@ -9,6 +9,7 @@ import type {
   Usuario, Catalogo, Plan, Suscripcion, Transaccion,
   Clase, Asistencia, Movimiento, Categoria, UserRole,
   Sede, Grupo, Tarifas, RutinaVirtual, SesionVirtual,
+  Sugerencia,
 } from './types'
 
 // ── Utilidades internas ──────────────────────────────────────
@@ -1053,5 +1054,36 @@ export async function marcarSesionVirtual(rutinaId: string, sesionId: string, co
   await updateDoc(doc(db, 'rutinas_virtuales', rutinaId, 'sesiones', sesionId), {
     completada,
     completadaEn: completada ? Date.now() : null,
+  })
+}
+
+// ── sugerencias ──────────────────────────────────────────────
+
+export async function getTodasSugerencias(): Promise<Sugerencia[]> {
+  const [{ db }, { collection, getDocs, orderBy, query }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  const q = query(collection(db, 'sugerencias'), orderBy('createdAt', 'desc'))
+  const snap = await getDocs(q)
+  return snap.docs.map(docToId<Sugerencia>)
+}
+
+export async function getSugerenciasUsuario(uid: string): Promise<Sugerencia[]> {
+  const [{ db }, { collection, getDocs, orderBy, query, where }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  const q = query(collection(db, 'sugerencias'), where('uid', '==', uid), orderBy('createdAt', 'desc'))
+  const snap = await getDocs(q)
+  return snap.docs.map(docToId<Sugerencia>)
+}
+
+export async function responderSugerencia(id: string, respuesta: string): Promise<void> {
+  const [{ db }, { doc, updateDoc }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  await updateDoc(doc(db, 'sugerencias', id), {
+    respuesta,
+    leida: true,
+    respondidaAt: Date.now()
   })
 }
