@@ -7,6 +7,7 @@
 // ============================================================
 
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
@@ -281,9 +282,10 @@ export default function UsuariosPage() {
       </div>
 
       {/* ── Modal de Detalle de Usuario ── */}
-      <AnimatePresence>
-        {selectedUser && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {typeof window !== 'undefined' && createPortal(
+        <AnimatePresence>
+          {selectedUser && (
+            <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -449,9 +451,11 @@ export default function UsuariosPage() {
                 </div>
               </div>
             </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+            </div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
     </GuardedShell>
   )
 }
