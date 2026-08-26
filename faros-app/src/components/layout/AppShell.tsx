@@ -22,7 +22,7 @@ const NAV: Record<UserRole, NavItem[]> = {
   estudiante: [
     { label: 'Dashboard', href: '/dashboard', icon: 'dashboard' },
     { label: 'Planes', href: '/dashboard/planes', icon: 'fitness_center' },
-    { label: 'Asistencia', href: '/dashboard/asistencia', icon: 'calendar_today' },
+    { label: 'Clases', href: '/dashboard/asistencia', icon: 'calendar_today' },
     { label: 'Plan Virtual', href: '/dashboard/virtual', icon: 'smart_display' },
     { label: 'Mensajes', href: '/dashboard/mensajes', icon: 'forum' },
     { label: 'Ranking', href: '/dashboard/ranking', icon: 'leaderboard' },

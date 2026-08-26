@@ -92,6 +92,12 @@ export async function POST(req: NextRequest) {
       if (!susc || susc.tipo !== 'personal' || susc.estado !== 'activa' || susc.fechaVencimiento <= Date.now()) {
         return { error: 'Necesitas un plan personalizado activo para solicitar una clase', status: 403 }
       }
+      // Modalidades grupales (pareja/familia/reducido): solo quien compró
+      // el plan (jefe del grupo) elige la franja — los demás miembros
+      // quedan inscritos automáticamente cuando el profesor acepte.
+      if (susc.grupoId && !susc.esJefeGrupo) {
+        return { error: 'Solo quien adquirió el plan puede elegir el horario del grupo', status: 403 }
+      }
 
       if (!profesorSnap.exists) return { error: 'Profesor no encontrado', status: 404 }
       const profesor = profesorSnap.data()!
@@ -138,6 +144,7 @@ export async function POST(req: NextRequest) {
         horaFin,
         direccion,
         personas: susc.personas ?? 1,
+        grupoId: susc.grupoId ?? null,
         estado: 'pendiente',
         mensaje,
         motivoRechazo: null,

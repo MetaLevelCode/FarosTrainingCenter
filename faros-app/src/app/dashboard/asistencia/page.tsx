@@ -96,67 +96,67 @@ export default function AsistenciaPage() {
 
   useEffect(() => {
     if (!user) return
-    let unsubHistorial = () => {}
-    let unsubInscritas = () => {}
-    let unsubDisponibles = () => {}
+    let unsubHistorial = () => { }
+    let unsubInscritas = () => { }
+    let unsubDisponibles = () => { }
     let cancelado = false
 
-    ;(async () => {
-      try {
-        const [{ db }, { collection, query, where, orderBy, limit, doc, getDoc, onSnapshot }] = await Promise.all([
-          getFirebase(), import('firebase/firestore'),
-        ])
-        if (cancelado) return
-        const ahora = Date.now()
+      ; (async () => {
+        try {
+          const [{ db }, { collection, query, where, orderBy, limit, doc, getDoc, onSnapshot }] = await Promise.all([
+            getFirebase(), import('firebase/firestore'),
+          ])
+          if (cancelado) return
+          const ahora = Date.now()
 
-        // Historial de asistencias
-        unsubHistorial = onSnapshot(
-          query(
-            collection(db, 'asistencias'),
-            where('usuarioId', '==', user.uid),
-            orderBy('fecha_registro', 'desc'),
-            limit(20),
-          ),
-          async (asistSnap) => {
-            const items: HistorialItem[] = []
-            for (const d of asistSnap.docs) {
-              const a = d.data()
-              let nombreClase = 'Clase'
-              try {
-                const claseDoc = await getDoc(doc(db, 'clases', a.claseId))
-                if (claseDoc.exists()) nombreClase = claseDoc.data()?.nombre_clase ?? 'Clase'
-              } catch {}
-              items.push({
-                id: d.id,
-                fecha: new Date(a.fecha_registro).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }).toUpperCase(),
-                clase: nombreClase,
-                tipo: 'Grupal',
-                asistio: a.asistio,
-              })
-            }
-            if (!cancelado) setHistorial(items)
-          },
-          console.error
-        )
+          // Historial de asistencias
+          unsubHistorial = onSnapshot(
+            query(
+              collection(db, 'asistencias'),
+              where('usuarioId', '==', user.uid),
+              orderBy('fecha_registro', 'desc'),
+              limit(20),
+            ),
+            async (asistSnap) => {
+              const items: HistorialItem[] = []
+              for (const d of asistSnap.docs) {
+                const a = d.data()
+                let nombreClase = 'Clase'
+                try {
+                  const claseDoc = await getDoc(doc(db, 'clases', a.claseId))
+                  if (claseDoc.exists()) nombreClase = claseDoc.data()?.nombre_clase ?? 'Clase'
+                } catch { }
+                items.push({
+                  id: d.id,
+                  fecha: new Date(a.fecha_registro).toLocaleDateString('es-CO', { day: '2-digit', month: 'short' }).toUpperCase(),
+                  clase: nombreClase,
+                  tipo: 'Grupal',
+                  asistio: a.asistio,
+                })
+              }
+              if (!cancelado) setHistorial(items)
+            },
+            console.error
+          )
 
-        // Clases donde está inscrito (futuras o en curso)
-        unsubInscritas = onSnapshot(
-          query(
-            collection(db, 'clases'),
-            where('estudiantes_inscritos', 'array-contains', user.uid),
-            where('estado', 'in', ['programada', 'en_curso']),
-          ),
-          (inscritasSnap) => {
-            const inscritas = inscritasSnap.docs.map((d) => ({ id: d.id, ...d.data() }) as Clase)
-            if (!cancelado) setClasesInscritas(inscritas)
-          },
-          console.error
-        )
+          // Clases donde está inscrito (futuras o en curso)
+          unsubInscritas = onSnapshot(
+            query(
+              collection(db, 'clases'),
+              where('estudiantes_inscritos', 'array-contains', user.uid),
+              where('estado', 'in', ['programada', 'en_curso']),
+            ),
+            (inscritasSnap) => {
+              const inscritas = inscritasSnap.docs.map((d) => ({ id: d.id, ...d.data() }) as Clase)
+              if (!cancelado) setClasesInscritas(inscritas)
+            },
+            console.error
+          )
 
-        // Clases disponibles
-        unsubDisponibles = onSnapshot(
-          user.sede
-            ? query(
+          // Clases disponibles
+          unsubDisponibles = onSnapshot(
+            user.sede
+              ? query(
                 collection(db, 'clases'),
                 where('sede', '==', user.sede),
                 where('estado', '==', 'programada'),
@@ -164,34 +164,34 @@ export default function AsistenciaPage() {
                 orderBy('fecha_hora_inicio', 'asc'),
                 limit(12),
               )
-            : query(
+              : query(
                 collection(db, 'clases'),
                 where('estado', '==', 'programada'),
                 where('fecha_hora_inicio', '>', ahora),
                 orderBy('fecha_hora_inicio', 'asc'),
                 limit(12),
               ),
-          (disponiblesSnap) => {
-            if (cancelado) return
-            setClasesInscritas((prevInscritas) => {
-              const inscritasIds = new Set(prevInscritas.map((c) => c.id))
-              setClasesDisponibles(
-                disponiblesSnap.docs
-                  .map((d) => ({ id: d.id, ...d.data() }) as Clase)
-                  .filter((c) => !inscritasIds.has(c.id)),
-              )
-              return prevInscritas
-            })
-          },
-          console.error
-        )
+            (disponiblesSnap) => {
+              if (cancelado) return
+              setClasesInscritas((prevInscritas) => {
+                const inscritasIds = new Set(prevInscritas.map((c) => c.id))
+                setClasesDisponibles(
+                  disponiblesSnap.docs
+                    .map((d) => ({ id: d.id, ...d.data() }) as Clase)
+                    .filter((c) => !inscritasIds.has(c.id)),
+                )
+                return prevInscritas
+              })
+            },
+            console.error
+          )
 
-        setCargando(false)
-      } catch (err) {
-        console.error(err)
-        setCargando(false)
-      }
-    })()
+          setCargando(false)
+        } catch (err) {
+          console.error(err)
+          setCargando(false)
+        }
+      })()
 
     return () => {
       cancelado = true
@@ -396,27 +396,37 @@ export default function AsistenciaPage() {
             (reportado en QA manual). ── */}
         <Reveal delay={0.16}>
           <div>
-            <h3 className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight mb-5">
-              Mis clases
-            </h3>
             {cargando ? (
               <div className="flex justify-center py-6"><Spinner size="md" /></div>
             ) : clasesInscritas.length === 0 ? (
-              <Card>
-                <p className="text-sm text-[var(--color-on-surface-variant)]/60">
-                  No tienes clases próximas. Inscríbete en alguna de las disponibles abajo.
-                </p>
-              </Card>
+              <>
+                <h3 className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight mb-5">
+                  Mis clases
+                </h3>
+                <Card>
+                  <p className="text-sm text-[var(--color-on-surface-variant)]/60">
+                    No tienes clases próximas. Inscríbete en alguna de las disponibles abajo.
+                  </p>
+                </Card>
+              </>
             ) : (
-              <div className="space-y-6">
+              <div className="space-y-8">
                 {proximaInscrita && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                    {renderClaseInscrita(proximaInscrita)}
+                  <div>
+                    <h3 className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight mb-5">
+                      Próxima clase
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                      {renderClaseInscrita(proximaInscrita)}
+                    </div>
                   </div>
                 )}
 
                 {gruposInscritas.size > 0 && (
                   <div>
+                    <h3 className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight mb-5">
+                      Demás clases
+                    </h3>
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                       {[...gruposInscritas.entries()].map(([codigo, lista]) => {
                         const abierta = categoriaAbierta === codigo
@@ -424,11 +434,10 @@ export default function AsistenciaPage() {
                           <button
                             key={codigo}
                             onClick={() => setCategoriaAbierta(abierta ? null : codigo)}
-                            className={`rounded-2xl border p-4 text-left transition-colors duration-200 ${
-                              abierta
+                            className={`rounded-2xl border p-4 text-left transition-colors duration-200 ${abierta
                                 ? 'border-[var(--color-primary-fixed)] bg-[rgba(230,255,0,0.06)]'
                                 : 'border-white/10 bg-white/[0.03] hover:border-white/25'
-                            }`}
+                              }`}
                           >
                             <p className="font-display text-sm font-black text-white uppercase tracking-tight truncate">
                               {labelCategoria(codigo)}
@@ -460,73 +469,73 @@ export default function AsistenciaPage() {
             <SolicitudPersonalizada />
           </Reveal>
         ) : (
-        <Reveal delay={0.22}>
-          <div>
-            <h3 className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight mb-5">
-              Clases disponibles
-            </h3>
-            {!puedeInscribirse && susc && (
-              <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 mb-4 flex items-center gap-3">
-                <span className="material-symbols-outlined text-[var(--color-on-surface-variant)]/40 text-[18px]">info</span>
-                <p className="text-xs text-[var(--color-on-surface-variant)]/60">
-                  {susc.estado !== 'activa' ? 'Tu suscripción está vencida.' : 'No tienes sesiones disponibles.'}{' '}
-                  Renueva tu plan para inscribirte en clases.
-                </p>
-              </div>
-            )}
-            {cargando ? (
-              <div className="flex justify-center py-8"><Spinner size="md" /></div>
-            ) : clasesDisponibles.length === 0 ? (
-              <Card>
-                <p className="text-sm text-[var(--color-on-surface-variant)]/60">
-                  No hay clases programadas próximamente. Consulta con tu profesor.
-                </p>
-              </Card>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                {clasesDisponibles.map((c) => {
-                  const inicio = new Date(c.fecha_hora_inicio)
-                  const dia = inicio.toLocaleDateString('es-CO', { weekday: 'long', day: '2-digit', month: 'short' })
-                  const hora = inicio.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
-                  const cuposLibres = (c.cupo_maximo ?? 0) - (c.estudiantes_inscritos?.length ?? 0)
-                  const sinCupo = cuposLibres <= 0
-                  const isLoading = inscribiendo === c.id
-                  return (
-                    <Card key={c.id}>
-                      <div className="flex items-start justify-between gap-3 mb-4">
-                        <div className="min-w-0">
-                          <h4 className="font-display text-base font-extrabold text-white uppercase tracking-tight truncate">
-                            {c.nombre_clase}
-                          </h4>
-                          <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mt-1 capitalize truncate">
-                            {dia} · {hora}
-                          </p>
-                          {c.sede && (
-                            <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/40 mt-0.5 truncate">
-                              {c.sede}
+          <Reveal delay={0.22}>
+            <div>
+              <h3 className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight mb-5">
+                Clases disponibles
+              </h3>
+              {!puedeInscribirse && susc && (
+                <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 mb-4 flex items-center gap-3">
+                  <span className="material-symbols-outlined text-[var(--color-on-surface-variant)]/40 text-[18px]">info</span>
+                  <p className="text-xs text-[var(--color-on-surface-variant)]/60">
+                    {susc.estado !== 'activa' ? 'Tu suscripción está vencida.' : 'No tienes sesiones disponibles.'}{' '}
+                    Renueva tu plan para inscribirte en clases.
+                  </p>
+                </div>
+              )}
+              {cargando ? (
+                <div className="flex justify-center py-8"><Spinner size="md" /></div>
+              ) : clasesDisponibles.length === 0 ? (
+                <Card>
+                  <p className="text-sm text-[var(--color-on-surface-variant)]/60">
+                    No hay clases programadas próximamente. Consulta con tu profesor.
+                  </p>
+                </Card>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {clasesDisponibles.map((c) => {
+                    const inicio = new Date(c.fecha_hora_inicio)
+                    const dia = inicio.toLocaleDateString('es-CO', { weekday: 'long', day: '2-digit', month: 'short' })
+                    const hora = inicio.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
+                    const cuposLibres = (c.cupo_maximo ?? 0) - (c.estudiantes_inscritos?.length ?? 0)
+                    const sinCupo = cuposLibres <= 0
+                    const isLoading = inscribiendo === c.id
+                    return (
+                      <Card key={c.id}>
+                        <div className="flex items-start justify-between gap-3 mb-4">
+                          <div className="min-w-0">
+                            <h4 className="font-display text-base font-extrabold text-white uppercase tracking-tight truncate">
+                              {c.nombre_clase}
+                            </h4>
+                            <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mt-1 capitalize truncate">
+                              {dia} · {hora}
                             </p>
-                          )}
+                            {c.sede && (
+                              <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/40 mt-0.5 truncate">
+                                {c.sede}
+                              </p>
+                            )}
+                          </div>
+                          <Badge variant={sinCupo ? 'danger' : cuposLibres <= 3 ? 'primary' : 'default'} className="shrink-0 whitespace-nowrap">
+                            {sinCupo ? 'Llena' : `${cuposLibres} cupos`}
+                          </Badge>
                         </div>
-                        <Badge variant={sinCupo ? 'danger' : cuposLibres <= 3 ? 'primary' : 'default'} className="shrink-0 whitespace-nowrap">
-                          {sinCupo ? 'Llena' : `${cuposLibres} cupos`}
-                        </Badge>
-                      </div>
-                      <Button
-                        fullWidth
-                        size="sm"
-                        disabled={sinCupo || !puedeInscribirse || !!inscribiendo}
-                        loading={isLoading}
-                        onClick={() => inscribirse(c.id)}
-                      >
-                        {isLoading ? '' : sinCupo ? 'Sin cupo' : 'Inscribirse'}
-                      </Button>
-                    </Card>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        </Reveal>
+                        <Button
+                          fullWidth
+                          size="sm"
+                          disabled={sinCupo || !puedeInscribirse || !!inscribiendo}
+                          loading={isLoading}
+                          onClick={() => inscribirse(c.id)}
+                        >
+                          {isLoading ? '' : sinCupo ? 'Sin cupo' : 'Inscribirse'}
+                        </Button>
+                      </Card>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </Reveal>
         )}
 
         {/* ── Historial de asistencias ── */}

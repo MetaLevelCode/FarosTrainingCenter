@@ -97,6 +97,24 @@
         { "fieldPath": "alumnoId", "order": "ASCENDING" },
         { "fieldPath": "creadoEn", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "solicitudes_personalizadas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "alumnoId", "order": "ASCENDING" },
+        { "fieldPath": "estado", "order": "ASCENDING" },
+        { "fieldPath": "respondidoEn", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "solicitudes_personalizadas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "grupoId", "order": "ASCENDING" },
+        { "fieldPath": "estado", "order": "ASCENDING" },
+        { "fieldPath": "respondidoEn", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

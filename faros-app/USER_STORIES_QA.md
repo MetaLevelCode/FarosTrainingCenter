@@ -36,8 +36,8 @@ Pasos:
 
 **Notas / bugs:**
 -
-Bug 1. = En la parte de los planes en la pwa El logo de faors y la x de salida choca con la hora
-Bug 2. = Los botones de redes sociales, abajo del todo en la pwa, no llevan a ningun lado 
+Bug 1. = ✅ (CORREGIDO) En la parte de los planes en la pwa El logo de faors y la x de salida choca con la hora
+Bug 2. = ✅ (CORREGIDO) Los botones de redes sociales, abajo del todo en la pwa, no llevan a ningun lado 
 
 ---
 
@@ -58,13 +58,13 @@ Pasos:
 
 **Notas / bugs:**
 -
-Bug 1. = La foto de perfil no deja centrarla, pone la foto tal cual, no deja tiene opción de edición basica, hacerle zoom, centrarla, rotarla.
+Bug 1. = ✅ (CORREGIDO) La foto de perfil no deja centrarla, pone la foto tal cual, no deja tiene opción de edición basica, hacerle zoom, centrarla, rotarla.
 
-Bug 2. = Si es un plan personalizado, o de conjuntos, cuando me registro aparecen las sedes ya predeterminadas (todas), si es de conjunto la sede deberia ser los conjuntos que se tienen, o el de ellos donde se va adquirir el servicio. Lo mismo con el personalizado. Y el virtual. 
+Bug 2. = ✅ (CORREGIDO) Si es un plan personalizado, o de conjuntos, cuando me registro aparecen las sedes ya predeterminadas (todas), si es de conjunto la sede deberia ser los conjuntos que se tienen, o el de ellos donde se va adquirir el servicio. Lo mismo con el personalizado. Y el virtual. 
 
-Bug 3. = Me manda al dashbboard y me dice que no tengo plan, cuando lo solicito si se guarda. Pero seria bueno que arranque en la parte donde solicito el plan para luego pagar, no al dashboard.
+Bug 3. = ✅ (CORREGIDO) Me manda al dashbboard y me dice que no tengo plan, cuando lo solicito si se guarda. Pero seria bueno que arranque en la parte donde solicito el plan para luego pagar, no al dashboard.
 
-Bug 4. = En mi plan a la medida donde subo el comprobante no me dicen cuentas bancarias para hacer la tranferencia. crea un espacio para poner las cuentas y debajo del titulo (TU PLAN A LA MEDIDA) el valor para tener en cuental.
+Bug 4. = ✅ (CORREGIDO) En mi plan a la medida donde subo el comprobante no me dicen cuentas bancarias para hacer la tranferencia. crea un espacio para poner las cuentas y debajo del titulo (TU PLAN A LA MEDIDA) el valor para tener en cuental.
 ---
 
 ## Estudiante
@@ -72,7 +72,7 @@ Bug 4. = En mi plan a la medida donde subo el comprobante no me dicen cuentas ba
 ### E1 — Alumno nuevo compra su primer plan
 **Como** visitante sin cuenta, **quiero** registrarme, armar mi plan y subir mi
 comprobante de pago, **para** quedar en revisión y que el club active mi plan.
-
+ 
 Pasos:
 1. Landing → "Comenzar" / "Inscríbete ahora" → `/registro`
 2. Llenar formulario: nombres, apellidos, tipo/número de documento, teléfono,
@@ -160,9 +160,9 @@ desplegados (especialmente cancelar dentro de la ventana de 2h).
 
 Segundo Intento de esta User Story:
 
-- Funciona bien todo, pero se tiene configuarado que se muestre solo la clase mas proxima y las demas mas agrupadas, pero en ningun texto aparece eso. Tiene el titulo de mis clases y solo aparece esa y mas abajo las otras agrupadas por grupo. Quiero que tenga sus respectivos titulos para que sea claro, "Proxima clase", demas clases.
+- ✅ (CORREGIDO) Funciona bien todo, pero se tiene configuarado que se muestre solo la clase mas proxima y las demas mas agrupadas, pero en ningun texto aparece eso. Tiene el titulo de mis clases y solo aparece esa y mas abajo las otras agrupadas por grupo. Quiero que tenga sus respectivos titulos para que sea claro, "Proxima clase", demas clases.
 
-- No me gusta que el boton sea "asistencia" ya que es mas que eso, desde ahi se maneja todo lo de clases, el boton deberia decir clases y asi 
+- ✅ (CORREGIDO) No me gusta que el boton sea "asistencia" ya que es mas que eso, desde ahi se maneja todo lo de clases, el boton deberia decir clases y asi 
 
 
 ---
@@ -214,7 +214,7 @@ Pasos, agendar franja (una vez el plan está activo, en
 **Notas / bugs:**
 -
 
----
+---`
 
 ### E5.1 — Alumno cancela una sesión puntual de clase personalizada
 **Como** alumno con plan personalizado y horario semanal fijo acordado,
@@ -225,7 +225,7 @@ recuperar mi sesión sin perder las clases de las siguientes semanas.
 Pasos:
 1. Con un horario personalizado activo y clases generadas (ej. 4 viernes del mes),
    entrar a `/dashboard/asistencia` (sección Mis clases)
-2. Cancelar la inscripción de UNA sola sesión (con > 2h de anticipación)
+2. Cancelar la inscripci ón de UNA sola sesión (con > 2h de anticipación)
 3. Verificar que el contador de sesiones restantes del alumno aumenta en +1
 4. Verificar que SOLO esa sesión se retira de "Mis clases", y que las sesiones
    de los viernes de las semanas siguientes permanecen intactas y programadas

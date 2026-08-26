@@ -13,9 +13,10 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'motion/react'
 import { useAuth } from '@/contexts/AuthContext'
-import { FarosWordmark, Spinner, Button } from '@/components/ui'
+import { FarosWordmark, Spinner, Button, Input } from '@/components/ui'
 import { WaterBackground } from '@/components/shared/WaterBackground'
 import { SubirComprobante } from '@/components/dashboard/SubirComprobante'
+import { GrupoPersonalizado } from '@/components/dashboard/GrupoPersonalizado'
 import { getTransaccionesUsuario, getSuscripcionesUsuario, getSedes, getGrupos, getTarifas, getUsuarios } from '@/lib/firestore'
 import { parseVencimiento } from '@/lib/matricula'
 import { displayName } from '@/lib/types'
@@ -163,6 +164,7 @@ function DatoRow({ icon, label, value }: { icon: string; label: string; value: s
 }
 
 const PENDIENTE_KEY = 'faros-plan-pendiente'
+const PENDIENTE_UNIRSE_KEY = 'faros-plan-pendiente-codigo'
 
 export default function PlanesFlowPage() {
   // Abierto a invitados: cualquiera puede armar su plan; al final se
@@ -177,6 +179,13 @@ export default function PlanesFlowPage() {
   const [necesitaCuenta, setNecesitaCuenta] = useState(false)
   const [transaccionId, setTransaccionId] = useState<string | null>(null)
   const [comprobanteUrl, setComprobanteUrl] = useState<string | null>(null)
+  // "Unirse a plan" — alternativa a "Adquirir plan" para modalidades
+  // grupales (pareja/familia/reducido): entra gratis con el código que
+  // le compartió el jefe del grupo, sin crear transacción.
+  const [modoUnirse, setModoUnirse] = useState(false)
+  const [codigoUnirse, setCodigoUnirse] = useState('')
+  const [uniendo, setUniendo] = useState(false)
+  const [errorUnirse, setErrorUnirse] = useState<string | null>(null)
   // Chequeo inicial: si ya existe tx pendiente, bloqueamos el wizard.
   // Sin comprobante → ir al upload. Con comprobante → pantalla "en revisión".
   const [checkingPendiente, setCheckingPendiente] = useState(true)
@@ -264,6 +273,13 @@ export default function PlanesFlowPage() {
       const saved = JSON.parse(raw) as SeleccionPlan
       setSel(saved)
       setStepIdx(stepsFor(saved.tipo).length - 1) // directo al resumen
+
+      const codigoGuardado = localStorage.getItem(PENDIENTE_UNIRSE_KEY)
+      if (codigoGuardado) {
+        localStorage.removeItem(PENDIENTE_UNIRSE_KEY)
+        setCodigoUnirse(codigoGuardado)
+        setModoUnirse(true)
+      }
     } catch {}
   }, [])
 
@@ -332,6 +348,42 @@ export default function PlanesFlowPage() {
     }
   }
 
+  async function unirse() {
+    const codigo = codigoUnirse.trim()
+    if (!codigo) return
+
+    if (!user) {
+      try {
+        localStorage.setItem(PENDIENTE_KEY, JSON.stringify(sel))
+        localStorage.setItem(PENDIENTE_UNIRSE_KEY, codigo)
+      } catch {}
+      setNecesitaCuenta(true)
+      return
+    }
+
+    setUniendo(true)
+    setErrorUnirse(null)
+    try {
+      const { getAuth } = await import('firebase/auth')
+      const idToken = await getAuth().currentUser?.getIdToken()
+      if (!idToken) throw new Error('No autenticado')
+
+      const res = await fetch('/api/grupos-personalizados/unirse', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ codigo }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'No se pudo unir al grupo')
+      // El listener de useAuth() escucha usuarios/{uid} en tiempo real —
+      // en cuanto la API actualice suscripcionActiva, este mismo componente
+      // pasa solo a la pantalla "plan activo" con el grupo ya cargado.
+    } catch (err: any) {
+      setErrorUnirse(err.message ?? 'No se pudo unir al grupo. Intenta de nuevo.')
+      setUniendo(false)
+    }
+  }
+
   if (loading || checkingPendiente) {
     return (
       <div className="min-h-dvh flex items-center justify-center" style={{ background: '#050505' }}>
@@ -371,7 +423,7 @@ export default function PlanesFlowPage() {
     return (
       <div className="relative min-h-dvh flex flex-col">
         <WaterBackground />
-        <header className="relative z-10 h-20 px-5 md:px-10 flex items-center justify-between shrink-0">
+        <header className="relative z-10 h-20 px-5 md:px-10 flex items-center justify-between shrink-0" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
           <FarosWordmark size="sm" />
           <Link href="/dashboard" aria-label="Volver al dashboard"
             className="w-11 h-11 rounded-full border border-white/10 bg-white/5 flex items-center justify-center text-[var(--color-on-surface-variant)] hover:text-white hover:border-white/25 transition-colors duration-200"
@@ -506,6 +558,17 @@ export default function PlanesFlowPage() {
               </Card>
             </motion.div>
 
+            {/* ── Grupo compartido (pareja/familia/reducido) ── */}
+            {suscActiva.grupoId && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.24, ease: EASE }}
+              >
+                <GrupoPersonalizado grupoId={suscActiva.grupoId} esJefe={!!suscActiva.esJefeGrupo} />
+              </motion.div>
+            )}
+
             {/* ── Aviso vencimiento cercano ── */}
             {vencePronto && (
               <motion.div
@@ -548,7 +611,7 @@ export default function PlanesFlowPage() {
     return (
       <div className="relative min-h-dvh flex flex-col">
         <WaterBackground />
-        <header className="relative z-10 h-20 px-5 md:px-10 flex items-center justify-between shrink-0">
+        <header className="relative z-10 h-20 px-5 md:px-10 flex items-center justify-between shrink-0" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
           <FarosWordmark size="sm" />
           <Link href="/dashboard" aria-label="Volver al dashboard"
             className="w-11 h-11 rounded-full border border-white/10 bg-white/5 flex items-center justify-center text-[var(--color-on-surface-variant)] hover:text-white hover:border-white/25 transition-colors duration-200"
@@ -581,7 +644,7 @@ export default function PlanesFlowPage() {
     return (
       <div className="relative min-h-dvh flex flex-col">
         <WaterBackground />
-        <header className="relative z-10 h-20 px-5 md:px-10 flex items-center justify-between shrink-0">
+        <header className="relative z-10 h-20 px-5 md:px-10 flex items-center justify-between shrink-0" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
           <FarosWordmark size="sm" />
           <Link href="/dashboard" aria-label="Volver al dashboard"
             className="w-11 h-11 rounded-full border border-white/10 bg-white/5 flex items-center justify-center text-[var(--color-on-surface-variant)] hover:text-white hover:border-white/25 transition-colors duration-200"
@@ -643,7 +706,7 @@ export default function PlanesFlowPage() {
       <WaterBackground />
 
       {/* ── Top bar ── */}
-      <header className="relative z-10 h-20 px-5 md:px-10 flex items-center justify-between shrink-0">
+      <header className="relative z-10 h-20 px-5 md:px-10 flex items-center justify-between shrink-0" style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
         <FarosWordmark size="sm" />
         <Link
           href="/dashboard"
@@ -916,17 +979,55 @@ export default function PlanesFlowPage() {
                     </div>
                   )}
 
-                  <Button fullWidth size="lg" onClick={solicitar} loading={solicitando} disabled={solicitando}>
-                    {user ? 'Solicitar este plan' : 'Continuar'}
-                  </Button>
-                  {errorSolicitud && (
-                    <p className="text-xs text-[var(--color-danger-crimson)] text-center mt-3">{errorSolicitud}</p>
+                  {pidePersonas && modoUnirse ? (
+                    <div className="space-y-4">
+                      <Input
+                        label="Código del grupo"
+                        placeholder="Ej. F7K2QX"
+                        maxLength={6}
+                        value={codigoUnirse}
+                        onChange={(e) => setCodigoUnirse(e.target.value.toUpperCase())}
+                        autoCapitalize="characters"
+                      />
+                      <Button
+                        fullWidth size="lg" onClick={unirse}
+                        loading={uniendo} disabled={uniendo || !codigoUnirse.trim()}
+                      >
+                        {user ? 'Entrar con código' : 'Continuar'}
+                      </Button>
+                      {errorUnirse && (
+                        <p className="text-xs text-[var(--color-danger-crimson)] text-center">{errorUnirse}</p>
+                      )}
+                      <button
+                        onClick={() => { setModoUnirse(false); setErrorUnirse(null) }}
+                        className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 hover:text-white transition-colors duration-200 block mx-auto"
+                      >
+                        Mejor voy a adquirir el plan
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <Button fullWidth size="lg" onClick={solicitar} loading={solicitando} disabled={solicitando}>
+                        {user ? (pidePersonas ? 'Adquirir plan' : 'Solicitar este plan') : 'Continuar'}
+                      </Button>
+                      {errorSolicitud && (
+                        <p className="text-xs text-[var(--color-danger-crimson)] text-center mt-3">{errorSolicitud}</p>
+                      )}
+                      <p className="text-[11px] text-[var(--color-on-surface-variant)]/40 text-center mt-5">
+                        {user
+                          ? 'Tu solicitud pasa a administración para aprobación del pago.'
+                          : 'Necesitas una cuenta para enviar tu solicitud. No perderás tu plan.'}
+                      </p>
+                      {pidePersonas && (
+                        <button
+                          onClick={() => setModoUnirse(true)}
+                          className="label-caps text-[10px] text-[var(--color-primary-fixed)] hover:text-white transition-colors duration-200 block mx-auto mt-5"
+                        >
+                          Ya tengo un código — unirme a un plan
+                        </button>
+                      )}
+                    </>
                   )}
-                  <p className="text-[11px] text-[var(--color-on-surface-variant)]/40 text-center mt-5">
-                    {user
-                      ? 'Tu solicitud pasa a administración para aprobación del pago.'
-                      : 'Necesitas una cuenta para enviar tu solicitud. No perderás tu plan.'}
-                  </p>
                 </div>
               </div>
             )}
@@ -942,8 +1043,9 @@ export default function PlanesFlowPage() {
                     Un último paso
                   </h2>
                   <p className="text-sm text-[var(--color-on-surface-variant)]/70 max-w-sm mb-2 leading-relaxed">
-                    Tu plan <span className="text-white font-bold">{resumen.titulo}</span> quedó guardado.
-                    Crea una cuenta o inicia sesión para enviarlo a administración.
+                    {pidePersonas && modoUnirse
+                      ? <>Tu código <span className="text-white font-bold">{codigoUnirse}</span> quedó guardado. Crea una cuenta o inicia sesión para unirte al grupo.</>
+                      : <>Tu plan <span className="text-white font-bold">{resumen.titulo}</span> quedó guardado. Crea una cuenta o inicia sesión para enviarlo a administración.</>}
                   </p>
                   <p className="label-caps text-[9px] text-[var(--color-primary-fixed)] mb-8">Tu progreso no se pierde</p>
 

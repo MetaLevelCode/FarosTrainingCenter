@@ -135,6 +135,18 @@ export async function getTransacciones(estado?: Transaccion['estado']): Promise<
  *
  * Opcionalmente el admin puede overridear el monto (descuento acordado).
  */
+// Alfabeto sin caracteres ambiguos (sin 0/O, 1/I) para códigos de grupo
+// legibles al dictarlos por teléfono/whatsapp.
+const ALFABETO_CODIGO_GRUPO = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+function generarCodigoGrupo(): string {
+  let codigo = ''
+  for (let i = 0; i < 6; i++) {
+    codigo += ALFABETO_CODIGO_GRUPO[Math.floor(Math.random() * ALFABETO_CODIGO_GRUPO.length)]
+  }
+  return codigo
+}
+
 export async function aprobarTransaccion(
   transaccionId: string,
   adminUid: string,
@@ -143,7 +155,7 @@ export async function aprobarTransaccion(
   const [{ db }, { doc, collection, runTransaction }] = await Promise.all([
     getFirebase(), import('firebase/firestore'),
   ])
-  const { sesionesDelPlan, duracionDiasDelPlan, resumenPlan } = await import('./planes')
+  const { sesionesDelPlan, duracionDiasDelPlan, resumenPlan, PERSONALES } = await import('./planes')
 
   let selAprobada: import('./planes').SeleccionPlan | undefined
   let usuarioIdAprobado = ''
@@ -177,6 +189,49 @@ export async function aprobarTransaccion(
       }
     }
 
+    // Modalidades personales "por persona" (pareja/familia/reducido)
+    // comparten un grupo con código — ver grupos_personalizados/{codigo}.
+    // Toda lectura va ANTES de cualquier escritura (regla de las
+    // transacciones de Firestore), por eso este bloque vive acá.
+    const subPersonal = sel.tipo === 'personal' && sel.personalId
+      ? PERSONALES.find((p) => p.id === sel.personalId)
+      : null
+    const esModalidadGrupal = !!subPersonal?.porPersona && subPersonal.personasMax > 1
+
+    let grupoRef: ReturnType<typeof doc> | null = null
+    let grupoEsNuevo = false
+
+    if (esModalidadGrupal) {
+      const usuarioSnap = await tx.get(doc(db, 'usuarios', t.usuarioId))
+      const usuarioActual = usuarioSnap.exists() ? usuarioSnap.data() : null
+      const grupoIdActual = usuarioActual?.suscripcionActiva?.esJefeGrupo
+        ? usuarioActual.suscripcionActiva.grupoId
+        : null
+
+      // Reutiliza el grupo si ya era jefe de uno (renovación) — así no se
+      // pierde a los miembros ya inscritos ni se les cambia el código.
+      if (grupoIdActual) {
+        const existenteRef = doc(db, 'grupos_personalizados', grupoIdActual)
+        const existenteSnap = await tx.get(existenteRef)
+        if (existenteSnap.exists()) grupoRef = existenteRef
+      }
+
+      if (!grupoRef) {
+        // Colisión prácticamente imposible (32^6 combinaciones), pero se
+        // revalida igual antes de reservar el código.
+        for (let intento = 0; intento < 5; intento++) {
+          const candidatoRef = doc(db, 'grupos_personalizados', generarCodigoGrupo())
+          const candidatoSnap = await tx.get(candidatoRef)
+          if (!candidatoSnap.exists()) {
+            grupoRef = candidatoRef
+            grupoEsNuevo = true
+            break
+          }
+        }
+        if (!grupoRef) throw new Error('No se pudo generar un código de grupo único, intenta de nuevo')
+      }
+    }
+
     // 1. Crear suscripción
     const suscRef = doc(collection(db, 'suscripciones'))
     tx.set(suscRef, {
@@ -191,8 +246,38 @@ export async function aprobarTransaccion(
       estado: 'activa',
       seleccion: sel,
       monto_pagado: monto,
+      grupoId: grupoRef?.id ?? null,
       creadoEn: now,
     })
+
+    // 1b. Crear o extender el grupo compartido (pareja/familia/reducido)
+    if (esModalidadGrupal && grupoRef) {
+      if (grupoEsNuevo) {
+        tx.set(grupoRef, {
+          codigo: grupoRef.id,
+          jefeId: t.usuarioId,
+          personalId: sel.personalId,
+          personasMax: sel.personas,
+          miembros: [{ uid: t.usuarioId, nombre: t.nombre_usuario ?? '' }],
+          miembrosIds: [t.usuarioId],
+          suscripcionId: suscRef.id,
+          fechaVencimiento,
+          estado: 'activo',
+          creadoEn: now,
+          actualizadoEn: now,
+        })
+      } else {
+        // Renovación: se extiende el mismo grupo sin tocar `miembros`.
+        tx.update(grupoRef, {
+          personalId: sel.personalId,
+          personasMax: sel.personas,
+          suscripcionId: suscRef.id,
+          fechaVencimiento,
+          estado: 'activo',
+          actualizadoEn: now,
+        })
+      }
+    }
 
     // 2. Actualizar transacción
     tx.update(txRef, {
@@ -218,6 +303,8 @@ export async function aprobarTransaccion(
         tipo: sel.tipo,
         personalId: sel.tipo === 'personal' ? sel.personalId : null,
         personas: sel.tipo === 'personal' ? sel.personas : null,
+        grupoId: grupoRef?.id ?? null,
+        esJefeGrupo: esModalidadGrupal,
       },
     })
 
@@ -275,7 +362,7 @@ export async function aprobarTransaccion(
 }
 
 async function extenderClasesPersonalizadas(alumnoId: string, hastaTs: number): Promise<void> {
-  const [{ db }, { collection, query, where, orderBy, limit, getDocs, writeBatch, doc }] = await Promise.all([
+  const [{ db }, { collection, query, where, orderBy, limit, getDocs, getDoc, writeBatch, doc }] = await Promise.all([
     getFirebase(), import('firebase/firestore'),
   ])
   const { ocurrenciasSemanales } = await import('./recurrencia')
@@ -292,6 +379,19 @@ async function extenderClasesPersonalizadas(alumnoId: string, hastaTs: number): 
   if (solSnap.empty) return
   const solRef = solSnap.docs[0].ref
   const sol = solSnap.docs[0].data()
+
+  // Modalidades grupales: inscribir a TODO el grupo, no solo al jefe que
+  // renovó — mismo criterio que /api/personalizadas/[id]/aceptar.
+  let estudiantesInscritos = [alumnoId]
+  let cupoMaximo = sol.personas ?? 1
+  if (sol.grupoId) {
+    const grupoSnap = await getDoc(doc(db, 'grupos_personalizados', sol.grupoId))
+    if (grupoSnap.exists()) {
+      const grupo = grupoSnap.data()
+      estudiantesInscritos = (grupo.miembros ?? []).map((m: { uid: string }) => m.uid)
+      cupoMaximo = grupo.personasMax ?? cupoMaximo
+    }
+  }
 
   const desde = new Date(Math.max(Date.now(), sol.rangoGeneradoHasta ?? 0))
   if (desde.getTime() >= hastaTs) return
@@ -334,8 +434,8 @@ async function extenderClasesPersonalizadas(alumnoId: string, hastaTs: number): 
       sede: '',
       fecha_hora_inicio: oc.inicio,
       fecha_hora_fin: oc.fin,
-      cupo_maximo: sol.personas ?? 1,
-      estudiantes_inscritos: [alumnoId],
+      cupo_maximo: cupoMaximo,
+      estudiantes_inscritos: estudiantesInscritos,
       estado: 'programada',
       creadoEn: Date.now(),
       actualizadoEn: Date.now(),

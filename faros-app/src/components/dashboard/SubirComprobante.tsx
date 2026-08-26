@@ -86,6 +86,19 @@ export function SubirComprobante({ transaccionId, uid, onSubido }: Props) {
 
   return (
     <div className="space-y-5">
+      {/* Información bancaria */}
+      <div className="bg-white/5 border border-white/10 rounded-2xl p-5 mb-2">
+        <div className="flex items-center gap-3 mb-3">
+          <span className="material-symbols-outlined text-[var(--color-primary-fixed)]">account_balance</span>
+          <h3 className="text-sm font-semibold text-white">Realiza tu transferencia a:</h3>
+        </div>
+        <div className="space-y-2 text-sm text-[var(--color-on-surface-variant)]">
+          <p><strong className="text-white">Bancolombia (Ahorros):</strong> 000-000000-00</p>
+          <p><strong className="text-white">Nequi:</strong> 300 000 0000</p>
+          <p className="text-xs opacity-70 mt-2">Titular: Faros Training Center</p>
+        </div>
+      </div>
+
       <input
         ref={inputRef}
         type="file"

@@ -53,13 +53,23 @@ export async function POST(
       const esAdmin = requester?.rol === 'admin'
       if (!esDueno && !esAdmin) return { error: 'No autorizado', status: 403 }
 
-      const [profesorSnap, alumnoSnap] = await Promise.all([
+      const [profesorSnap, alumnoSnap, grupoSnap] = await Promise.all([
         tx.get(db.collection('usuarios').doc(sol.profesorId)),
         tx.get(db.collection('usuarios').doc(sol.alumnoId)),
+        sol.grupoId ? tx.get(db.collection('grupos_personalizados').doc(sol.grupoId)) : Promise.resolve(null),
       ])
       if (!profesorSnap.exists || !alumnoSnap.exists) return { error: 'Usuario no encontrado', status: 404 }
       const profesor = profesorSnap.data()!
       const alumno = alumnoSnap.data()!
+
+      // Modalidades grupales (pareja/familia/reducido): inscribir a TODO
+      // el grupo en cada clase, no solo al jefe que pidió el horario —
+      // el profesor debe ver y llamar a lista a todos los del grupo.
+      const grupo = grupoSnap && grupoSnap.exists ? grupoSnap.data()! : null
+      const estudiantesInscritos: string[] = grupo
+        ? (grupo.miembros ?? []).map((m: { uid: string }) => m.uid)
+        : [sol.alumnoId]
+      const cupoMaximo: number = grupo?.personasMax ?? (sol.personas ?? 1)
 
       // Re-validar disponibilidad: pudo cambiar desde que se solicitó.
       const franjas: Array<{ dow: number; horaInicio: string; horaFin: string }> = profesor.disponibilidadPersonal ?? []
@@ -118,8 +128,8 @@ export async function POST(
           direccion: sol.direccion ?? null,
           fecha_hora_inicio: oc.inicio,
           fecha_hora_fin: oc.fin,
-          cupo_maximo: sol.personas ?? 1,
-          estudiantes_inscritos: [sol.alumnoId],
+          cupo_maximo: cupoMaximo,
+          estudiantes_inscritos: estudiantesInscritos,
           estado: 'programada',
           creadoEn: ahora,
           actualizadoEn: ahora,

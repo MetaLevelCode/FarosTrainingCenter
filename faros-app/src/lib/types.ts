@@ -21,6 +21,11 @@ export interface SuscripcionActiva {
   tipo?: import('./planes').TipoPlan
   personalId?: string | null
   personas?: number
+  // Modalidades personales "por persona" (pareja/familia/reducido) comparten
+  // un mismo grupo — ver grupos_personalizados/{grupoId}. esJefeGrupo marca
+  // a quien compró (único que puede elegir la franja horaria del grupo).
+  grupoId?: string | null
+  esJefeGrupo?: boolean
 }
 
 // ── Clases personalizadas (1-a-1, pareja, familia, grupo reducido) ──
@@ -45,6 +50,10 @@ export interface SolicitudPersonalizada {
   horaInicio: string
   horaFin: string
   personas: number
+  // Denormalizado desde usuario.suscripcionActiva.grupoId al crear la
+  // solicitud — permite que /aceptar inscriba a todo el grupo sin releer
+  // la suscripción del alumno.
+  grupoId?: string | null
   estado: 'pendiente' | 'aceptada' | 'rechazada' | 'cancelada'
   direccion: string   // casa/conjunto donde el profesor debe ir a dar la clase
   mensaje?: string | null
@@ -145,6 +154,39 @@ export interface Suscripcion {
   // Selección congelada del wizard — permite saber, ej., a qué grupo
   // pertenece esta suscripción (para contar cupos ocupados por grupo).
   seleccion?: import('./planes').SeleccionPlan
+  // Presente en modalidades personales "por persona" — ver grupos_personalizados/{grupoId}.
+  grupoId?: string | null
+}
+
+// ── grupos_personalizados/{codigo} ───────────────────────────
+// Modalidades personales "por persona" (pareja/familia/reducido): quien
+// compra queda como jefe con un código de 6 caracteres para compartir;
+// hasta `personasMax` personas se unen gratis con ese código (ver
+// POST /api/grupos-personalizados/unirse) y quedan inscritas juntas en
+// las Clase reales que genere la solicitud del jefe (ver
+// /api/personalizadas/[id]/aceptar). El ID del documento ES el código.
+
+export interface MiembroGrupo {
+  uid: string
+  nombre: string  // denormalizado, evita N+1 reads al listar el grupo
+}
+
+export interface GrupoPersonalizado {
+  id: string           // == codigo
+  codigo: string
+  jefeId: string
+  personalId: string   // 'pareja' | 'familia' | 'reducido'
+  personasMax: number
+  miembros: MiembroGrupo[]
+  // Espejo plano de miembros[].uid — Firestore rules no puede hacer un
+  // .map() sobre `miembros` para chequear pertenencia, así que se
+  // mantiene este array en paralelo solo para el `allow read` de la regla.
+  miembrosIds: string[]
+  suscripcionId: string
+  fechaVencimiento: number
+  estado: 'activo' | 'vencido'
+  creadoEn: number
+  actualizadoEn: number
 }
 
 // ── transacciones/{transaccionId} ────────────────────────────

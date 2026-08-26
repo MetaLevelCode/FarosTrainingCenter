@@ -32,3 +32,44 @@ export async function comprimirImagen(
   if (!blob) throw new Error('No se pudo comprimir la imagen.')
   return blob
 }
+
+/**
+ * Recorta una imagen basándose en las coordenadas (x, y, width, height) 
+ * provenientes de react-easy-crop. Devuelve un Blob.
+ */
+export async function recortarImagen(
+  imageSrc: string,
+  pixelCrop: { x: number; y: number; width: number; height: number },
+  { calidad = 0.85 }: { calidad?: number } = {},
+): Promise<Blob> {
+  const image = new Image()
+  image.src = imageSrc
+  await new Promise((resolve, reject) => {
+    image.onload = resolve
+    image.onerror = reject
+  })
+
+  const canvas = document.createElement('canvas')
+  canvas.width = pixelCrop.width
+  canvas.height = pixelCrop.height
+  const ctx = canvas.getContext('2d')
+
+  if (!ctx) throw new Error('No se pudo crear canvas para recortar')
+
+  ctx.drawImage(
+    image,
+    pixelCrop.x,
+    pixelCrop.y,
+    pixelCrop.width,
+    pixelCrop.height,
+    0,
+    0,
+    pixelCrop.width,
+    pixelCrop.height
+  )
+
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', calidad))
+  if (!blob) throw new Error('No se pudo recortar la imagen')
+  
+  return blob
+}

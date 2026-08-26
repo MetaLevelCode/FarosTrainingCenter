@@ -72,10 +72,26 @@ export default function RegistroPage() {
   const [sede, setSede] = useState('')
   const [sedes, setSedes] = useState<Sede[]>([])
 
+  const [hasPendingPlan, setHasPendingPlan] = useState(false)
+  const [esPlanSinSede, setEsPlanSinSede] = useState(false)
+
   useEffect(() => {
     getSedes(true)
       .then((s) => setSedes(s.length > 0 ? s : SEDES_FALLBACK))
       .catch(() => setSedes(SEDES_FALLBACK))
+      
+    // Leer si viene de armar un plan para condicionar campos y redirección
+    try {
+      const raw = localStorage.getItem('faros-plan-pendiente')
+      if (raw) {
+        setHasPendingPlan(true)
+        const plan = JSON.parse(raw)
+        // Si el plan es virtual, personalizado o de conjuntos, la sede no es obligatoria
+        if (['virtual', 'personal', 'conjuntos'].includes(plan.tipo)) {
+          setEsPlanSinSede(true)
+        }
+      }
+    } catch {}
   }, [])
 
   // Salud
@@ -108,7 +124,7 @@ export default function RegistroPage() {
     if (!cedula.trim()) e.cedula = 'Campo obligatorio.'
     if (!telefono.trim()) e.telefono = 'Campo obligatorio.'
     if (!telefonoEmergencia.trim()) e.telefonoEmergencia = 'Campo obligatorio.'
-    if (!sede) e.sede = 'Selecciona tu sede.'
+    if (!esPlanSinSede && !sede) e.sede = 'Selecciona tu sede.'
     if (!eps.trim()) e.eps = 'Campo obligatorio.'
     if (!email.includes('@')) e.email = 'Correo inválido.'
     if (password.length < 6) e.password = 'Mínimo 6 caracteres.'
@@ -162,7 +178,11 @@ export default function RegistroPage() {
     setLoading(false)
 
     if (res.ok) {
-      router.replace('/dashboard')
+      if (hasPendingPlan) {
+        router.replace('/dashboard/planes')
+      } else {
+        router.replace('/dashboard')
+      }
     } else {
       setError(res.error ?? 'No se pudo crear la cuenta.')
     }
@@ -277,20 +297,22 @@ export default function RegistroPage() {
               </div>
             </div>
 
-            <div>
-              <label className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/70 mb-2 block">Sede *</label>
-              <select
-                value={sede}
-                onChange={(e) => setSede(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-[rgba(230,255,0,0.5)] focus:outline-none transition-colors"
-              >
-                <option value="" className="bg-[#0a0a0a]">Selecciona tu sede</option>
-                {sedes.map((s) => (
-                  <option key={s.id} value={s.codigo} className="bg-[#0a0a0a]">{s.nombre}</option>
-                ))}
-              </select>
-              <FieldError msg={errores.sede} />
-            </div>
+            {!esPlanSinSede && (
+              <div>
+                <label className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/70 mb-2 block">Sede *</label>
+                <select
+                  value={sede}
+                  onChange={(e) => setSede(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-[rgba(230,255,0,0.5)] focus:outline-none transition-colors"
+                >
+                  <option value="" className="bg-[#0a0a0a]">Selecciona tu sede</option>
+                  {sedes.map((s) => (
+                    <option key={s.id} value={s.codigo} className="bg-[#0a0a0a]">{s.nombre}</option>
+                  ))}
+                </select>
+                <FieldError msg={errores.sede} />
+              </div>
+            )}
           </div>
 
           {/* ── Salud ── */}

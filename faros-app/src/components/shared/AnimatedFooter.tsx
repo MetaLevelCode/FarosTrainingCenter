@@ -65,9 +65,9 @@ const SECCIONES: Seccion[] = [
   {
     titulo: 'Síguenos',
     enlaces: [
-      { titulo: 'Instagram', href: '#', icono: Instagram },
-      { titulo: 'Facebook', href: '#', icono: Facebook },
-      { titulo: 'WhatsApp', href: '#', icono: WhatsApp },
+      { titulo: 'Instagram', href: 'https://instagram.com/farostraining', icono: Instagram },
+      { titulo: 'Facebook', href: 'https://facebook.com/farostraining', icono: Facebook },
+      { titulo: 'WhatsApp', href: 'https://wa.me/573000000000', icono: WhatsApp },
     ],
   },
 ]

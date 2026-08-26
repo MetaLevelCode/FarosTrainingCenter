@@ -237,6 +237,20 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // ── grupos_personalizados ────────────────────────────────
+    // Modalidades personales "por persona" (pareja/familia/reducido):
+    // grupo compartido con código — ver comentario en lib/types.ts.
+    // Toda escritura pasa por aprobarTransaccion() (client SDK del admin,
+    // cumple isAdmin()) o por Admin SDK en /api/grupos-personalizados/unirse
+    // (bypassea reglas) — mismo criterio que solicitudes_personalizadas.
+
+    match /grupos_personalizados/{codigo} {
+      allow read: if isAdmin() || isProfesor()
+        || (isAuthenticated() && request.auth.uid in resource.data.miembrosIds);
+
+      allow write: if isAdmin();
+    }
+
     // ── clases ───────────────────────────────────────────────
 
     match /clases/{claseId} {
