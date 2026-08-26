@@ -8,6 +8,7 @@
 
 import { useState, useRef, useEffect, ReactNode } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
+import Link from 'next/link'
 import { motion, AnimatePresence } from 'motion/react'
 import { useAuth } from '@/contexts/AuthContext'
 import { WaterBackground } from '@/components/shared/WaterBackground'
@@ -124,30 +125,33 @@ export function AppShell({ title, children, hideFab = false }: { title: string; 
       >
         <div className="h-20 px-5 md:px-10 flex items-center justify-between">
           <div className="flex items-center gap-6">
-            <FarosWordmark size="sm" />
+            <Link href={user?.rol === 'admin' ? '/admin' : user?.rol === 'profesor' ? '/portal' : '/dashboard'}>
+              <FarosWordmark size="sm" />
+            </Link>
             <span className="hidden md:block w-px h-6 bg-white/10" />
             <h1 className="hidden md:block font-display text-headline-md font-extrabold text-white uppercase tracking-tighter">
               {title}
             </h1>
           </div>
           <div className="flex items-center gap-4">
-            {/* min-h/w 44px: área táctil mínima (antes 37×18 → fallaba el toque) */}
             <button
               onClick={() => signOut()}
               className="label-caps text-[10px] min-h-[44px] min-w-[44px] px-3 flex items-center justify-center rounded-xl text-[var(--color-on-surface-variant)] hover:text-[var(--color-danger-crimson)] hover:bg-white/5 active:scale-[0.96] transition-[color,background-color,transform] duration-200"
             >
               Salir
             </button>
-            <div className="relative w-9 h-9 rounded-full overflow-hidden bg-[rgba(230,255,0,0.1)] border border-[rgba(230,255,0,0.25)] flex items-center justify-center">
-              {user?.foto_perfil ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={user.foto_perfil} alt="" className="absolute inset-0 w-full h-full object-cover" />
-              ) : (
-                <span className="font-display text-xs font-black text-[var(--color-primary-fixed)]">
-                  {user?.nombres?.charAt(0) ?? 'A'}
-                </span>
-              )}
-            </div>
+            <Link href={user?.rol === 'profesor' ? '/portal/perfil' : user?.rol === 'estudiante' ? '/dashboard/perfil' : '#'}>
+              <div className="relative w-9 h-9 rounded-full overflow-hidden bg-[rgba(230,255,0,0.1)] border border-[rgba(230,255,0,0.25)] flex items-center justify-center hover:scale-105 transition-transform duration-200">
+                {user?.foto_perfil ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={user.foto_perfil} alt="" className="absolute inset-0 w-full h-full object-cover" />
+                ) : (
+                  <span className="font-display text-xs font-black text-[var(--color-primary-fixed)]">
+                    {user?.nombres?.charAt(0) ?? 'A'}
+                  </span>
+                )}
+              </div>
+            </Link>
           </div>
         </div>
       </header>

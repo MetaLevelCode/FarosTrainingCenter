@@ -148,8 +148,7 @@ export function InstallPrompt() {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-white leading-tight">Instala Faros en tu iPhone</p>
                 <p className="text-[11px] text-[var(--color-on-surface-variant)] leading-snug mt-1.5">
-                  Toca <span className="material-symbols-outlined text-[13px] align-text-bottom text-white">ios_share</span> abajo
-                  y luego <span className="font-bold text-white">&ldquo;Agregar a inicio&rdquo;</span>.
+                  Toca el botón Compartir (<span className="material-symbols-outlined text-[13px] align-text-bottom text-white mx-0.5">ios_share</span>) en la barra inferior, desliza hacia abajo y selecciona <span className="font-bold text-white">&ldquo;Agregar a inicio&rdquo;</span>.
                 </p>
               </div>
               <button

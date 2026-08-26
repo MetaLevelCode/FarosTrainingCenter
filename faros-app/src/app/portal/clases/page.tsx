@@ -13,7 +13,7 @@ import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button } from '@/components/ui'
 import {
   getClasesProfesor, getAsistenciasClase, getUsuarios,
-  registrarAsistencia, updateObservacionesClase,
+  registrarAsistencia, updateObservacionesClase, updateClasePlan,
 } from '@/lib/firestore'
 import { displayName } from '@/lib/types'
 import type { Clase, Asistencia, Usuario } from '@/lib/types'
@@ -57,6 +57,30 @@ export default function ClasesPage() {
   const [observaciones, setObservaciones] = useState<Record<string, string>>({})
   const [guardando, setGuardando] = useState<string | null>(null)
   const [categoriaAbierta, setCategoriaAbierta] = useState<string | null>(null)
+  
+  const [editandoPlan, setEditandoPlan] = useState<string | null>(null)
+  const [bloquesText, setBloquesText] = useState('')
+  const [guardandoPlan, setGuardandoPlan] = useState(false)
+
+  async function guardarPlan(claseId: string) {
+    if (!user) return
+    const bloques = bloquesText.split('\n').map((l) => l.trim()).filter((l) => l.length > 0)
+    if (bloques.length === 0) {
+      alert('Escribe al menos un paso en el plan de clase.')
+      return
+    }
+    setGuardandoPlan(true)
+    try {
+      await updateClasePlan(claseId, bloques)
+      setClases((prev) => prev.map((c) => (c.id === claseId ? { ...c, plan: bloques } : c)))
+      setEditandoPlan(null)
+    } catch (err) {
+      console.error(err)
+      alert('Error guardando el plan')
+    } finally {
+      setGuardandoPlan(false)
+    }
+  }
 
   useEffect(() => {
     if (!user) return
@@ -228,16 +252,51 @@ export default function ClasesPage() {
 
             <div className="p-6">
               {tabActiva === 'plan' && (
-                <ul className="space-y-3">
-                  {(c.plan ?? []).length === 0 ? (
-                    <li className="text-sm text-[var(--color-on-surface-variant)]/50">Sin plan de clase definido.</li>
-                  ) : (c.plan ?? []).map((item, i) => (
-                    <li key={i} className="flex items-start gap-3 text-sm text-[var(--color-on-surface-variant)]/85">
-                      <span className="material-symbols-outlined text-[var(--color-primary-fixed)] text-[17px] mt-0.5 shrink-0">check_circle</span>
-                      {item}
-                    </li>
-                  ))}
-                </ul>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <p className="text-sm text-[var(--color-on-surface-variant)]/60">
+                      {(c.plan ?? []).length > 0 ? 'Plan actual' : 'Sin plan de clase definido.'}
+                    </p>
+                    {editandoPlan !== c.id && (
+                      <button 
+                        onClick={() => {
+                          setEditandoPlan(c.id)
+                          setBloquesText((c.plan ?? []).join('\n'))
+                        }}
+                        className="label-caps text-[9px] text-[var(--color-primary-fixed)] hover:text-white transition-colors"
+                      >
+                        {(c.plan ?? []).length > 0 ? 'Editar plan' : 'Subir plan'}
+                      </button>
+                    )}
+                  </div>
+                  
+                  {editandoPlan === c.id ? (
+                    <div className="space-y-3">
+                      <textarea
+                        value={bloquesText}
+                        onChange={(e) => setBloquesText(e.target.value)}
+                        rows={5}
+                        placeholder={'Un paso por línea:\nCalentamiento: 400 m\n8 × 100 m al 80 %\nVuelta a la calma: 200 m'}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/25 focus:border-[rgba(230,255,0,0.5)] focus:outline-none transition-colors resize-none"
+                      />
+                      <div className="flex gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => setEditandoPlan(null)}>Cancelar</Button>
+                        <Button size="sm" loading={guardandoPlan} onClick={() => guardarPlan(c.id)}>Guardar plan</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    (c.plan ?? []).length > 0 && (
+                      <ul className="space-y-3">
+                        {(c.plan ?? []).map((item, i) => (
+                          <li key={i} className="flex items-start gap-3 text-sm text-[var(--color-on-surface-variant)]/85">
+                            <span className="material-symbols-outlined text-[var(--color-primary-fixed)] text-[17px] mt-0.5 shrink-0">check_circle</span>
+                            {item}
+                          </li>
+                        ))}
+                      </ul>
+                    )
+                  )}
+                </div>
               )}
 
               {tabActiva === 'asistencia' && (
