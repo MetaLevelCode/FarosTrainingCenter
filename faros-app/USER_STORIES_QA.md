@@ -327,15 +327,36 @@ Pasos:
 
 ---
 
-### E7 — Wizard: Vacaciones deportivas
-**Como** padre/alumno, **quiero** inscribir niños al programa de vacaciones,
-**para** el receso escolar.
+### E7 — Wizard: Vacaciones deportivas (Adquirir o Unirse, como los planes grupales)
+**Como** padre/alumno, **quiero** inscribir niños al programa de vacaciones
+— comprando yo o uniéndome gratis con el código de otro padre —, **para**
+que varias familias puedan compartir un mismo cupo grupal, igual que
+Pareja/Familia/Grupo reducido en Personalizado.
 
-Pasos:
-1. Elegir "Vacaciones deportivas"
+Pasos, Adquirir:
+1. Elegir "Vacaciones deportivas" → aparece el paso "¿Adquirir el plan o
+   unirte a uno?" (siempre, no solo si hay más de 1 niño) → "Adquirir plan"
 2. Probar el contador de niños (1 a 10) → precio = tarifa × niños, en vivo
 3. Confirmar que el resumen dice "Programa de 2 semanas", no una frecuencia
    semanal (no aplica acá)
+4. Al aprobar el pago (admin), el comprador debe ver la tarjeta "Tu grupo"
+   con un código de 6 caracteres — el badge de cupos debe decir
+   "N / total niños", no personas
+
+Pasos, Unirse (otra cuenta, sin plan activo):
+5. Wizard → "Vacaciones deportivas" → "Unirme a Plan" → pegar el código →
+   debe pedir un contador aparte "¿Cuántos de tus niños vas a inscribir?"
+   (1 a 10) ANTES del botón "Entrar con código" — a diferencia de
+   Personalizado, acá sí hace falta este dato porque un miembro puede
+   aportar más de un niño
+6. Unirse con más niños de los que quedan de cupo (ej. grupo con 1 cupo
+   libre, pedir 2) → debe rechazarlo con el mensaje de cupos restantes,
+   no un genérico "grupo lleno"
+7. Verificar que la tarjeta "Tu grupo" lista a cada miembro con su cantidad
+   de niños (ej. "María González · 2 niños"), y que el total del badge
+   suma los niños de todos, no la cantidad de miembros
+8. Unirse con una cuenta que ya tiene un plan activo propio → debe
+   rechazarlo (409 "Ya tienes un plan activo"), igual que en Personalizado
 
 **Estado:** 🔲 Pendiente
 

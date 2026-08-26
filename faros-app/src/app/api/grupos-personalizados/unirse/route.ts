@@ -1,13 +1,20 @@
 // ============================================================
 // POST /api/grupos-personalizados/unirse
-// Modalidades personales "por persona" (pareja/familia/reducido): quien
-// compra el plan queda como jefe con un código de 6 caracteres — esta
-// ruta deja que hasta `personasMax` personas se unan GRATIS con ese
-// código (el jefe ya pagó por todo el grupo). Si el jefe ya tiene una
-// franja aceptada con clases futuras generadas, se agrega al nuevo
-// miembro a esas clases (best-effort, fuera de la transacción — mismo
-// patrón que extenderClasesPersonalizadas en lib/firestore.ts).
-// Body: { codigo }
+// Dos casos comparten esta ruta (ver GrupoPersonalizado en lib/types.ts):
+//  - Personalizado "por persona" (pareja/familia/reducido): quien compra
+//    el plan queda como jefe con un código de 6 caracteres — esta ruta
+//    deja que hasta `personasMax` PERSONAS se unan GRATIS con ese código
+//    (el jefe ya pagó por todo el grupo). Cada miembro ocupa 1 cupo.
+//  - Vacaciones: el jefe eligió cuántos NIÑOS en total tiene el grupo
+//    (`personasMax`); cada miembro que se une aporta su propia cantidad
+//    de niños (body.ninos), no necesariamente 1 — así que el cupo se
+//    calcula sumando los niños de todos los miembros, no contándolos.
+// Si el jefe (Personalizado) ya tiene una franja aceptada con clases
+// futuras generadas, se agrega al nuevo miembro a esas clases (best-effort,
+// fuera de la transacción — mismo patrón que extenderClasesPersonalizadas
+// en lib/firestore.ts). Vacaciones no tiene ese concepto de franja.
+// Body: { codigo, ninos? }  — ninos solo aplica/es obligatorio si el
+// grupo es de tipo 'vacaciones'.
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -19,6 +26,10 @@ import { log } from '@/lib/logger'
 export const runtime = 'nodejs'
 
 const CODIGO_RE = /^[A-Z0-9]{6}$/
+
+function cuposOcupados(miembros: Array<{ ninos?: number }>): number {
+  return miembros.reduce((s, m) => s + (m.ninos ?? 1), 0)
+}
 
 export async function POST(req: NextRequest) {
   const ip = clientIp(req)
@@ -36,7 +47,7 @@ export async function POST(req: NextRequest) {
     const uid = decoded.uid
     const db = getAdminDb()
 
-    const body = await req.json().catch(() => null) as { codigo?: string } | null
+    const body = await req.json().catch(() => null) as { codigo?: string; ninos?: number } | null
     const codigo = body?.codigo?.trim().toUpperCase()
     if (!codigo || !CODIGO_RE.test(codigo)) {
       return NextResponse.json({ error: 'Código inválido' }, { status: 400 })
@@ -63,12 +74,28 @@ export async function POST(req: NextRequest) {
         return { error: 'Este código ya venció', status: 410 }
       }
 
-      const miembros: Array<{ uid: string; nombre: string }> = grupo.miembros ?? []
+      const esVacaciones = grupo.tipo === 'vacaciones'
+      const miembros: Array<{ uid: string; nombre: string; ninos?: number }> = grupo.miembros ?? []
       if (miembros.some((m) => m.uid === uid)) {
         return { error: 'Ya perteneces a este grupo', status: 409 }
       }
-      if (miembros.length >= grupo.personasMax) {
-        return { error: 'Este grupo ya está lleno', status: 409 }
+
+      let ninosSolicitados = 1
+      if (esVacaciones) {
+        ninosSolicitados = Math.trunc(Number(body?.ninos))
+        if (!Number.isFinite(ninosSolicitados) || ninosSolicitados < 1 || ninosSolicitados > 10) {
+          return { error: 'Indica cuántos niños vas a inscribir (1-10)', status: 400 }
+        }
+      }
+
+      const cuposLibres = grupo.personasMax - cuposOcupados(miembros)
+      if (ninosSolicitados > cuposLibres) {
+        return {
+          error: esVacaciones
+            ? `Solo quedan ${cuposLibres} cupo${cuposLibres === 1 ? '' : 's'} disponible${cuposLibres === 1 ? '' : 's'} en este grupo`
+            : 'Este grupo ya está lleno',
+          status: 409,
+        }
       }
 
       const jefeSuscSnap = await tx.get(db.collection('suscripciones').doc(grupo.suscripcionId))
@@ -77,8 +104,12 @@ export async function POST(req: NextRequest) {
       const nombre = `${usuario.nombres ?? ''} ${usuario.apellidos ?? ''}`.trim() || 'Alumno'
       const now = Date.now()
 
+      const nuevoMiembro = esVacaciones
+        ? { uid, nombre, ninos: ninosSolicitados }
+        : { uid, nombre }
+
       tx.update(grupoRef, {
-        miembros: [...miembros, { uid, nombre }],
+        miembros: [...miembros, nuevoMiembro],
         miembrosIds: FieldValue.arrayUnion(uid),
         actualizadoEn: now,
       })
@@ -89,7 +120,7 @@ export async function POST(req: NextRequest) {
         suscripcionId: suscRef.id,
         usuarioId: uid,
         planId: jefeSusc?.planId ?? '',
-        nombre_plan: jefeSusc?.nombre_plan ?? 'Plan personalizado',
+        nombre_plan: jefeSusc?.nombre_plan ?? (esVacaciones ? 'Vacaciones deportivas' : 'Plan personalizado'),
         sesiones_compradas: sesionesCompradas,
         sesiones_restantes: sesionesCompradas,
         fecha_compra: now,
@@ -105,21 +136,22 @@ export async function POST(req: NextRequest) {
         suscripcionActiva: {
           suscripcionId: suscRef.id,
           planId: jefeSusc?.planId ?? '',
-          nombrePlan: jefeSusc?.nombre_plan ?? 'Plan personalizado',
+          nombrePlan: jefeSusc?.nombre_plan ?? (esVacaciones ? 'Vacaciones deportivas' : 'Plan personalizado'),
           sesionesRestantes: sesionesCompradas,
           sesionesCompradas,
           fechaVencimiento: grupo.fechaVencimiento,
           estado: 'activa',
-          tipo: 'personal',
-          personalId: grupo.personalId,
-          personas: grupo.personasMax,
-          week: jefeSusc?.seleccion?.week ?? null,
+          tipo: esVacaciones ? 'vacaciones' : 'personal',
+          personalId: esVacaciones ? null : grupo.personalId,
+          personas: esVacaciones ? null : grupo.personasMax,
+          ninos: esVacaciones ? ninosSolicitados : null,
+          week: esVacaciones ? null : (jefeSusc?.seleccion?.week ?? null),
           grupoId: codigo,
           esJefeGrupo: false,
         },
       })
 
-      return { ok: true as const }
+      return { ok: true as const, esVacaciones }
     })
 
     if ('error' in resultado) {
@@ -129,12 +161,15 @@ export async function POST(req: NextRequest) {
 
     log.info({ scope: 'grupos_personalizados', event: 'unido', ip, uid, codigo })
 
-    // Best-effort: si el jefe ya tiene franja aceptada con clases futuras
-    // generadas, sumar al nuevo miembro ahí también. No debe tumbar la
-    // respuesta de éxito si falla — el join ya se hizo.
-    inscribirEnClasesFuturas(db, codigo, uid).catch((err) => {
-      console.error('[unirse] no se pudo inscribir en clases futuras', err)
-    })
+    // Best-effort, solo Personalizado: si el jefe ya tiene franja aceptada
+    // con clases futuras generadas, sumar al nuevo miembro ahí también.
+    // Vacaciones no agenda franjas. No debe tumbar la respuesta de éxito
+    // si falla — el join ya se hizo.
+    if (!resultado.esVacaciones) {
+      inscribirEnClasesFuturas(db, codigo, uid).catch((err) => {
+        console.error('[unirse] no se pudo inscribir en clases futuras', err)
+      })
+    }
 
     return NextResponse.json({ ok: true })
   } catch (err: any) {

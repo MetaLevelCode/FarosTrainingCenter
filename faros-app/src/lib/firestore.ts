@@ -189,19 +189,21 @@ export async function aprobarTransaccion(
       }
     }
 
-    // Modalidades personales "por persona" (pareja/familia/reducido)
-    // comparten un grupo con código — ver grupos_personalizados/{codigo}.
-    // Toda lectura va ANTES de cualquier escritura (regla de las
-    // transacciones de Firestore), por eso este bloque vive acá.
+    // Modalidades personales "por persona" (pareja/familia/reducido) y
+    // Vacaciones comparten un grupo con código — ver
+    // grupos_personalizados/{codigo}. Toda lectura va ANTES de cualquier
+    // escritura (regla de las transacciones de Firestore), por eso este
+    // bloque vive acá.
     const subPersonal = sel.tipo === 'personal' && sel.personalId
       ? PERSONALES.find((p) => p.id === sel.personalId)
       : null
     const esModalidadGrupal = !!subPersonal?.porPersona && subPersonal.personasMax > 1
+    const esPlanGrupal = esModalidadGrupal || sel.tipo === 'vacaciones'
 
     let grupoRef: ReturnType<typeof doc> | null = null
     let grupoEsNuevo = false
 
-    if (esModalidadGrupal) {
+    if (esPlanGrupal) {
       const usuarioSnap = await tx.get(doc(db, 'usuarios', t.usuarioId))
       const usuarioActual = usuarioSnap.exists() ? usuarioSnap.data() : null
       const grupoIdActual = usuarioActual?.suscripcionActiva?.esJefeGrupo
@@ -250,15 +252,23 @@ export async function aprobarTransaccion(
       creadoEn: now,
     })
 
-    // 1b. Crear o extender el grupo compartido (pareja/familia/reducido)
-    if (esModalidadGrupal && grupoRef) {
+    // 1b. Crear o extender el grupo compartido (pareja/familia/reducido, o Vacaciones)
+    const personasMaxGrupo = sel.tipo === 'vacaciones' ? sel.ninos : sel.personas
+    if (esPlanGrupal && grupoRef) {
       if (grupoEsNuevo) {
         tx.set(grupoRef, {
           codigo: grupoRef.id,
           jefeId: t.usuarioId,
-          personalId: sel.personalId,
-          personasMax: sel.personas,
-          miembros: [{ uid: t.usuarioId, nombre: t.nombre_usuario ?? '' }],
+          tipo: sel.tipo === 'vacaciones' ? 'vacaciones' : 'personal',
+          personalId: sel.tipo === 'personal' ? sel.personalId : null,
+          personasMax: personasMaxGrupo,
+          // Firestore (SDK cliente) rechaza `undefined` explícito — se arma
+          // el objeto condicionalmente en vez de poner `ninos: undefined`.
+          miembros: [
+            sel.tipo === 'vacaciones'
+              ? { uid: t.usuarioId, nombre: t.nombre_usuario ?? '', ninos: sel.ninos }
+              : { uid: t.usuarioId, nombre: t.nombre_usuario ?? '' },
+          ],
           miembrosIds: [t.usuarioId],
           suscripcionId: suscRef.id,
           fechaVencimiento,
@@ -269,8 +279,8 @@ export async function aprobarTransaccion(
       } else {
         // Renovación: se extiende el mismo grupo sin tocar `miembros`.
         tx.update(grupoRef, {
-          personalId: sel.personalId,
-          personasMax: sel.personas,
+          personalId: sel.tipo === 'personal' ? sel.personalId : null,
+          personasMax: personasMaxGrupo,
           suscripcionId: suscRef.id,
           fechaVencimiento,
           estado: 'activo',
@@ -304,8 +314,9 @@ export async function aprobarTransaccion(
         personalId: sel.tipo === 'personal' ? sel.personalId : null,
         personas: sel.tipo === 'personal' ? sel.personas : null,
         week: sel.tipo === 'personal' ? sel.week : null,
+        ninos: sel.tipo === 'vacaciones' ? sel.ninos : null,
         grupoId: grupoRef?.id ?? null,
-        esJefeGrupo: esModalidadGrupal,
+        esJefeGrupo: esPlanGrupal,
       },
     })
 

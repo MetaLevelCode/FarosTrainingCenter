@@ -24,11 +24,16 @@ export interface SuscripcionActiva {
   // Frecuencia semanal del plan (1/2/3 veces por semana) — determina
   // cuántas franjas (SolicitudPersonalizada.franjas) debe elegir el alumno.
   week?: number
-  // Modalidades personales "por persona" (pareja/familia/reducido) comparten
-  // un mismo grupo — ver grupos_personalizados/{grupoId}. esJefeGrupo marca
-  // a quien compró (único que puede elegir la franja horaria del grupo).
+  // Modalidades personales "por persona" (pareja/familia/reducido) y
+  // Vacaciones comparten un mismo grupo — ver grupos_personalizados/{grupoId}.
+  // esJefeGrupo marca a quien compró (único que puede elegir la franja
+  // horaria del grupo, en el caso de Personalizado).
   grupoId?: string | null
   esJefeGrupo?: boolean
+  // Vacaciones: cuántos niños de ESTA cuenta (jefe o miembro) cubre el
+  // grupo — a diferencia de `personas`, cada miembro puede aportar una
+  // cantidad distinta (ver MiembroGrupo.ninos).
+  ninos?: number
 }
 
 // ── Clases personalizadas (1-a-1, pareja, familia, grupo reducido) ──
@@ -171,24 +176,33 @@ export interface Suscripcion {
 }
 
 // ── grupos_personalizados/{codigo} ───────────────────────────
-// Modalidades personales "por persona" (pareja/familia/reducido): quien
-// compra queda como jefe con un código de 6 caracteres para compartir;
-// hasta `personasMax` personas se unen gratis con ese código (ver
-// POST /api/grupos-personalizados/unirse) y quedan inscritas juntas en
-// las Clase reales que genere la solicitud del jefe (ver
-// /api/personalizadas/[id]/aceptar). El ID del documento ES el código.
+// Dos casos usan este mismo esquema (`tipo` los distingue):
+//  - Personalizado "por persona" (pareja/familia/reducido): quien compra
+//    queda como jefe con un código de 6 caracteres para compartir; hasta
+//    `personasMax` PERSONAS se unen gratis con ese código (ver
+//    POST /api/grupos-personalizados/unirse) y quedan inscritas juntas en
+//    las Clase reales que genere la solicitud del jefe (ver
+//    /api/personalizadas/[id]/aceptar). Cada miembro ocupa 1 cupo.
+//  - Vacaciones: quien compra elige cuántos NIÑOS en total va a tener el
+//    grupo (`personasMax`); cada miembro que se une con el código aporta
+//    su propia cantidad de niños (`MiembroGrupo.ninos`), no necesariamente 1.
+// El ID del documento ES el código.
 
 export interface MiembroGrupo {
   uid: string
   nombre: string  // denormalizado, evita N+1 reads al listar el grupo
+  // Solo cuando el grupo es de Vacaciones — cuántos niños de este miembro
+  // ocupan cupo. Ausente/1 para grupos de Personalizado (1 persona = 1 cupo).
+  ninos?: number
 }
 
 export interface GrupoPersonalizado {
   id: string           // == codigo
   codigo: string
   jefeId: string
-  personalId: string   // 'pareja' | 'familia' | 'reducido'
-  personasMax: number
+  tipo: 'personal' | 'vacaciones'
+  personalId?: string | null   // 'pareja' | 'familia' | 'reducido' — solo si tipo === 'personal'
+  personasMax: number          // personas (Personalizado) o niños (Vacaciones) máximos del grupo
   miembros: MiembroGrupo[]
   // Espejo plano de miembros[].uid — Firestore rules no puede hacer un
   // .map() sobre `miembros` para chequear pertenencia, así que se

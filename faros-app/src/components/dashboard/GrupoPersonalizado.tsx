@@ -1,10 +1,11 @@
 'use client'
 
 // ============================================================
-// FAROS — Grupo de un plan personalizado compartido
-// (pareja/familia/reducido). Muestra el código para invitar a los
-// demás (solo al jefe) y la lista de quiénes ya están inscritos —
-// visible para cualquier miembro, no solo el jefe.
+// FAROS — Grupo compartido con código: Personalizado (pareja/familia/
+// reducido) o Vacaciones. Muestra el código para invitar a los demás
+// (solo al jefe) y la lista de quiénes ya están inscritos — visible
+// para cualquier miembro, no solo el jefe. En Vacaciones el cupo se
+// mide en niños (cada miembro puede aportar más de uno), no en personas.
 // ============================================================
 
 import { useEffect, useState } from 'react'
@@ -56,7 +57,12 @@ export function GrupoPersonalizado({ grupoId, esJefe }: { grupoId: string; esJef
   }
   if (!grupo) return null
 
-  const cuposLibres = Math.max(0, grupo.personasMax - grupo.miembros.length)
+  const esVacaciones = grupo.tipo === 'vacaciones'
+  const unidad = esVacaciones ? 'niño' : 'persona'
+  const cuposOcupados = esVacaciones
+    ? grupo.miembros.reduce((s, m) => s + (m.ninos ?? 1), 0)
+    : grupo.miembros.length
+  const cuposLibres = Math.max(0, grupo.personasMax - cuposOcupados)
 
   return (
     <Card>
@@ -64,7 +70,7 @@ export function GrupoPersonalizado({ grupoId, esJefe }: { grupoId: string; esJef
         <h3 className="font-display text-lg font-extrabold text-white uppercase tracking-tight">
           Tu grupo
         </h3>
-        <Badge variant="default">{grupo.miembros.length} / {grupo.personasMax}</Badge>
+        <Badge variant="default">{cuposOcupados} / {grupo.personasMax} {esVacaciones ? 'niños' : ''}</Badge>
       </div>
 
       {esJefe && (
@@ -88,7 +94,7 @@ export function GrupoPersonalizado({ grupoId, esJefe }: { grupoId: string; esJef
           </div>
           <p className="text-xs text-[var(--color-on-surface-variant)]/50 mt-2">
             {cuposLibres > 0
-              ? `Comparte este código para que se unan hasta ${cuposLibres} persona${cuposLibres === 1 ? '' : 's'} más — es gratis, ya está incluido en tu plan.`
+              ? `Comparte este código para que se unan hasta ${cuposLibres} ${unidad}${cuposLibres === 1 ? '' : 's'} más — es gratis, ya está incluido en tu plan.`
               : 'Tu grupo ya está completo.'}
           </p>
         </div>
@@ -97,7 +103,14 @@ export function GrupoPersonalizado({ grupoId, esJefe }: { grupoId: string; esJef
       <div className="space-y-2">
         {grupo.miembros.map((m) => (
           <div key={m.uid} className="flex items-center justify-between gap-3 px-1 py-1.5">
-            <span className="text-sm text-white">{m.nombre}</span>
+            <span className="text-sm text-white">
+              {m.nombre}
+              {esVacaciones && (
+                <span className="text-[var(--color-on-surface-variant)]/50">
+                  {' '}· {m.ninos ?? 1} {(m.ninos ?? 1) === 1 ? 'niño' : 'niños'}
+                </span>
+              )}
+            </span>
             {m.uid === grupo.jefeId && <Badge variant="primary">Jefe</Badge>}
           </div>
         ))}

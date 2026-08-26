@@ -35,13 +35,18 @@ const EASE = [0.22, 1, 0.36, 1] as const
 type StepKey = 'tipo' | 'grupo' | 'personal' | 'accion' | 'combinacion' | 'conjunto' | 'frecuencia' | 'ninos' | 'virtual' | 'resumen'
 export type AccionGrupo = 'adquirir' | 'unirse' | null
 
-// Pareja/Familia/Grupo reducido: hasta 5 personas comparten un plan con
-// código — el paso "accion" (Adquirir/Unirse) decide el resto del flujo
-// ANTES de preguntar cuántas personas (no tiene sentido pedir cantidad si
-// el alumno se va a unir a un grupo que ya existe).
+// Pareja/Familia/Grupo reducido (personas) y Vacaciones (niños) comparten
+// un plan con código — el paso "accion" (Adquirir/Unirse) decide el resto
+// del flujo ANTES de preguntar cuántas personas/niños (no tiene sentido
+// pedir cantidad si el alumno se va a unir a un grupo que ya existe).
 function esModalidadGrupal(personalId: string | null): boolean {
   const sub = PERSONALES.find((p) => p.id === personalId)
   return !!sub?.porPersona && sub.personasMax > 1
+}
+
+/** Cualquier tipo de plan que comparte grupo con código (ver GrupoPersonalizado). */
+function esPlanGrupal(tipo: TipoPlan | null, personalId: string | null): boolean {
+  return (tipo === 'personal' && esModalidadGrupal(personalId)) || tipo === 'vacaciones'
 }
 
 function stepsFor(tipo: TipoPlan | null, personalId: string | null, accionGrupo: AccionGrupo): StepKey[] {
@@ -55,7 +60,13 @@ function stepsFor(tipo: TipoPlan | null, personalId: string | null, accionGrupo:
       return ['tipo', 'personal', ...accion, 'combinacion', 'frecuencia', 'resumen']
     }
     case 'conjunto': return ['tipo', 'conjunto', 'frecuencia', 'resumen']
-    case 'vacaciones': return ['tipo', 'ninos', 'resumen']
+    case 'vacaciones': {
+      // Unirse no pide cuántos niños en TOTAL tiene el grupo (eso ya lo
+      // fijó el jefe) — el conteo de sus propios niños lo pide el paso
+      // "accion" mismo (ver el bloque de unirse más abajo).
+      if (accionGrupo === 'unirse') return ['tipo', 'accion']
+      return ['tipo', 'accion', 'ninos', 'resumen']
+    }
     case 'virtual': return ['tipo', 'virtual', 'resumen']
     default: return ['tipo', 'grupo', 'frecuencia', 'resumen']
   }
@@ -183,6 +194,7 @@ function DatoRow({ icon, label, value }: { icon: string; label: string; value: s
 
 const PENDIENTE_KEY = 'faros-plan-pendiente'
 const PENDIENTE_UNIRSE_KEY = 'faros-plan-pendiente-codigo'
+const PENDIENTE_UNIRSE_NINOS_KEY = 'faros-plan-pendiente-codigo-ninos'
 
 export default function PlanesFlowPage() {
   // Abierto a invitados: cualquiera puede armar su plan; al final se
@@ -205,6 +217,9 @@ export default function PlanesFlowPage() {
   const [codigoUnirse, setCodigoUnirse] = useState('')
   const [uniendo, setUniendo] = useState(false)
   const [errorUnirse, setErrorUnirse] = useState<string | null>(null)
+  // Vacaciones: al unirse, cada quien indica CUÁNTOS de sus niños inscribe
+  // (a diferencia de Personalizado, donde cada quien que se une ocupa 1 cupo).
+  const [ninosUnirse, setNinosUnirse] = useState(1)
   // Chequeo inicial: si ya existe tx pendiente, bloqueamos el wizard.
   // Sin comprobante → ir al upload. Con comprobante → pantalla "en revisión".
   const [checkingPendiente, setCheckingPendiente] = useState(true)
@@ -317,10 +332,15 @@ export default function PlanesFlowPage() {
       const codigoGuardado = localStorage.getItem(PENDIENTE_UNIRSE_KEY)
       const accion: AccionGrupo = codigoGuardado
         ? 'unirse'
-        : (saved.tipo === 'personal' && esModalidadGrupal(saved.personalId) ? 'adquirir' : null)
+        : (esPlanGrupal(saved.tipo, saved.personalId) ? 'adquirir' : null)
       if (codigoGuardado) {
         localStorage.removeItem(PENDIENTE_UNIRSE_KEY)
         setCodigoUnirse(codigoGuardado)
+        const ninosGuardados = localStorage.getItem(PENDIENTE_UNIRSE_NINOS_KEY)
+        if (ninosGuardados) {
+          localStorage.removeItem(PENDIENTE_UNIRSE_NINOS_KEY)
+          setNinosUnirse(Math.max(1, Number(ninosGuardados) || 1))
+        }
       }
       setAccionGrupo(accion)
       setStepIdx(stepsFor(saved.tipo, saved.personalId, accion).length - 1) // directo al último paso
@@ -403,6 +423,7 @@ export default function PlanesFlowPage() {
       try {
         localStorage.setItem(PENDIENTE_KEY, JSON.stringify(sel))
         localStorage.setItem(PENDIENTE_UNIRSE_KEY, codigo)
+        if (sel.tipo === 'vacaciones') localStorage.setItem(PENDIENTE_UNIRSE_NINOS_KEY, String(ninosUnirse))
       } catch {}
       setNecesitaCuenta(true)
       return
@@ -418,7 +439,9 @@ export default function PlanesFlowPage() {
       const res = await fetch('/api/grupos-personalizados/unirse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ codigo }),
+        body: JSON.stringify(
+          sel.tipo === 'vacaciones' ? { codigo, ninos: ninosUnirse } : { codigo },
+        ),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'No se pudo unir al grupo')
@@ -922,7 +945,8 @@ export default function PlanesFlowPage() {
               </div>
             )}
 
-            {/* PASO: ACCIÓN — Adquirir plan o Unirme a Plan (solo pareja/familia/reducido) */}
+            {/* PASO: ACCIÓN — Adquirir plan o Unirme a Plan (pareja/familia/
+                reducido, o Vacaciones) */}
             {stepKey === 'accion' && !necesitaCuenta && (
               <div className="space-y-6">
                 <ChoiceCard
@@ -930,7 +954,9 @@ export default function PlanesFlowPage() {
                   onClick={() => setAccionGrupo('adquirir')}
                   icon="shopping_bag"
                   title="Adquirir plan"
-                  desc="Lo compras tú y quedas como jefe del grupo, con un código para invitar a los demás."
+                  desc={sel.tipo === 'vacaciones'
+                    ? 'Lo compras tú y quedas como jefe del grupo, con un código para que otros padres inscriban a sus niños.'
+                    : 'Lo compras tú y quedas como jefe del grupo, con un código para invitar a los demás.'}
                 />
                 <ChoiceCard
                   selected={accionGrupo === 'unirse'}
@@ -950,6 +976,20 @@ export default function PlanesFlowPage() {
                       onChange={(e) => setCodigoUnirse(e.target.value.toUpperCase())}
                       autoCapitalize="characters"
                     />
+                    {sel.tipo === 'vacaciones' && (
+                      <div className="pt-2">
+                        <p className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50 mb-4 text-center">
+                          ¿Cuántos de tus niños vas a inscribir?
+                        </p>
+                        <Contador
+                          value={ninosUnirse}
+                          min={1}
+                          max={10}
+                          onChange={setNinosUnirse}
+                          sufijo={ninosUnirse === 1 ? 'niño' : 'niños'}
+                        />
+                      </div>
+                    )}
                     <Button
                       fullWidth size="lg" onClick={unirse}
                       loading={uniendo} disabled={uniendo || !codigoUnirse.trim()}
@@ -1122,7 +1162,7 @@ export default function PlanesFlowPage() {
                   )}
 
                   <Button fullWidth size="lg" onClick={solicitar} loading={solicitando} disabled={solicitando}>
-                    {user ? (pidePersonas ? 'Adquirir plan' : 'Solicitar este plan') : 'Continuar'}
+                    {user ? (esPlanGrupal(sel.tipo, sel.personalId) ? 'Adquirir plan' : 'Solicitar este plan') : 'Continuar'}
                   </Button>
                   {errorSolicitud && (
                     <p className="text-xs text-[var(--color-danger-crimson)] text-center mt-3">{errorSolicitud}</p>
