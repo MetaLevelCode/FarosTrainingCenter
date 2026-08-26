@@ -32,7 +32,7 @@ import {
 const EASE = [0.22, 1, 0.36, 1] as const
 
 // Secuencia de pasos según el tipo de plan elegido.
-type StepKey = 'tipo' | 'grupo' | 'personal' | 'accion' | 'combinacion' | 'frecuencia' | 'ninos' | 'virtual' | 'resumen'
+type StepKey = 'tipo' | 'grupo' | 'personal' | 'accion' | 'combinacion' | 'conjunto' | 'frecuencia' | 'ninos' | 'virtual' | 'resumen'
 export type AccionGrupo = 'adquirir' | 'unirse' | null
 
 // Pareja/Familia/Grupo reducido: hasta 5 personas comparten un plan con
@@ -54,6 +54,7 @@ function stepsFor(tipo: TipoPlan | null, personalId: string | null, accionGrupo:
       const accion: StepKey[] = esModalidadGrupal(personalId) ? ['accion'] : []
       return ['tipo', 'personal', ...accion, 'combinacion', 'frecuencia', 'resumen']
     }
+    case 'conjunto': return ['tipo', 'conjunto', 'frecuencia', 'resumen']
     case 'vacaciones': return ['tipo', 'ninos', 'resumen']
     case 'virtual': return ['tipo', 'virtual', 'resumen']
     default: return ['tipo', 'grupo', 'frecuencia', 'resumen']
@@ -66,6 +67,7 @@ const STEP_TITULO: Record<StepKey, string> = {
   personal: 'Elige tu modalidad',
   accion: '¿Adquirir el plan o unirte a uno?',
   combinacion: '¿Qué combinación quieres entrenar?',
+  conjunto: 'Elige tu grupo de conjuntos',
   frecuencia: '¿Con qué frecuencia entrenas?',
   ninos: '¿Cuántos niños?',
   virtual: 'Elige tu entrenador',
@@ -224,7 +226,16 @@ export default function PlanesFlowPage() {
     // deben caer también al fallback — antes un solo error tumbaba las tres.
     getSedes().then(setSedes).catch(() => {})
     getGrupos().then(setGruposFS).catch(() => {})
-    getTarifas().then((t) => { if (t) setTarifas(t) }).catch(() => {})
+    getTarifas().then((t) => {
+      if (!t) return
+      // El doc de Firestore puede ser de antes de un campo nuevo (ej.
+      // conjuntoPorSesion) — sin este merge, tarifasEfectivas.campo[week]
+      // rompería el wizard hasta que un admin guarde el panel de Tarifas.
+      setTarifas({
+        ...TARIFAS_FALLBACK, ...t,
+        personales: { ...TARIFAS_FALLBACK.personales, ...t.personales },
+      })
+    }).catch(() => {})
     getUsuarios('profesor').then(setProfesores).catch(() => {})
     fetch('/api/grupos/cupos')
       .then((r) => r.json())
@@ -233,6 +244,7 @@ export default function PlanesFlowPage() {
   }, [])
 
   // Grupos a mostrar: los de Firestore si el seed corrió, si no el fallback estático.
+  // Sirve a dos wizards (grupal y conjunto) — se separan por `categoria`.
   const gruposEfectivos = useMemo(() => {
     if (gruposFS.length === 0) return GRUPOS_FALLBACK.map((g) => ({ ...g, lleno: false }))
     return gruposFS.map((g) => {
@@ -243,6 +255,8 @@ export default function PlanesFlowPage() {
         nombre: g.nombre,
         horarios: g.horarios,
         disponible: g.disponible,
+        categoria: g.categoria,
+        combinacionId: g.combinacionId,
         nivel: g.nivel,
         cupos: disponibles > 0 ? `${disponibles} cupo${disponibles === 1 ? '' : 's'} disponible${disponibles === 1 ? '' : 's'}` : 'Sin cupos disponibles',
         coach: g.coach ?? '',
@@ -250,6 +264,15 @@ export default function PlanesFlowPage() {
       }
     })
   }, [gruposFS, inscritosPorGrupo])
+
+  const gruposGrupalEfectivos = useMemo(
+    () => gruposEfectivos.filter((g) => g.categoria !== 'conjunto'),
+    [gruposEfectivos],
+  )
+  const gruposConjuntoEfectivos = useMemo(
+    () => gruposEfectivos.filter((g) => g.categoria === 'conjunto'),
+    [gruposEfectivos],
+  )
 
   useEffect(() => {
     if (!user?.uid) { setCheckingPendiente(false); return }
@@ -316,6 +339,7 @@ export default function PlanesFlowPage() {
     switch (stepKey) {
       case 'tipo': return !!sel.tipo
       case 'grupo': return !!sel.grupoId
+      case 'conjunto': return !!sel.grupoId
       case 'personal': return !!sel.personalId
       case 'accion': return accionGrupo === 'adquirir'
       case 'combinacion': return !!sel.combinacionId
@@ -789,7 +813,7 @@ export default function PlanesFlowPage() {
             {/* PASO: GRUPO */}
             {stepKey === 'grupo' && (
               <div className="space-y-6">
-                {gruposEfectivos.map((g) => (
+                {gruposGrupalEfectivos.map((g) => (
                   <ChoiceCard
                     key={g.id}
                     selected={sel.grupoId === g.id}
@@ -825,6 +849,58 @@ export default function PlanesFlowPage() {
                     }
                   />
                 ))}
+              </div>
+            )}
+
+            {/* PASO: CONJUNTO — grupo con horario fijo por sede, igual que
+                Grupal, pero combina natación con otra disciplina */}
+            {stepKey === 'conjunto' && (
+              <div className="space-y-6">
+                {gruposConjuntoEfectivos.length === 0 ? (
+                  <p className="text-sm text-[var(--color-on-surface-variant)]/50 text-center py-10">
+                    No hay grupos de conjuntos disponibles por ahora.
+                  </p>
+                ) : gruposConjuntoEfectivos.map((g) => {
+                  const combinacion = COMBINACIONES.find((c) => c.id === g.combinacionId)
+                  return (
+                    <ChoiceCard
+                      key={g.id}
+                      selected={sel.grupoId === g.id}
+                      onClick={() => setSel((s) => ({ ...s, grupoId: g.id }))}
+                      disabled={g.lleno}
+                      icon="join_inner"
+                      title={g.nombre}
+                      desc={combinacion ? combinacion.nombre : undefined}
+                      meta={
+                        <div className="flex flex-wrap gap-2 mt-3">
+                          {g.horarios.map((h) => (
+                            <span key={h} className="label-caps text-[9px] px-2.5 py-1 rounded-full bg-white/5 border border-white/10 text-[var(--color-on-surface-variant)]/70">
+                              {h}
+                            </span>
+                          ))}
+                          {!g.disponible && (
+                            <span className="label-caps text-[9px] px-2.5 py-1 rounded-full bg-[rgba(239,68,68,0.12)] text-[var(--color-danger-crimson)]">
+                              Cupos por confirmar
+                            </span>
+                          )}
+                          {g.disponible && g.lleno && (
+                            <span className="label-caps text-[9px] px-2.5 py-1 rounded-full bg-[rgba(239,68,68,0.12)] text-[var(--color-danger-crimson)]">
+                              Grupo lleno
+                            </span>
+                          )}
+                        </div>
+                      }
+                      expand={
+                        <div className="space-y-4">
+                          <DatoRow icon="join_inner" label="Combina" value={combinacion?.nombre ?? '—'} />
+                          <DatoRow icon="stairs" label="Nivel" value={g.nivel} />
+                          <DatoRow icon="event_seat" label="Cupos" value={g.cupos} />
+                          <DatoRow icon="sports" label="Coach" value={g.coach} />
+                        </div>
+                      }
+                    />
+                  )
+                })}
               </div>
             )}
 
@@ -919,7 +995,9 @@ export default function PlanesFlowPage() {
                         title={f.label}
                         desc={sel.tipo === 'grupal'
                           ? `${fmtCOP(tarifasEfectivas.grupoPorSesion[f.week])} por sesión`
-                          : `${f.mes} sesiones al mes`}
+                          : sel.tipo === 'conjunto'
+                            ? `${fmtCOP(tarifasEfectivas.conjuntoPorSesion[f.week])} por sesión`
+                            : `${f.mes} sesiones al mes`}
                         expand={
                           <div className="flex items-center justify-between">
                             <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50">

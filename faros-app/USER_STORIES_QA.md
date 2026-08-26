@@ -297,14 +297,33 @@ Pasos:
 
 ---
 
-### E6 — (fusionado en E5, 2026-08-26)
-"Plan Conjunto" dejó de ser un tipo de plan aparte — Natación+Acuagym,
-Ejercicio funcional y Rumbaterapia ahora son el paso "combinación" dentro
-de Personalizado, cruzado con la modalidad (individual/pareja/familia/
-grupo reducido). Ver E5, pasos 3-4. El admin debe cargar los precios de
-las combinaciones nuevas × modalidad en `/admin/planes` → Tarifas antes de
-que se puedan cobrar (11 combinaciones nacen en "tarifa por confirmar" —
-ver A4).
+### E6 — Wizard: Plan Conjunto (grupo con horario fijo por sede)
+**Como** alumno, **quiero** armar un plan Conjunto eligiendo un grupo con
+horario fijo en una sede, **para** combinar natación con otra disciplina en
+un ambiente grupal — igual que Grupal, pero con una combinación adicional.
+
+Nota (2026-08-26): además de este flujo, las mismas 3 combinaciones
+(Natación+Acuagym, Ejercicio funcional, Rumbaterapia) también están
+disponibles dentro de Personalizado como el paso "combinación" (ver E5,
+pasos 3-4) para quien las quiera 1-a-1 o en grupo cerrado con horario
+libre, en vez de en un grupo fijo por sede. Ambos flujos coexisten.
+
+Pasos:
+1. Elegir "Conjuntos" → debe listar SOLO grupos de categoría Conjunto (ej.
+   "Tulcán II · Natación + Acuagym") — los grupos de natación Grupal
+   (Knowill, Estrellas) NO deben aparecer acá, y viceversa (probar
+   "Grupal" y confirmar que Tulcán II tampoco aparece ahí)
+2. Cada grupo debe mostrar sede, horarios fijos, combinación, nivel,
+   coach y cupos disponibles — igual que el paso de Grupal
+3. Elegir frecuencia (1x/2x/3x, sin tope — a diferencia del viejo Conjuntos
+   que topaba en 2x) → precio por sesión en vivo según `conjuntoPorSesion`
+4. Un grupo lleno debe aparecer deshabilitado ("Grupo lleno"), igual que
+   en Grupal
+
+**Estado:** 🔲 Pendiente
+
+**Notas / bugs:**
+-
 
 ---
 
@@ -723,7 +742,13 @@ Pasos:
 1. `/admin/planes` → tab Sedes: crear una sede, editarla, marcarla
    inactiva/activa
 2. Tab Grupos: crear un grupo asociado a una sede, con horarios; editarlo
-3. Probar "Diagnóstico Firestore" (botón arriba a la derecha) → debe hacer un
+3. Elegir categoría "Conjunto" al crear/editar un grupo → debe aparecer el
+   select de Combinación (obligatorio, sin él no deja guardar) — probar
+   categoría "Grupal" y confirmar que el select de Combinación desaparece
+4. Confirmar que la fila del grupo en la lista muestra el badge de
+   categoría (Grupal/Conjunto) y, si es Conjunto, el nombre de la
+   combinación
+5. Probar "Diagnóstico Firestore" (botón arriba a la derecha) → debe hacer un
    ciclo de escritura+lectura+borrado y mostrar éxito o el error real
 
 **Estado:** 🔲 Pendiente
@@ -733,24 +758,29 @@ Pasos:
 
 ---
 
-### A4 — Admin gestiona Tarifas (los 4 tipos de plan)
+### A4 — Admin gestiona Tarifas (los 5 tipos de plan)
 **Como** admin, **quiero** ajustar los precios de cada tipo de plan,
 **para** mantener el catálogo de precios al día.
 
 Pasos:
 1. Tab Tarifas → editar el precio de Grupal (por sesión, las 3 frecuencias)
-2. Sección Personales: ahora agrupada por combinación (Natación / Ejercicio
+2. Editar el precio de Conjuntos (por sesión, las 3 frecuencias) — mismo
+   layout que Grupal, campo `conjuntoPorSesion` independiente. Confirmar
+   que un doc de Tarifas de antes de este cambio (sin este campo) no rompe
+   la pantalla — debe rellenarse solo con un valor por defecto
+3. Sección Personales: agrupada por combinación (Natación / Ejercicio
    funcional / Rumbaterapia / Natación+Acuagym), con una fila por modalidad
    (individual/pareja/familia/reducido) dentro de cada una — 16 filas en
-   total. Confirmar que al abrir el tab por primera vez tras este cambio
-   aparecen las 12 filas nuevas (antes solo existían las 4 de Natación +
-   Funcional individual) sin que se haya perdido ningún precio ya cargado
-3. Dejar alguna combinación×modalidad nueva en blanco = "por confirmar" y
+   total. Confirmar que al abrir el tab por primera vez tras el cambio que
+   fusionó Conjuntos en Personalizado aparecen las 12 filas nuevas sin que
+   se haya perdido ningún precio ya cargado
+4. Dejar alguna combinación×modalidad nueva en blanco = "por confirmar" y
    verificar que el wizard lo respeta (ver E5, paso 3)
-4. Editar precio de Vacaciones (por niño)
-5. Editar precio de Virtual (mensual fijo)
-6. "Guardar cambios" → volver al wizard del alumno y confirmar que el precio
-   nuevo se refleja ahí
+5. Editar precio de Vacaciones (por niño)
+6. Editar precio de Virtual (mensual fijo)
+7. "Guardar cambios" → volver al wizard del alumno y confirmar que el precio
+   nuevo se refleja ahí, tanto en Personalizado/Grupal/Vacaciones/Virtual
+   como en Conjuntos (ver E6)
 
 **Estado:** 🔲 Pendiente
 

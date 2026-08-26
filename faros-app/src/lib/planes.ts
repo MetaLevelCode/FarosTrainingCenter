@@ -8,7 +8,7 @@
 // gestione planes desde su panel.
 // ============================================================
 
-export type TipoPlan = 'grupal' | 'personal' | 'vacaciones' | 'virtual'
+export type TipoPlan = 'grupal' | 'personal' | 'conjunto' | 'vacaciones' | 'virtual'
 
 export interface OpcionTipo {
   id: TipoPlan
@@ -28,6 +28,10 @@ export const TIPOS: OpcionTipo[] = [
     detalle: ['Atención uno a uno o en grupo cerrado', 'Elige tu combinación: natación, funcional, rumboterapia o acuagym', 'Máxima flexibilidad de horario'],
   },
   {
+    id: 'conjunto', nombre: 'Conjuntos', desc: 'Combina natación con acuagym, funcional o rumbaterapia — grupo con horario fijo por sede.', icon: 'pool',
+    detalle: ['Grupo cerrado con horario fijo', 'Combina disciplinas en un solo plan', 'Trabajo dentro y fuera del agua'],
+  },
+  {
     id: 'vacaciones', nombre: 'Vacaciones deportivas', desc: 'Programa intensivo de 2 semanas para niños.', icon: 'child_care',
     detalle: ['Programa intensivo de 2 semanas', 'Pensado para niños y jóvenes', 'Técnica y diversión en el receso'],
   },
@@ -37,12 +41,16 @@ export const TIPOS: OpcionTipo[] = [
   },
 ]
 
-// ── Grupos con horario fijo (sedes UTP) ──
+// ── Grupos con horario fijo (sedes UTP/Tulcán) ──
+// Sirve tanto a "grupal" (natación) como a "conjunto" (natación + otra
+// disciplina) — se distinguen por `categoria`. Ausente = 'grupal'.
 export interface Grupo {
   id: string
   nombre: string
   horarios: string[]
   disponible: boolean
+  categoria?: 'grupal' | 'conjunto'
+  combinacionId?: string  // solo si categoria === 'conjunto'
   // se revela al seleccionar
   nivel: string
   cupos: string
@@ -50,14 +58,19 @@ export interface Grupo {
 }
 
 export const GRUPOS: Grupo[] = [
-  { id: 'knowill', nombre: 'Knowill UTP', horarios: ['Mar · 6:00 PM', 'Jue · 6:00 PM', 'Sáb · 2:00 PM'], disponible: true, nivel: 'Intermedio – avanzado', cupos: '4 cupos disponibles', coach: 'Coach Ana Torres' },
-  { id: 'estrellas', nombre: 'Estrellas UTP', horarios: ['Lun · 6:00 PM', 'Mié · 6:00 PM', 'Sáb · 10:00 AM'], disponible: true, nivel: 'Todos los niveles', cupos: '6 cupos disponibles', coach: 'Coach Felipe Cárdenas' },
-  { id: 'tulcan', nombre: 'Tulcán II', horarios: ['Mié · 6:00 PM', 'Vie · 6:00 PM'], disponible: true, nivel: 'Iniciación', cupos: '8 cupos disponibles', coach: 'Coach Marcos Ruiz' },
-  { id: 'bambu', nombre: 'Grupo Bambú', horarios: ['Horario por confirmar'], disponible: false, nivel: 'Por definir', cupos: 'Apertura próxima', coach: 'Por asignar' },
+  { id: 'knowill', nombre: 'Knowill UTP', horarios: ['Mar · 6:00 PM', 'Jue · 6:00 PM', 'Sáb · 2:00 PM'], disponible: true, categoria: 'grupal', nivel: 'Intermedio – avanzado', cupos: '4 cupos disponibles', coach: 'Coach Ana Torres' },
+  { id: 'estrellas', nombre: 'Estrellas UTP', horarios: ['Lun · 6:00 PM', 'Mié · 6:00 PM', 'Sáb · 10:00 AM'], disponible: true, categoria: 'grupal', nivel: 'Todos los niveles', cupos: '6 cupos disponibles', coach: 'Coach Felipe Cárdenas' },
+  { id: 'bambu', nombre: 'Grupo Bambú', horarios: ['Horario por confirmar'], disponible: false, categoria: 'grupal', nivel: 'Por definir', cupos: 'Apertura próxima', coach: 'Por asignar' },
+  // Tulcán II es de Conjuntos, no de natación Grupal — combina natación con acuagym.
+  { id: 'tulcan', nombre: 'Tulcán II', horarios: ['Mié · 6:00 PM', 'Vie · 6:00 PM'], disponible: true, categoria: 'conjunto', combinacionId: 'nat-acuagym', nivel: 'Iniciación', cupos: '8 cupos disponibles', coach: 'Coach Marcos Ruiz' },
 ]
 
 // Precio POR SESIÓN según la frecuencia semanal (a mayor compromiso, menor tarifa)
 export const GRUPO_POR_SESION: Record<number, number> = { 1: 15_000, 2: 12_000, 3: 10_000 }
+
+// Conjuntos: mismo modelo que Grupal (precio por sesión según frecuencia),
+// valores propios — puede costar distinto a natación pura.
+export const CONJUNTO_POR_SESION: Record<number, number> = { 1: 65_000, 2: 60_000, 3: 55_000 }
 
 // ── Modalidades personales (precio mensual por nº de sesiones) ──
 export interface SubPersonal {
@@ -224,6 +237,7 @@ export const TARIFAS_FALLBACK: Tarifas = {
   version: 0,
   actualizadoEn: 0,
   grupoPorSesion: GRUPO_POR_SESION,
+  conjuntoPorSesion: CONJUNTO_POR_SESION,
   personales: personalesFallback(),
   vacacionesPorNino: VACACIONES_POR_NINO,
   virtualPorMes: VIRTUAL_POR_MES,
@@ -236,6 +250,19 @@ export function calcularPrecio(sel: SeleccionPlan, tarifas: Tarifas = TARIFAS_FA
 
   if (sel.tipo === 'grupal') {
     const porSesion = tarifas.grupoPorSesion[sel.week]
+    const freq = FRECUENCIAS.find((f) => f.week === sel.week)!
+    if (!sel.grupoId || porSesion == null) return { ...base, detalleFrecuencia: freq.label }
+    return {
+      disponible: true,
+      total: porSesion * freq.mes,
+      porPersona: null,
+      personas: 1,
+      detalleFrecuencia: `${freq.label} · ${freq.mes} sesiones/mes`,
+    }
+  }
+
+  if (sel.tipo === 'conjunto') {
+    const porSesion = tarifas.conjuntoPorSesion[sel.week]
     const freq = FRECUENCIAS.find((f) => f.week === sel.week)!
     if (!sel.grupoId || porSesion == null) return { ...base, detalleFrecuencia: freq.label }
     return {
@@ -310,6 +337,15 @@ export function resumenPlan(sel: SeleccionPlan): { titulo: string; subtitulo: st
     const g = GRUPOS.find((x) => x.id === sel.grupoId)
     return { titulo: g?.nombre ?? 'Grupal UTP', subtitulo: 'Plan grupal · sede UTP', horarios: g?.horarios ?? [] }
   }
+  if (sel.tipo === 'conjunto') {
+    const g = GRUPOS.find((x) => x.id === sel.grupoId && x.categoria === 'conjunto')
+    const combinacion = COMBINACIONES.find((c) => c.id === g?.combinacionId)
+    return {
+      titulo: g?.nombre ?? 'Conjuntos',
+      subtitulo: combinacion ? `Conjunto · ${combinacion.nombre}` : 'Plan conjunto',
+      horarios: g?.horarios ?? [],
+    }
+  }
   if (sel.tipo === 'personal') {
     const modalidad = PERSONALES.find((x) => x.id === sel.personalId)
     const combinacion = COMBINACIONES.find((x) => x.id === sel.combinacionId)
@@ -377,6 +413,7 @@ export interface PlanDescrito {
 const TIPO_LABEL: Record<TipoPlan, string> = {
   grupal: 'Grupal',
   personal: 'Personalizado',
+  conjunto: 'Conjunto',
   vacaciones: 'Vacaciones',
   virtual: 'Virtual',
 }

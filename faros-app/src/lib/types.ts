@@ -314,8 +314,9 @@ export interface Sede {
 }
 
 // ── grupos/{grupoId} ─────────────────────────────────────────
-// Grupo grupal con horario fijo. Vive en una sede. El wizard "grupal"
-// carga los grupos disponibles según la sede que elija el alumno.
+// Grupo con horario fijo. Vive en una sede. Sirve a dos wizards: "grupal"
+// (natación) y "conjunto" (natación + otra disciplina) — se distinguen por
+// `categoria`. Ambos comparten el mismo campo SeleccionPlan.grupoId.
 
 export interface Grupo {
   id: string
@@ -326,6 +327,11 @@ export interface Grupo {
   coach?: string
   cupoMaximo: number
   disponible: boolean
+  // Ausente = 'grupal' (compatibilidad con docs creados antes de Conjuntos).
+  categoria?: 'grupal' | 'conjunto'
+  // Solo aplica cuando categoria === 'conjunto' — qué disciplina se combina
+  // con natación (ver COMBINACIONES en lib/planes.ts, sin 'natacion').
+  combinacionId?: string
   creadoEn: number
   actualizadoEn?: number
 }
@@ -355,6 +361,10 @@ export interface Tarifas {
   actualizadoPor?: string
   // Grupal: precio POR SESIÓN según frecuencia semanal
   grupoPorSesion: Record<number, number>  // { 1: 15000, 2: 12000, 3: 10000 }
+  // Conjuntos: precio POR SESIÓN según frecuencia semanal — mismo shape que
+  // grupoPorSesion, valores propios (grupo con horario fijo por sede, igual
+  // que Grupal, pero combina natación con otra disciplina — ver Grupo.categoria).
+  conjuntoPorSesion: Record<number, number>
   // Personales: precio mensual según sesionesPorMes. La clave es la
   // modalidad sola ('individual'|'pareja'|'familia'|'reducido') cuando la
   // combinación es 'natacion' (la de siempre), o `${combinacionId}-${modalidadId}`

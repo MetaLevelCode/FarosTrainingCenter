@@ -32,7 +32,7 @@ const SEDES = [
   },
 ] as const
 
-// ── Grupos grupales ───────────────────────────────────────
+// ── Grupos grupales (natación) ─────────────────────────────
 const GRUPOS = [
   {
     id: 'estrellas-utp',
@@ -43,6 +43,7 @@ const GRUPOS = [
     coach: 'Coach Felipe Cárdenas',
     cupoMaximo: 12,
     disponible: true,
+    categoria: 'grupal',
   },
   {
     id: 'knowill-vip',
@@ -53,7 +54,13 @@ const GRUPOS = [
     coach: 'Coach Ana Torres',
     cupoMaximo: 10,
     disponible: true,
+    categoria: 'grupal',
   },
+] as const
+
+// ── Grupos de Conjuntos (natación + otra disciplina) ───────
+// Tulcán II es de Conjuntos, no de natación Grupal.
+const GRUPOS_CONJUNTO = [
   {
     id: 'tulcan-ii',
     nombre: 'Tulcán II',
@@ -63,6 +70,8 @@ const GRUPOS = [
     coach: 'Coach Marcos Ruiz',
     cupoMaximo: 12,
     disponible: true,
+    categoria: 'conjunto',
+    combinacionId: 'nat-acuagym',
   },
 ] as const
 
@@ -70,6 +79,7 @@ const GRUPOS = [
 const TARIFAS_ACTUAL = {
   version: 1,
   grupoPorSesion: { 1: 15_000, 2: 12_000, 3: 10_000 },
+  conjuntoPorSesion: { 1: 65_000, 2: 60_000, 3: 55_000 },
   personales: {
     // N.P — Natación Personalizada
     individual: {
@@ -136,6 +146,9 @@ export async function POST(req: NextRequest) {
     for (const { id, ...g } of GRUPOS) {
       batch.set(db.collection('grupos').doc(id), { ...g, creadoEn: now, actualizadoEn: now })
     }
+    for (const { id, ...g } of GRUPOS_CONJUNTO) {
+      batch.set(db.collection('grupos').doc(id), { ...g, creadoEn: now, actualizadoEn: now })
+    }
     batch.set(db.collection('tarifas').doc('actual'), {
       ...TARIFAS_ACTUAL,
       actualizadoEn: now,
@@ -145,11 +158,11 @@ export async function POST(req: NextRequest) {
     await batch.commit()
 
     log.info({ scope: 'seed-catalogo', event: 'ok', ip, uid: decoded.uid,
-      sedes: SEDES.length, grupos: GRUPOS.length })
+      sedes: SEDES.length, grupos: GRUPOS.length + GRUPOS_CONJUNTO.length })
     return NextResponse.json({
       ok: true,
       sedes: SEDES.length,
-      grupos: GRUPOS.length,
+      grupos: GRUPOS.length + GRUPOS_CONJUNTO.length,
       tarifas: 'actual',
     })
   } catch (err: any) {

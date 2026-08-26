@@ -445,6 +445,11 @@ function GruposTab() {
     const nombre = (g.nombre ?? '').trim()
     const sedeCodigo = (g.sedeCodigo ?? '').trim().toUpperCase()
     if (!nombre || !sedeCodigo) { setErrorPersistente('Nombre y sede son obligatorios.'); return }
+    const categoria = g.categoria ?? 'grupal'
+    if (categoria === 'conjunto' && !g.combinacionId) {
+      setErrorPersistente('Elige qué combinación ofrece este grupo de Conjuntos.')
+      return
+    }
     const id = g.id ?? nombre.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
     setProcesando(id)
     try {
@@ -457,6 +462,8 @@ function GruposTab() {
         coach: g.coach?.trim() || undefined,
         cupoMaximo: Number.isFinite(g.cupoMaximo) ? (g.cupoMaximo as number) : 12,
         disponible: g.disponible ?? true,
+        categoria,
+        combinacionId: categoria === 'conjunto' ? g.combinacionId : undefined,
       })
       console.log('[GRUPO_SAVE] escritura OK')
       setGrupos(await getGrupos())
@@ -542,6 +549,14 @@ function GrupoRow({ grupo, sedes, onGuardar, onBorrar, procesando }: {
             <div className="flex items-center gap-3 flex-wrap">
               <p className="font-display text-lg font-black text-white">{grupo.nombre}</p>
               <Badge variant="primary">{grupo.sedeCodigo}</Badge>
+              <Badge variant={grupo.categoria === 'conjunto' ? 'default' : 'primary'}>
+                {grupo.categoria === 'conjunto' ? 'Conjunto' : 'Grupal'}
+              </Badge>
+              {grupo.categoria === 'conjunto' && grupo.combinacionId && (
+                <Badge variant="default">
+                  {COMBINACIONES.find((c) => c.id === grupo.combinacionId)?.nombre ?? grupo.combinacionId}
+                </Badge>
+              )}
               {!grupo.disponible && <Badge variant="danger">No disponible</Badge>}
             </div>
             <p className="text-xs text-white/60 mt-1">
@@ -613,6 +628,33 @@ function GrupoFormBody({ value, sedes, onChange }: {
           ))}
         </select>
       </Field>
+      <Field label="Categoría *">
+        <select
+          value={value.categoria ?? 'grupal'}
+          onChange={(e) => {
+            const categoria = e.target.value as 'grupal' | 'conjunto'
+            onChange({ ...value, categoria, combinacionId: categoria === 'conjunto' ? value.combinacionId : undefined })
+          }}
+          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:border-[rgba(230,255,0,0.5)] focus:outline-none"
+        >
+          <option value="grupal" className="bg-[#0a0a0a]">Grupal (natación)</option>
+          <option value="conjunto" className="bg-[#0a0a0a]">Conjunto (natación + otra disciplina)</option>
+        </select>
+      </Field>
+      {value.categoria === 'conjunto' && (
+        <Field label="Combinación *">
+          <select
+            value={value.combinacionId ?? ''}
+            onChange={(e) => onChange({ ...value, combinacionId: e.target.value })}
+            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:border-[rgba(230,255,0,0.5)] focus:outline-none"
+          >
+            <option value="" className="bg-[#0a0a0a]">Selecciona combinación…</option>
+            {COMBINACIONES.filter((c) => c.id !== 'natacion').map((c) => (
+              <option key={c.id} value={c.id} className="bg-[#0a0a0a]">{c.nombre}</option>
+            ))}
+          </select>
+        </Field>
+      )}
       <Field label="Nivel">
         <InputText
           value={value.nivel ?? ''}
@@ -691,7 +733,13 @@ function TarifasTab({ actualizadoPor }: { actualizadoPor?: string }) {
         // (funcional-pareja, rumba-*, nat-acuagym-*) — se completan acá con
         // los defaults del fallback SIN pisar ningún precio ya cargado por
         // el admin. Queda persistido recién cuando el admin guarda.
-        setTarifas({ ...t, personales: { ...TARIFAS_FALLBACK.personales, ...t.personales } })
+        setTarifas({
+          ...t,
+          personales: { ...TARIFAS_FALLBACK.personales, ...t.personales },
+          // Docs de antes de restaurar Conjuntos no tienen este campo —
+          // sin el fallback, tarifas.conjuntoPorSesion[week] rompería el render.
+          conjuntoPorSesion: t.conjuntoPorSesion ?? TARIFAS_FALLBACK.conjuntoPorSesion,
+        })
       })
       .catch((e) => setErrorPersistente(`Lectura falló: ${errStr(e)}`))
       .finally(() => setCargando(false))
@@ -713,6 +761,7 @@ function TarifasTab({ actualizadoPor }: { actualizadoPor?: string }) {
       await actualizarTarifas({
         version: (tarifas.version ?? 0) + 1,
         grupoPorSesion: tarifas.grupoPorSesion,
+        conjuntoPorSesion: tarifas.conjuntoPorSesion,
         personales: tarifas.personales,
         vacacionesPorNino: tarifas.vacacionesPorNino,
         virtualPorMes: tarifas.virtualPorMes,
@@ -770,6 +819,24 @@ function TarifasTab({ actualizadoPor }: { actualizadoPor?: string }) {
               <InputPrecio
                 value={tarifas.grupoPorSesion[week] ?? null}
                 onChange={(v) => update((t) => ({ ...t, grupoPorSesion: { ...t.grupoPorSesion, [week]: v ?? 0 } }))}
+              />
+            </Field>
+          ))}
+        </div>
+      </Card>
+
+      {/* Conjuntos (grupos) — mismo modelo que Grupal (por sesión según
+          frecuencia); el grupo en sí (sede, horario, combinación) se
+          gestiona en la pestaña Grupos, no acá. */}
+      <Card>
+        <p className="label-caps text-[10px] text-[var(--color-primary-fixed)] mb-1">CONJUNTOS (GRUPOS)</p>
+        <p className="text-sm text-white/60 mb-5">Precio POR SESIÓN según frecuencia semanal — igual que Grupal, valores propios.</p>
+        <div className="grid grid-cols-3 gap-4">
+          {[1, 2, 3].map((week) => (
+            <Field key={week} label={`${week}x / semana`}>
+              <InputPrecio
+                value={tarifas.conjuntoPorSesion[week] ?? null}
+                onChange={(v) => update((t) => ({ ...t, conjuntoPorSesion: { ...t.conjuntoPorSesion, [week]: v ?? 0 } }))}
               />
             </Field>
           ))}
