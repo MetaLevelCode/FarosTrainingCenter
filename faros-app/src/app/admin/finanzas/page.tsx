@@ -11,10 +11,18 @@ import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
-import { Card, Badge, Button } from '@/components/ui'
-import { getTransacciones, getMovimientosDesde, aprobarTransaccion } from '@/lib/firestore'
-import type { Transaccion, Movimiento } from '@/lib/types'
+import { Card, Badge, Button, Input } from '@/components/ui'
+import {
+  getTransacciones, getMovimientosDesde, aprobarTransaccion,
+  getCategorias, addMovimiento, crearCategoria,
+} from '@/lib/firestore'
+import type { Transaccion, Movimiento, Categoria } from '@/lib/types'
 import { fmtCOP, resumenPlan } from '@/lib/planes'
+import { BarraIngresosEgresos, TortaEgresosPorCategoria } from '@/components/admin/FinanzasCharts'
+import { exportarFinanzasExcel } from '@/lib/exportarExcel'
+
+const PALETA_CATEGORIAS = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767']
+const NUEVA_CATEGORIA = '__nueva__'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 const COP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 })
@@ -33,10 +41,22 @@ export default function FinanzasPage() {
   const { authorized, loading, user } = useRoleGuard(['admin'])
   const [transacciones, setTransacciones] = useState<Transaccion[]>([])
   const [movimientos, setMovimientos] = useState<Movimiento[]>([])
+  const [categorias, setCategorias] = useState<Categoria[]>([])
   const [cargando, setCargando] = useState(true)
   const [procesando, setProcesando] = useState<string | null>(null)
   const [motivoRechazo, setMotivoRechazo] = useState<Record<string, string>>({})
   const [mostrarRechazo, setMostrarRechazo] = useState<string | null>(null)
+
+  // ── Registrar movimiento manual ──
+  const [mostrarForm, setMostrarForm] = useState(false)
+  const [formTipo, setFormTipo] = useState<'ingreso' | 'egreso'>('egreso')
+  const [formCategoriaId, setFormCategoriaId] = useState('')
+  const [formNuevaCategoria, setFormNuevaCategoria] = useState('')
+  const [formMonto, setFormMonto] = useState('')
+  const [formDescripcion, setFormDescripcion] = useState('')
+  const [formFecha, setFormFecha] = useState(() => new Date().toISOString().slice(0, 10))
+  const [guardandoMovimiento, setGuardandoMovimiento] = useState(false)
+  const [errorMovimiento, setErrorMovimiento] = useState<string | null>(null)
   // Override opcional del monto por tx (descuento acordado entre admin y alumno).
   // Si queda vacío, se cobra el precio congelado en la transacción.
   const [montoOverride, setMontoOverride] = useState<Record<string, string>>({})
@@ -48,11 +68,80 @@ export default function FinanzasPage() {
   useEffect(() => {
     // Sin tope de cantidad — "Balance" es un total histórico, no un
     // periodo acotado, así que no se puede recortar por cantidad.
-    Promise.all([getTransacciones(), getMovimientosDesde(0)])
-      .then(([ts, ms]) => { setTransacciones(ts); setMovimientos(ms) })
+    Promise.all([getTransacciones(), getMovimientosDesde(0), getCategorias()])
+      .then(([ts, ms, cs]) => { setTransacciones(ts); setMovimientos(ms); setCategorias(cs) })
       .catch(console.error)
       .finally(() => setCargando(false))
   }, [])
+
+  const categoriasDelTipo = useMemo(
+    () => categorias.filter((c) => c.tipo === formTipo),
+    [categorias, formTipo],
+  )
+
+  async function registrarMovimiento() {
+    setErrorMovimiento(null)
+
+    const montoNum = Number(formMonto.replace(/[.\s]/g, ''))
+    if (!Number.isFinite(montoNum) || montoNum <= 0) {
+      setErrorMovimiento('El monto debe ser un número mayor a 0.')
+      return
+    }
+    if (!formDescripcion.trim()) {
+      setErrorMovimiento('Escribe una descripción.')
+      return
+    }
+    if (!formCategoriaId) {
+      setErrorMovimiento('Elige una categoría.')
+      return
+    }
+    if (formCategoriaId === NUEVA_CATEGORIA && !formNuevaCategoria.trim()) {
+      setErrorMovimiento('Escribe el nombre de la nueva categoría.')
+      return
+    }
+
+    setGuardandoMovimiento(true)
+    try {
+      let categoriaId = formCategoriaId
+      let categoriaNombre = categorias.find((c) => c.id === categoriaId)?.nombre ?? ''
+
+      if (categoriaId === NUEVA_CATEGORIA) {
+        const nombre = formNuevaCategoria.trim()
+        const color = PALETA_CATEGORIAS[categoriasDelTipo.length % PALETA_CATEGORIAS.length]
+        categoriaId = await crearCategoria({ nombre, tipo: formTipo, color })
+        categoriaNombre = nombre
+        setCategorias((prev) => [...prev, { id: categoriaId, categoriaId, nombre, tipo: formTipo, color }])
+      }
+
+      // Mediodía local — evita que el corrimiento de zona horaria empuje
+      // la fecha elegida al día anterior/siguiente.
+      const fecha = new Date(`${formFecha}T12:00:00`).getTime()
+
+      await addMovimiento({
+        tipo: formTipo, monto: montoNum, categoriaId, categoriaNombre,
+        descripcion: formDescripcion.trim(), fecha, origen: 'manual', transaccionId: null,
+      })
+
+      setMovimientos((prev) => [
+        {
+          id: `local-${Date.now()}`, movimientoId: '', tipo: formTipo, monto: montoNum,
+          categoriaId, categoriaNombre, descripcion: formDescripcion.trim(),
+          fecha, origen: 'manual', transaccionId: null, creadoEn: Date.now(),
+        },
+        ...prev,
+      ])
+
+      setFormMonto('')
+      setFormDescripcion('')
+      setFormCategoriaId('')
+      setFormNuevaCategoria('')
+      setMostrarForm(false)
+    } catch (err: any) {
+      setErrorMovimiento(err.message ?? 'No se pudo registrar el movimiento.')
+    } finally {
+      setGuardandoMovimiento(false)
+    }
+  }
 
   const pendientes = useMemo(() => transacciones.filter((t) => t.estado === 'pendiente'), [transacciones])
   const historial = useMemo(() => transacciones.filter((t) => t.estado !== 'pendiente'), [transacciones])
@@ -140,13 +229,122 @@ export default function FinanzasPage() {
       <div className="space-y-8">
 
         <Reveal>
-          <div>
-            <p className="label-caps text-[var(--color-primary-fixed)] mb-3 tracking-[0.3em]">Resumen financiero</p>
-            <h2 className="font-display text-display-lg text-white leading-none tracking-tighter uppercase">
-              Finanzas
-            </h2>
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="label-caps text-[var(--color-primary-fixed)] mb-3 tracking-[0.3em]">Resumen financiero</p>
+              <h2 className="font-display text-display-lg text-white leading-none tracking-tighter uppercase">
+                Finanzas
+              </h2>
+            </div>
+            <div className="flex gap-3">
+              <Button variant="outline" size="sm" onClick={() => exportarFinanzasExcel(movimientos, transacciones)}>
+                <span className="material-symbols-outlined text-[16px]">download</span>
+                Exportar a Excel
+              </Button>
+              <Button size="sm" onClick={() => { setErrorMovimiento(null); setMostrarForm((v) => !v) }}>
+                <span className="material-symbols-outlined text-[16px]">add</span>
+                Registrar movimiento
+              </Button>
+            </div>
           </div>
         </Reveal>
+
+        {/* ── Formulario: registrar movimiento manual ── */}
+        {mostrarForm && (
+          <Reveal>
+            <Card>
+              <div className="flex items-center justify-between mb-5">
+                <h3 className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight">
+                  Registrar movimiento
+                </h3>
+                <button
+                  onClick={() => setMostrarForm(false)}
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--color-on-surface-variant)] hover:text-white hover:bg-white/10 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[18px]">close</span>
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex gap-3">
+                  {(['egreso', 'ingreso'] as const).map((tipo) => (
+                    <button
+                      key={tipo}
+                      onClick={() => { setFormTipo(tipo); setFormCategoriaId('') }}
+                      className={`flex-1 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wide transition-colors ${
+                        formTipo === tipo
+                          ? tipo === 'ingreso'
+                            ? 'bg-[var(--color-success-emerald)] text-black'
+                            : 'bg-[var(--color-danger-crimson)] text-white'
+                          : 'bg-white/5 text-[var(--color-on-surface-variant)]/60 border border-white/10'
+                      }`}
+                    >
+                      {tipo === 'ingreso' ? 'Ingreso' : 'Egreso'}
+                    </button>
+                  ))}
+                </div>
+
+                <Input
+                  label="Descripción"
+                  value={formDescripcion}
+                  onChange={(e) => setFormDescripcion(e.target.value)}
+                  placeholder="Ej. Arriendo piscina, compra de material..."
+                  maxLength={200}
+                />
+
+                <div className="grid grid-cols-2 gap-3">
+                  <Input
+                    label="Monto (COP)"
+                    inputMode="numeric"
+                    value={formMonto}
+                    onChange={(e) => setFormMonto(e.target.value)}
+                    placeholder="Ej. 150000"
+                  />
+                  <Input
+                    label="Fecha"
+                    type="date"
+                    value={formFecha}
+                    onChange={(e) => setFormFecha(e.target.value)}
+                    className="[color-scheme:dark]"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <label className="label-caps text-[10px] text-[var(--color-on-surface-variant)]">Categoría</label>
+                  <select
+                    value={formCategoriaId}
+                    onChange={(e) => setFormCategoriaId(e.target.value)}
+                    className="w-full bg-white/5 border border-white/5 rounded-2xl px-6 py-4 text-sm text-white focus:border-[rgba(230,255,0,0.5)] focus:outline-none"
+                  >
+                    <option value="" disabled>Elige una categoría…</option>
+                    {categoriasDelTipo.map((c) => (
+                      <option key={c.id} value={c.id}>{c.nombre}</option>
+                    ))}
+                    <option value={NUEVA_CATEGORIA}>+ Nueva categoría…</option>
+                  </select>
+                </div>
+
+                {formCategoriaId === NUEVA_CATEGORIA && (
+                  <Input
+                    label={`Nombre de la nueva categoría de ${formTipo}`}
+                    value={formNuevaCategoria}
+                    onChange={(e) => setFormNuevaCategoria(e.target.value)}
+                    placeholder="Ej. Mantenimiento"
+                    maxLength={60}
+                  />
+                )}
+
+                {errorMovimiento && (
+                  <p className="text-xs text-[var(--color-danger-crimson)]">{errorMovimiento}</p>
+                )}
+
+                <Button fullWidth loading={guardandoMovimiento} onClick={registrarMovimiento}>
+                  Guardar movimiento
+                </Button>
+              </div>
+            </Card>
+          </Reveal>
+        )}
 
         {/* ── KPIs ── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -174,6 +372,16 @@ export default function FinanzasPage() {
               </Card>
             </Reveal>
           ))}
+        </div>
+
+        {/* ── Análisis ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <Reveal delay={0.1}>
+            <BarraIngresosEgresos movimientos={movimientos} />
+          </Reveal>
+          <Reveal delay={0.14}>
+            <TortaEgresosPorCategoria movimientos={movimientos} />
+          </Reveal>
         </div>
 
         {/* ── Transacciones pendientes ── */}

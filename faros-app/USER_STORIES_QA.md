@@ -198,21 +198,34 @@ Pasos, wizard:
 
 Pasos, agendar franja (una vez el plan está activo, en
 `SolicitudPersonalizada` dentro de `/dashboard/asistencia`):
-3. Elegir un profesor (solo deben aparecer los que tienen franjas de
-   disponibilidad declaradas)
-4. Elegir día y horario dentro de la disponibilidad de ese profesor
-5. "Solicitar este horario" → debe quedar en estado "Esperando respuesta del
-   profesor" con botón "Cancelar solicitud"
-6. Probar pedir dos horarios al mismo profesor mientras el primero sigue
+3. Elegir un profesor (solo deben aparecer los que tienen al menos N días
+   distintos declarados, N = la frecuencia semanal elegida en el paso 2 — ej.
+   con plan 3x/semana, un profesor con disponibilidad en solo 2 días no debe
+   aparecer)
+4. Con plan 2x o 3x/semana, la pantalla debe pedir esa cantidad de filas
+   "Día + Hora", una por sesión, sin dejar repetir el mismo día en dos filas
+5. Elegir día y horario dentro de la disponibilidad de ese profesor, en
+   cada fila
+6. "Solicitar estos horarios" (o "este horario" si el plan es 1x/semana) →
+   debe quedar en estado "Esperando respuesta del profesor" listando TODAS
+   las franjas pedidas, con botón "Cancelar solicitud"
+7. Probar pedir horarios a un segundo profesor mientras el primero sigue
    pendiente → debe rechazarlo (409)
-7. Cancelar la solicitud pendiente → debe volver a poder pedir otra
-8. Cuando el profesor acepta, verificar que se generen automáticamente las
-   clases recurrentes del mes y aparezca el mensaje de horario fijo asignado.
+8. Cancelar la solicitud pendiente → debe volver a poder pedir otra
+9. Cuando el profesor acepta, verificar que se generen automáticamente las
+   clases recurrentes del mes para CADA una de las N franjas (ej. plan
+   3x/semana → 3 clases/semana, no 1) y aparezca el mensaje de horario fijo
+   asignado con las N franjas listadas.
 
 **Estado:** 🔲 Pendiente
 
 **Notas / bugs:**
--
+- **(Corregido)** Reportado por el usuario 2026-08-26: sin importar la
+  frecuencia semanal elegida al comprar (1x/2x/3x), el flujo de agendar solo
+  dejaba pedir UNA franja y por lo tanto solo se generaba 1 clase/semana.
+  Fix: `SolicitudPersonalizada` ahora guarda un array `franjas` (antes un
+  único `dow/horaInicio/horaFin`) y la UI pide tantas filas día+hora como
+  indique `suscripcionActiva.week`.
 
 ---`
 
@@ -536,10 +549,12 @@ Pasos:
 2. Probar validaciones: hora de inicio después de la de fin (debe
    rechazarlo), franja que se solapa con una ya agregada (debe rechazarlo)
 3. Quitar una franja → "Guardar disponibilidad"
-4. Con una solicitud pendiente de un alumno (ver E5): aceptarla → debe
-   generar las clases recurrentes reales hasta el vencimiento del plan del
-   alumno, y chocar si ya hay una clase en ese horario
-5. Rechazar otra solicitud sin escribir motivo → debe bloquearlo (400); con
+4. Con una solicitud pendiente de un alumno con plan 2x o 3x/semana (ver E5):
+   la bandeja debe listar TODAS las franjas pedidas, no solo una
+5. Aceptarla → debe generar las clases recurrentes reales de CADA franja
+   hasta el vencimiento del plan del alumno, y chocar si ya hay una clase en
+   cualquiera de esos horarios
+6. Rechazar otra solicitud sin escribir motivo → debe bloquearlo (400); con
    motivo, debe guardarlo y notificar el rechazo
 
 **Estado:** 🔲 Pendiente

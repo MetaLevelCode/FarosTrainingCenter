@@ -303,6 +303,7 @@ export async function aprobarTransaccion(
         tipo: sel.tipo,
         personalId: sel.tipo === 'personal' ? sel.personalId : null,
         personas: sel.tipo === 'personal' ? sel.personas : null,
+        week: sel.tipo === 'personal' ? sel.week : null,
         grupoId: grupoRef?.id ?? null,
         esJefeGrupo: esModalidadGrupal,
       },
@@ -393,6 +394,12 @@ async function extenderClasesPersonalizadas(alumnoId: string, hastaTs: number): 
     }
   }
 
+  // Compatibilidad hacia atrás: solicitudes viejas guardaban un único
+  // dow/horaInicio/horaFin en vez de `franjas` (ver /api/personalizadas/solicitar).
+  const franjas: Array<{ dow: number; horaInicio: string; horaFin: string }> =
+    sol.franjas ?? (sol.dow != null ? [{ dow: sol.dow, horaInicio: sol.horaInicio, horaFin: sol.horaFin }] : [])
+  if (franjas.length === 0) return
+
   const desde = new Date(Math.max(Date.now(), sol.rangoGeneradoHasta ?? 0))
   if (desde.getTime() >= hastaTs) return
 
@@ -414,34 +421,35 @@ async function extenderClasesPersonalizadas(alumnoId: string, hastaTs: number): 
     .map((d) => d.data())
     .filter((c) => c.estado !== 'cancelada')
     .map((c) => new Date(c.fecha_hora_inicio).getDay())
-  if (ocupadas.includes(sol.dow)) {
+  if (franjas.some((f) => ocupadas.includes(f.dow))) {
     console.error('[extenderClasesPersonalizadas] choque de horario al renovar, no se generaron clases', { alumnoId, solId: solRef.id })
     return
   }
 
-  const ocurrencias = ocurrenciasSemanales(sol.dow, sol.horaInicio, sol.horaFin, desde, hastaTs)
-  if (ocurrencias.length === 0) return
-
   const batch = writeBatch(db)
   const nuevosIds: string[] = []
-  for (const oc of ocurrencias) {
-    const claseRef = doc(collection(db, 'clases'))
-    batch.set(claseRef, {
-      claseId: claseRef.id,
-      catalogo_codigo: 'personalizada',
-      nombre_clase: 'Clase personalizada',
-      instructor_id: sol.profesorId,
-      sede: '',
-      fecha_hora_inicio: oc.inicio,
-      fecha_hora_fin: oc.fin,
-      cupo_maximo: cupoMaximo,
-      estudiantes_inscritos: estudiantesInscritos,
-      estado: 'programada',
-      creadoEn: Date.now(),
-      actualizadoEn: Date.now(),
-    })
-    nuevosIds.push(claseRef.id)
+  for (const f of franjas) {
+    const ocurrencias = ocurrenciasSemanales(f.dow, f.horaInicio, f.horaFin, desde, hastaTs)
+    for (const oc of ocurrencias) {
+      const claseRef = doc(collection(db, 'clases'))
+      batch.set(claseRef, {
+        claseId: claseRef.id,
+        catalogo_codigo: 'personalizada',
+        nombre_clase: 'Clase personalizada',
+        instructor_id: sol.profesorId,
+        sede: '',
+        fecha_hora_inicio: oc.inicio,
+        fecha_hora_fin: oc.fin,
+        cupo_maximo: cupoMaximo,
+        estudiantes_inscritos: estudiantesInscritos,
+        estado: 'programada',
+        creadoEn: Date.now(),
+        actualizadoEn: Date.now(),
+      })
+      nuevosIds.push(claseRef.id)
+    }
   }
+  if (nuevosIds.length === 0) return
   batch.update(solRef, {
     clasesGeneradas: [...(sol.clasesGeneradas ?? []), ...nuevosIds],
     rangoGeneradoHasta: hastaTs,
@@ -775,6 +783,16 @@ export async function getCategorias(): Promise<Categoria[]> {
   ])
   const snap = await getDocs(collection(db, 'categorias'))
   return snap.docs.map(docToId<Categoria>)
+}
+
+export async function crearCategoria(data: Omit<Categoria, 'id' | 'categoriaId'>): Promise<string> {
+  if (!data.nombre?.trim()) throw new Error('El nombre de la categoría no puede estar vacío.')
+  const [{ db }, { collection, doc, setDoc }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  const ref = doc(collection(db, 'categorias'))
+  await setDoc(ref, { ...data, nombre: data.nombre.trim(), categoriaId: ref.id })
+  return ref.id
 }
 
 // ── sedes ────────────────────────────────────────────────────

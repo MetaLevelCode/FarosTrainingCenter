@@ -72,9 +72,12 @@ export async function POST(
       const cupoMaximo: number = grupo?.personasMax ?? (sol.personas ?? 1)
 
       // Re-validar disponibilidad: pudo cambiar desde que se solicitó.
-      const franjas: Array<{ dow: number; horaInicio: string; horaFin: string }> = profesor.disponibilidadPersonal ?? []
-      if (!franjaContenida(sol.dow, sol.horaInicio, sol.horaFin, franjas)) {
-        return { error: 'Esta franja ya no está en tu disponibilidad declarada', status: 409 }
+      const solFranjas: Array<{ dow: number; horaInicio: string; horaFin: string }> = sol.franjas ?? []
+      const disponibilidad: Array<{ dow: number; horaInicio: string; horaFin: string }> = profesor.disponibilidadPersonal ?? []
+      for (const f of solFranjas) {
+        if (!franjaContenida(f.dow, f.horaInicio, f.horaFin, disponibilidad)) {
+          return { error: 'Alguna franja ya no está en tu disponibilidad declarada', status: 409 }
+        }
       }
 
       // Re-validar que el plan del alumno sigue vigente: pudo vencer
@@ -102,39 +105,45 @@ export async function POST(
         .where('fecha_hora_inicio', '<', hasta)
         .orderBy('fecha_hora_inicio', 'desc')
       const clasesSnap = await tx.get(clasesQuery)
-      const choque = clasesSnap.docs.some((d) => {
-        const c = d.data()
-        if (c.estado === 'cancelada') return false
-        if (dowColombia(c.fecha_hora_inicio) !== sol.dow) return false
-        const horaInicioC = horaColombia(c.fecha_hora_inicio)
-        const horaFinC = horaColombia(c.fecha_hora_fin)
-        return haySolape(sol.horaInicio, sol.horaFin, horaInicioC, horaFinC)
-      })
-      if (choque) return { error: 'Este horario ya está ocupado por otra clase', status: 409 }
+      const clasesReales = clasesSnap.docs
+        .map((d) => d.data())
+        .filter((c) => c.estado !== 'cancelada')
 
-      const ocurrencias = ocurrenciasSemanales(sol.dow, sol.horaInicio, sol.horaFin, new Date(ahora), hasta)
+      for (const f of solFranjas) {
+        const choque = clasesReales.some((c) => {
+          if (dowColombia(c.fecha_hora_inicio) !== f.dow) return false
+          const horaInicioC = horaColombia(c.fecha_hora_inicio)
+          const horaFinC = horaColombia(c.fecha_hora_fin)
+          return haySolape(f.horaInicio, f.horaFin, horaInicioC, horaFinC)
+        })
+        if (choque) return { error: 'Alguno de los horarios ya está ocupado por otra clase', status: 409 }
+      }
+
       const nombreAlumno = sol.nombreAlumno ?? 'Alumno'
       const nombreInstructor = `${profesor.nombres ?? ''} ${profesor.apellidos ?? ''}`.trim()
       const clasesGeneradas: string[] = []
-      for (const oc of ocurrencias) {
-        const claseRef = db.collection('clases').doc()
-        tx.set(claseRef, {
-          claseId: claseRef.id,
-          catalogo_codigo: 'personalizada',
-          nombre_clase: `Personalizada — ${nombreAlumno}`,
-          instructor_id: sol.profesorId,
-          nombre_instructor: nombreInstructor || undefined,
-          sede: profesor.sede ?? alumno.sede ?? '',
-          direccion: sol.direccion ?? null,
-          fecha_hora_inicio: oc.inicio,
-          fecha_hora_fin: oc.fin,
-          cupo_maximo: cupoMaximo,
-          estudiantes_inscritos: estudiantesInscritos,
-          estado: 'programada',
-          creadoEn: ahora,
-          actualizadoEn: ahora,
-        })
-        clasesGeneradas.push(claseRef.id)
+      for (const f of solFranjas) {
+        const ocurrencias = ocurrenciasSemanales(f.dow, f.horaInicio, f.horaFin, new Date(ahora), hasta)
+        for (const oc of ocurrencias) {
+          const claseRef = db.collection('clases').doc()
+          tx.set(claseRef, {
+            claseId: claseRef.id,
+            catalogo_codigo: 'personalizada',
+            nombre_clase: `Personalizada — ${nombreAlumno}`,
+            instructor_id: sol.profesorId,
+            nombre_instructor: nombreInstructor || undefined,
+            sede: profesor.sede ?? alumno.sede ?? '',
+            direccion: sol.direccion ?? null,
+            fecha_hora_inicio: oc.inicio,
+            fecha_hora_fin: oc.fin,
+            cupo_maximo: cupoMaximo,
+            estudiantes_inscritos: estudiantesInscritos,
+            estado: 'programada',
+            creadoEn: ahora,
+            actualizadoEn: ahora,
+          })
+          clasesGeneradas.push(claseRef.id)
+        }
       }
 
       tx.update(solRef, {

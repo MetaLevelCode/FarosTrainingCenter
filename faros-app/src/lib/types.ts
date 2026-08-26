@@ -21,6 +21,9 @@ export interface SuscripcionActiva {
   tipo?: import('./planes').TipoPlan
   personalId?: string | null
   personas?: number
+  // Frecuencia semanal del plan (1/2/3 veces por semana) — determina
+  // cuántas franjas (SolicitudPersonalizada.franjas) debe elegir el alumno.
+  week?: number
   // Modalidades personales "por persona" (pareja/familia/reducido) comparten
   // un mismo grupo — ver grupos_personalizados/{grupoId}. esJefeGrupo marca
   // a quien compró (único que puede elegir la franja horaria del grupo).
@@ -46,9 +49,9 @@ export interface SolicitudPersonalizada {
   alumnoId: string
   nombreAlumno: string   // denormalizado al crear — evita N+1 reads en la bandeja del profesor
   profesorId: string
-  dow: number
-  horaInicio: string
-  horaFin: string
+  // N franjas semanales (N = suscripcionActiva.week del alumno al pedir) —
+  // todas con el mismo profesor, en días distintos. Ver lib/recurrencia.ts.
+  franjas: FranjaDisponibilidad[]
   personas: number
   // Denormalizado desde usuario.suscripcionActiva.grupoId al crear la
   // solicitud — permite que /aceptar inscriba a todo el grupo sin releer

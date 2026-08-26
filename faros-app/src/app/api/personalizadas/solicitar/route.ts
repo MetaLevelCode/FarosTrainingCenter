@@ -1,9 +1,11 @@
 // ============================================================
 // POST /api/personalizadas/solicitar
-// Alumno con plan personal activo solicita una franja de las que el
-// profesor declaró en su disponibilidad. Queda 'pendiente' hasta que
-// el profesor la acepte o rechace (ver ./[id]/aceptar, ./[id]/rechazar).
-// Body: { profesorId, dow, horaInicio, horaFin, mensaje? }
+// Alumno con plan personal activo solicita N franjas (N = la frecuencia
+// semanal de su plan: 1x/2x/3x) de las que el profesor declaró en su
+// disponibilidad, todas con el mismo profesor y en días distintos. Queda
+// 'pendiente' hasta que el profesor la acepte o rechace (ver ./[id]/aceptar,
+// ./[id]/rechazar).
+// Body: { profesorId, franjas: [{ dow, horaInicio, horaFin }, ...], direccion, mensaje? }
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -17,6 +19,20 @@ import {
 export const runtime = 'nodejs'
 
 const HORA_RE = /^([01][0-9]|2[0-3]):[0-5][0-9]$/
+
+interface FranjaBody { dow?: number; horaInicio?: string; horaFin?: string }
+
+function franjaValida(f: FranjaBody | null | undefined): f is Required<FranjaBody> {
+  if (!f) return false
+  if (typeof f.dow !== 'number' || f.dow < 0 || f.dow > 6) return false
+  if (!f.horaInicio || !HORA_RE.test(f.horaInicio)) return false
+  if (!f.horaFin || !HORA_RE.test(f.horaFin)) return false
+  if (f.horaInicio >= f.horaFin) return false
+  // Cada clase dura DURACION_PERSONALIZADA_MIN, aunque el profesor haya
+  // declarado una franja de disponibilidad más amplia — el alumno pide
+  // un horario de inicio dentro de esa franja, no la franja completa.
+  return f.horaFin === sumarMinutos(f.horaInicio, DURACION_PERSONALIZADA_MIN)
+}
 
 export async function POST(req: NextRequest) {
   const ip = clientIp(req)
@@ -35,34 +51,26 @@ export async function POST(req: NextRequest) {
     const db = getAdminDb()
 
     const body = await req.json().catch(() => null) as {
-      profesorId?: string; dow?: number; horaInicio?: string; horaFin?: string
+      profesorId?: string; franjas?: FranjaBody[]
       direccion?: string; mensaje?: string
     } | null
     const profesorId = body?.profesorId
-    const dow = body?.dow
-    const horaInicio = body?.horaInicio
-    const horaFin = body?.horaFin
+    const franjas = body?.franjas
     const direccion = body?.direccion?.trim().slice(0, 300)
     const mensaje = body?.mensaje?.trim().slice(0, 500) || null
 
-    if (!profesorId || typeof dow !== 'number' || dow < 0 || dow > 6
-      || !horaInicio || !HORA_RE.test(horaInicio)
-      || !horaFin || !HORA_RE.test(horaFin)
-      || horaInicio >= horaFin) {
+    if (!profesorId || !Array.isArray(franjas) || franjas.length === 0 || franjas.length > 3
+      || !franjas.every(franjaValida)) {
       return NextResponse.json({ error: 'Datos de la solicitud inválidos' }, { status: 400 })
+    }
+    if (new Set(franjas.map((f) => f.dow)).size !== franjas.length) {
+      return NextResponse.json({ error: 'Elige días distintos para cada franja' }, { status: 400 })
     }
 
     // La clase personalizada ocurre en la casa/conjunto del alumno, no en
     // una sede fija — sin dirección el profesor no sabe a dónde ir.
     if (!direccion) {
       return NextResponse.json({ error: 'Indica la dirección donde será la clase' }, { status: 400 })
-    }
-
-    // Cada clase dura DURACION_PERSONALIZADA_MIN, aunque el profesor haya
-    // declarado una franja de disponibilidad más amplia — el alumno pide
-    // un horario de inicio dentro de esa franja, no la franja completa.
-    if (horaFin !== sumarMinutos(horaInicio, DURACION_PERSONALIZADA_MIN)) {
-      return NextResponse.json({ error: 'La clase debe durar exactamente 1 hora' }, { status: 400 })
     }
 
     // Anti-spam: no permitir una segunda solicitud pendiente al mismo
@@ -99,20 +107,31 @@ export async function POST(req: NextRequest) {
         return { error: 'Solo quien adquirió el plan puede elegir el horario del grupo', status: 403 }
       }
 
+      const franjasRequeridas = susc.week ?? 1
+      if (franjas.length !== franjasRequeridas) {
+        return {
+          error: `Tu plan es ${franjasRequeridas} ${franjasRequeridas === 1 ? 'vez' : 'veces'} por semana — elige ${franjasRequeridas} ${franjasRequeridas === 1 ? 'franja' : 'franjas'}`,
+          status: 400,
+        }
+      }
+
       if (!profesorSnap.exists) return { error: 'Profesor no encontrado', status: 404 }
       const profesor = profesorSnap.data()!
       if (profesor.rol !== 'profesor') return { error: 'El destinatario no es un profesor', status: 400 }
 
-      const franjas: Array<{ dow: number; horaInicio: string; horaFin: string }> = profesor.disponibilidadPersonal ?? []
-      if (!franjaContenida(dow, horaInicio, horaFin, franjas)) {
-        return { error: 'Esta franja no está en la disponibilidad del profesor', status: 409 }
+      const disponibilidad: Array<{ dow: number; horaInicio: string; horaFin: string }> = profesor.disponibilidadPersonal ?? []
+      for (const f of franjas) {
+        if (!franjaContenida(f.dow!, f.horaInicio!, f.horaFin!, disponibilidad)) {
+          return { error: 'Alguna franja no está en la disponibilidad del profesor', status: 409 }
+        }
       }
 
       // Anti-choque: no dejar crear una solicitud condenada a ser rechazada
-      // porque el horario ya quedó ocupado por otra Clase real del profesor
-      // (grupal o de otro alumno personalizado ya aceptado). Mismo chequeo
-      // que hace aceptar/route.ts, adelantado aquí para no hacerle perder
-      // el tiempo al alumno ni ensuciarle la bandeja de pendientes al profesor.
+      // porque algún horario ya quedó ocupado por otra Clase real del
+      // profesor (grupal o de otro alumno personalizado ya aceptado). Mismo
+      // chequeo que hace aceptar/route.ts, adelantado aquí para no hacerle
+      // perder el tiempo al alumno ni ensuciarle la bandeja de pendientes
+      // al profesor.
       const ahora = Date.now()
       const hasta = susc.fechaVencimiento as number
       const clasesQuery = db.collection('clases')
@@ -121,15 +140,19 @@ export async function POST(req: NextRequest) {
         .where('fecha_hora_inicio', '<', hasta)
         .orderBy('fecha_hora_inicio', 'desc')
       const clasesSnap = await tx.get(clasesQuery)
-      const choque = clasesSnap.docs.some((d) => {
-        const c = d.data()
-        if (c.estado === 'cancelada') return false
-        if (dowColombia(c.fecha_hora_inicio) !== dow) return false
-        const horaInicioC = horaColombia(c.fecha_hora_inicio)
-        const horaFinC = horaColombia(c.fecha_hora_fin)
-        return haySolape(horaInicio, horaFin, horaInicioC, horaFinC)
-      })
-      if (choque) return { error: 'Este horario ya está ocupado, elige otro', status: 409 }
+      const clasesReales = clasesSnap.docs
+        .map((d) => d.data())
+        .filter((c) => c.estado !== 'cancelada')
+
+      for (const f of franjas) {
+        const choque = clasesReales.some((c) => {
+          if (dowColombia(c.fecha_hora_inicio) !== f.dow) return false
+          const horaInicioC = horaColombia(c.fecha_hora_inicio)
+          const horaFinC = horaColombia(c.fecha_hora_fin)
+          return haySolape(f.horaInicio!, f.horaFin!, horaInicioC, horaFinC)
+        })
+        if (choque) return { error: 'Alguno de los horarios ya está ocupado, elige otro', status: 409 }
+      }
 
       const nombreAlumno = `${alumno.nombres ?? ''} ${alumno.apellidos ?? ''}`.trim() || 'Alumno'
       const solRef = db.collection('solicitudes_personalizadas').doc()
@@ -139,9 +162,7 @@ export async function POST(req: NextRequest) {
         alumnoId: uid,
         nombreAlumno,
         profesorId,
-        dow,
-        horaInicio,
-        horaFin,
+        franjas,
         direccion,
         personas: susc.personas ?? 1,
         grupoId: susc.grupoId ?? null,

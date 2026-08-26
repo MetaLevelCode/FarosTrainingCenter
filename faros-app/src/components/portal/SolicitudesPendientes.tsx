@@ -129,9 +129,13 @@ export function SolicitudesPendientes() {
                 {s.personas} {s.personas === 1 ? 'persona' : 'personas'}
               </span>
             </div>
-            <p className="text-sm text-[var(--color-on-surface-variant)]/70 mb-1">
-              {DIAS[s.dow]} · {s.horaInicio} – {s.horaFin}
-            </p>
+            <div className="space-y-0.5 mb-1">
+              {s.franjas.map((f, i) => (
+                <p key={i} className="text-sm text-[var(--color-on-surface-variant)]/70">
+                  {DIAS[f.dow]} · {f.horaInicio} – {f.horaFin}
+                </p>
+              ))}
+            </div>
             <p className="flex items-center gap-1 text-xs text-[var(--color-on-surface-variant)]/60 mb-3">
               <span className="material-symbols-outlined text-[14px]">location_on</span>
               {s.direccion}

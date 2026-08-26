@@ -113,6 +113,7 @@ export async function POST(req: NextRequest) {
           tipo: 'personal',
           personalId: grupo.personalId,
           personas: grupo.personasMax,
+          week: jefeSusc?.seleccion?.week ?? null,
           grupoId: codigo,
           esJefeGrupo: false,
         },
