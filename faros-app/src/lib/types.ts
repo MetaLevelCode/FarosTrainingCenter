@@ -72,6 +72,15 @@ export interface Estadisticas {
   clasesReservadas: number
   clasesAsistidas: number
   tasaAsistencia: number
+  // Caché de la racha semanal (ver lib/racha.ts) — evita recalcularla desde
+  // cero (3 lecturas: asistencias+clases+cancelaciones) en cada vista del
+  // ranking. Se recalcula: (a) al registrar asistencia o cancelar a tiempo
+  // — ver lib/racha-server.ts — y (b) de forma perezosa en GET /api/ranking
+  // cuando rachaSemana quedó atrás de la semana actual (para capturar el
+  // caso de que la racha se rompa por INACCIÓN, sin ningún evento que la
+  // dispare).
+  racha?: number
+  rachaSemana?: number  // inicio (ms) de la semana para la que `racha` es válida
 }
 
 export interface Usuario {

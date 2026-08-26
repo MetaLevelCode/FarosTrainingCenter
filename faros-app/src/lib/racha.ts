@@ -15,7 +15,8 @@
 const MS_SEMANA = 7 * 24 * 60 * 60 * 1000
 const MAX_SEMANAS = 52 // salvaguarda — evita loops largos por falta de datos
 
-function inicioSemana(ts: number): number {
+/** Inicio (lunes 00:00 local) de la semana calendario que contiene `ts`. */
+export function inicioSemana(ts: number): number {
   const d = new Date(ts)
   d.setHours(0, 0, 0, 0)
   d.setDate(d.getDate() - ((d.getDay() + 6) % 7)) // retrocede a lunes

@@ -11,6 +11,7 @@ import { getAdminAuth, getAdminDb } from '@/lib/admin'
 import { rateLimit, clientIp } from '@/lib/ratelimit'
 import { log } from '@/lib/logger'
 import { canalGrupo } from '@/lib/mensajes'
+import { recalcularYGuardarRacha } from '@/lib/racha-server'
 
 export const runtime = 'nodejs'
 
@@ -146,6 +147,15 @@ export async function POST(
       return NextResponse.json({ error: resultado.error }, { status: resultado.status as number })
     }
     log.info({ scope: 'clases', event: 'cancelado', ip, uid, claseId })
+
+    // Cancelar a tiempo es un comodín para la racha (ver lib/racha.ts) —
+    // best-effort: la cancelación YA se guardó arriba, si esto falla la
+    // racha queda desactualizada hasta el próximo evento o el recálculo
+    // perezoso de GET /api/ranking.
+    recalcularYGuardarRacha(db, uid).catch((err) => {
+      console.error('[cancelar] no se pudo refrescar la racha', err)
+    })
+
     return NextResponse.json({ ok: true })
   } catch (err: any) {
     if ((err?.code ?? '').startsWith('auth/')) {

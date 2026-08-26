@@ -2,8 +2,12 @@
 
 // ============================================================
 // FAROS — Estudiante · Ranking
-// Lee todos los estudiantes de Firestore y los ordena por
-// tasaAsistencia de sus estadísticas.
+// Racha semanal + clases asistidas de TODOS los estudiantes, vía
+// GET /api/ranking (server-side, Admin SDK): calcularRacha() necesita
+// leer asistencias/cancelaciones de cada alumno, y las reglas de
+// Firestore solo dejan a admin/profesor o al propio dueño leer las
+// suyas — por eso no se puede calcular en el cliente para todo el
+// mundo. Se ordena por racha desc, empate por clases asistidas.
 // ============================================================
 
 import { useEffect, useState } from 'react'
@@ -11,8 +15,20 @@ import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge } from '@/components/ui'
-import { getUsuarios } from '@/lib/firestore'
-import type { Usuario } from '@/lib/types'
+
+async function getIdToken(): Promise<string | null> {
+  const { getAuth } = await import('firebase/auth')
+  return (await getAuth().currentUser?.getIdToken()) ?? null
+}
+
+async function fetchRanking(): Promise<Omit<RankEntry, 'pos' | 'esYo'>[]> {
+  const token = await getIdToken()
+  if (!token) throw new Error('No autenticado')
+  const res = await fetch('/api/ranking', { headers: { Authorization: `Bearer ${token}` } })
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.error ?? 'No se pudo cargar el ranking')
+  return data.ranking
+}
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -32,18 +48,10 @@ const PODIO_STYLE: Record<number, { ring: string; medal: string }> = {
   3: { ring: 'border-[#c47a3d]/60', medal: 'text-[#c47a3d]' },
 }
 
-function ini(u: Usuario) {
-  return `${u.nombres.charAt(0)}${u.apellidos.charAt(0)}`.toUpperCase()
-}
-
-function nombreCompleto(u: Usuario) {
-  return `${u.nombres} ${u.apellidos}`
-}
-
 type RankEntry = {
   uid: string
   nombre: string
-  tasa: number
+  racha: number
   asistidas: number
   pos: number
   esYo: boolean
@@ -56,18 +64,13 @@ export default function RankingPage() {
   const [rango, setRango] = useState<'general' | 'mensual'>('general')
 
   useEffect(() => {
-    getUsuarios('estudiante')
-      .then((estudiantes) => {
-        const sorted = [...estudiantes]
-          .sort((a, b) => (b.estadisticas?.tasaAsistencia ?? 0) - (a.estadisticas?.tasaAsistencia ?? 0))
-          .map((u, i) => ({
-            uid: u.uid,
-            nombre: nombreCompleto(u),
-            tasa: u.estadisticas?.tasaAsistencia ?? 0,
-            asistidas: u.estadisticas?.clasesAsistidas ?? 0,
-            pos: i + 1,
-            esYo: u.uid === user?.uid,
-          }))
+    if (!user?.uid) return
+    fetchRanking()
+      .then((lista) => {
+        const sorted = lista
+          .map((r) => ({ ...r, esYo: r.uid === user.uid }))
+          .sort((a, b) => b.racha - a.racha || b.asistidas - a.asistidas)
+          .map((r, i) => ({ ...r, pos: i + 1 }))
         setRanking(sorted)
       })
       .catch(console.error)
@@ -145,7 +148,12 @@ export default function RankingPage() {
                             #{p.pos}
                           </span>
                           <span className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/70 truncate max-w-full">{p.nombre}</span>
-                          <span className="font-display text-sm font-black text-white mt-2">{p.tasa}%</span>
+                          <span className="font-display text-sm font-black text-white mt-2">
+                            {p.racha} {p.racha === 1 ? 'semana' : 'semanas'}
+                          </span>
+                          <span className="label-caps text-[8px] text-[var(--color-on-surface-variant)]/50 mt-1">
+                            {p.asistidas} asistencias
+                          </span>
                         </div>
                       </Card>
                     </Reveal>
@@ -166,7 +174,9 @@ export default function RankingPage() {
                     <p className="font-display font-black text-white uppercase tracking-tight truncate">{miNombre} (Tú)</p>
                     <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/60 mt-0.5">{yo.asistidas} asistencias registradas</p>
                   </div>
-                  <span className="font-display text-xl font-black text-[var(--color-primary-fixed)] shrink-0">{yo.tasa}%</span>
+                  <span className="font-display text-xl font-black text-[var(--color-primary-fixed)] shrink-0">
+                    {yo.racha} {yo.racha === 1 ? 'semana' : 'semanas'}
+                  </span>
                 </div>
               </Reveal>
             )}
@@ -181,7 +191,7 @@ export default function RankingPage() {
                   <table className="w-full text-left min-w-[520px]">
                     <thead className="bg-white/5">
                       <tr>
-                        {['#', 'Estudiante', 'Asistencias', 'Tasa'].map((h) => (
+                        {['#', 'Estudiante', 'Racha', 'Asistencias'].map((h) => (
                           <th key={h} className="px-6 py-4 label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">{h}</th>
                         ))}
                       </tr>
@@ -204,10 +214,10 @@ export default function RankingPage() {
                               </span>
                             </div>
                           </td>
-                          <td className="px-6 py-4 text-sm text-[var(--color-on-surface-variant)]/70">{r.asistidas}</td>
                           <td className={`px-6 py-4 font-display font-black ${r.esYo ? 'text-[var(--color-primary-fixed)]' : 'text-white'}`}>
-                            {r.tasa}%
+                            {r.racha}
                           </td>
+                          <td className="px-6 py-4 text-sm text-[var(--color-on-surface-variant)]/70">{r.asistidas}</td>
                         </tr>
                       ))}
                     </tbody>

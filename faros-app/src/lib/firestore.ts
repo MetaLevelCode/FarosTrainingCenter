@@ -576,6 +576,7 @@ export async function registrarAsistencia(
 
   // ID determinista permite tx.get() en lugar de una query no-transaccional
   const asistenciaRef = doc(db, 'asistencias', `${claseId}_${usuarioId}`)
+  let huboCambio = false
 
   await runTransaction(db, async (tx) => {
     const now = Date.now()
@@ -605,6 +606,7 @@ export async function registrarAsistencia(
 
     // 2. Ajustar estadísticas + suscripción según la delta
     if (delta === 0 || !usuSnap.exists()) return
+    huboCambio = true
     const usu = usuSnap.data() as Record<string, any>
 
     const asistidasPrev = (usu.estadisticas?.clasesAsistidas as number) ?? 0
@@ -617,6 +619,28 @@ export async function registrarAsistencia(
       'estadisticas.tasaAsistencia': tasaAsistencia,
     })
   })
+
+  // Mantiene fresca la racha cacheada (ver lib/racha-server.ts) apenas
+  // cambia la asistencia — best-effort: si falla (ej. sin conexión, esto
+  // se llama también al reintentar la cola offline en PendienteSync), la
+  // racha queda desactualizada hasta el próximo evento o hasta que
+  // GET /api/ranking la recalcule de forma perezosa. Nunca debe tumbar el
+  // registro de asistencia, que ya se guardó arriba.
+  if (huboCambio) {
+    try {
+      const { getAuth } = await import('firebase/auth')
+      const idToken = await getAuth().currentUser?.getIdToken()
+      if (idToken) {
+        await fetch('/api/racha/recalcular', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({ usuarioId }),
+        })
+      }
+    } catch (err) {
+      console.error('[registrarAsistencia] no se pudo refrescar la racha', err)
+    }
+  }
 }
 
 export async function getTransaccionesUsuario(usuarioId: string): Promise<Transaccion[]> {
