@@ -80,19 +80,25 @@ export default function RegistroPage() {
       .then((s) => setSedes(s.length > 0 ? s : SEDES_FALLBACK))
       .catch(() => setSedes(SEDES_FALLBACK))
       
-    // Leer si viene de armar un plan para condicionar campos y redirección
+    // Crear cuenta exige haber armado un plan primero — es lo único que le
+    // dice a este formulario si debe pedir sede o no (personalizado/virtual
+    // no la necesitan; grupal/vacaciones sí). Sin plan pendiente, no hay
+    // forma de saberlo, así que se manda al wizard antes de mostrar nada.
     try {
       const raw = localStorage.getItem('faros-plan-pendiente')
-      if (raw) {
-        setHasPendingPlan(true)
-        const plan = JSON.parse(raw)
-        // Si el plan es virtual, personalizado o de conjuntos, la sede no es obligatoria
-        if (['virtual', 'personal', 'conjuntos'].includes(plan.tipo)) {
-          setEsPlanSinSede(true)
-        }
+      if (!raw) {
+        router.replace('/dashboard/planes')
+        return
+      }
+      setHasPendingPlan(true)
+      const plan = JSON.parse(raw)
+      // Personalizado (incluye lo que antes era "Conjuntos", fusionado en
+      // la misma modalidad) y Virtual no piden sede.
+      if (['virtual', 'personal'].includes(plan.tipo)) {
+        setEsPlanSinSede(true)
       }
     } catch {}
-  }, [])
+  }, [router])
 
   // Salud
   const [eps, setEps] = useState('')

@@ -88,16 +88,27 @@ const TARIFAS_ACTUAL = {
       categoria: 'NP', porPersona: true, personasMin: 3, personasMax: 5,
       precios: { 4: 80_000, 8: 140_000, 12: 190_000 },
     },
-    // A.F.P — Acondicionamiento Físico Personalizado
-    funcional: {
+    // A.F.P — Acondicionamiento Físico Personalizado (combinación "funcional",
+    // modalidad individual — antes vivía como entrada suelta de Personales)
+    'funcional-individual': {
       categoria: 'AFP', porPersona: false, personasMin: 1, personasMax: 1,
       precios: { 4: 200_000, 8: 376_000, 12: 480_000 },
     },
-  },
-  conjuntos: {
-    'nat-acuagym':   { precios: { 1: 290_000, 2: 480_000 } },
-    'funcional':     { precios: { 1: 280_000, 2: 560_000 } },
-    'rumba':         { precios: { 1: null,    2: null } },
+    // Resto de combinaciones (funcional/rumba/nat-acuagym) × modalidad —
+    // Conjuntos cobraba un monto plano por semana (no por persona/sesiones),
+    // así que no hay precio real que migrar; nacen en "tarifa por confirmar"
+    // hasta que el admin las cargue desde /admin/planes → Tarifas.
+    'funcional-pareja':      { categoria: 'AFP', porPersona: true,  personasMin: 2, personasMax: 2, precios: { 4: null, 8: null, 12: null } },
+    'funcional-familia':     { categoria: 'AFP', porPersona: true,  personasMin: 3, personasMax: 5, precios: { 4: null, 8: null, 12: null } },
+    'funcional-reducido':    { categoria: 'AFP', porPersona: true,  personasMin: 3, personasMax: 5, precios: { 4: null, 8: null, 12: null } },
+    'rumba-individual':      { categoria: 'NP',  porPersona: false, personasMin: 1, personasMax: 1, precios: { 4: null, 8: null, 12: null } },
+    'rumba-pareja':          { categoria: 'NP',  porPersona: true,  personasMin: 2, personasMax: 2, precios: { 4: null, 8: null, 12: null } },
+    'rumba-familia':         { categoria: 'NP',  porPersona: true,  personasMin: 3, personasMax: 5, precios: { 4: null, 8: null, 12: null } },
+    'rumba-reducido':        { categoria: 'NP',  porPersona: true,  personasMin: 3, personasMax: 5, precios: { 4: null, 8: null, 12: null } },
+    'nat-acuagym-individual':{ categoria: 'NP',  porPersona: false, personasMin: 1, personasMax: 1, precios: { 4: null, 8: null, 12: null } },
+    'nat-acuagym-pareja':    { categoria: 'NP',  porPersona: true,  personasMin: 2, personasMax: 2, precios: { 4: null, 8: null, 12: null } },
+    'nat-acuagym-familia':   { categoria: 'NP',  porPersona: true,  personasMin: 3, personasMax: 5, precios: { 4: null, 8: null, 12: null } },
+    'nat-acuagym-reducido':  { categoria: 'NP',  porPersona: true,  personasMin: 3, personasMax: 5, precios: { 4: null, 8: null, 12: null } },
   },
   vacacionesPorNino: 150_000,
   virtualPorMes: 120_000,

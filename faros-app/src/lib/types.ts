@@ -349,20 +349,17 @@ export interface TarifaPersonal {
   precios: Record<number, number | null>  // { 4: 150000, 8: 280000, 12: 390000 }
 }
 
-export interface TarifaConjunto {
-  precios: Record<number, number | null>  // por frecuencia semanal (1 o 2)
-}
-
 export interface Tarifas {
   version: number
   actualizadoEn: number
   actualizadoPor?: string
   // Grupal: precio POR SESIÓN según frecuencia semanal
   grupoPorSesion: Record<number, number>  // { 1: 15000, 2: 12000, 3: 10000 }
-  // Personales: precio mensual según sesionesPorMes
+  // Personales: precio mensual según sesionesPorMes. La clave es la
+  // modalidad sola ('individual'|'pareja'|'familia'|'reducido') cuando la
+  // combinación es 'natacion' (la de siempre), o `${combinacionId}-${modalidadId}`
+  // para el resto (ej. 'rumba-pareja') — ver claveTarifaPersonal() en lib/planes.ts.
   personales: Record<string, TarifaPersonal>
-  // Conjuntos: precio mensual según frecuencia semanal (1 o 2)
-  conjuntos: Record<string, TarifaConjunto>
   vacacionesPorNino: number
   virtualPorMes: number
 }

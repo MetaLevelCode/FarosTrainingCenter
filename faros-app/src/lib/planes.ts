@@ -8,7 +8,7 @@
 // gestione planes desde su panel.
 // ============================================================
 
-export type TipoPlan = 'grupal' | 'personal' | 'conjunto' | 'vacaciones' | 'virtual'
+export type TipoPlan = 'grupal' | 'personal' | 'vacaciones' | 'virtual'
 
 export interface OpcionTipo {
   id: TipoPlan
@@ -24,12 +24,8 @@ export const TIPOS: OpcionTipo[] = [
     detalle: ['Entrenador certificado por grupo', 'Ambiente motivador y constante', 'La opción más económica por sesión'],
   },
   {
-    id: 'personal', nombre: 'Personalizado', desc: 'Individual, en pareja, en familia o en grupo reducido.', icon: 'person',
-    detalle: ['Atención uno a uno o en grupo cerrado', 'Plan ajustado a tu nivel y meta', 'Máxima flexibilidad de horario'],
-  },
-  {
-    id: 'conjunto', nombre: 'Conjuntos', desc: 'Combina natación con acuagym, funcional o rumbaterapia.', icon: 'pool',
-    detalle: ['Combina disciplinas en un solo plan', 'Trabajo dentro y fuera del agua', 'Progreso más integral'],
+    id: 'personal', nombre: 'Personalizado', desc: 'Individual, en pareja, en familia o en grupo reducido — natación, funcional, rumboterapia o acuagym.', icon: 'person',
+    detalle: ['Atención uno a uno o en grupo cerrado', 'Elige tu combinación: natación, funcional, rumboterapia o acuagym', 'Máxima flexibilidad de horario'],
   },
   {
     id: 'vacaciones', nombre: 'Vacaciones deportivas', desc: 'Programa intensivo de 2 semanas para niños.', icon: 'child_care',
@@ -101,28 +97,36 @@ export const PERSONALES: SubPersonal[] = [
     precios: { 4: 80_000, 8: 140_000, 12: 190_000 },
     incluye: ['Grupo cerrado de 3 a 5', 'Atención cercana del coach', 'Precio por persona'],
   },
-  {
-    id: 'funcional', nombre: 'Funcional adultos', desc: 'Acondicionamiento funcional para adultos.',
-    porPersona: false, personasMin: 1, personasMax: 1,
-    precios: { 4: 200_000, 8: 376_000, 12: 480_000 },
-    incluye: ['Trabajo fuera del agua', 'Fuerza, movilidad y core', 'Complementa tu natación'],
-  },
 ]
 
-// ── Conjuntos (precio mensual por frecuencia semanal 1x/2x) ──
-export interface Conjunto {
+// ── Combinaciones (la disciplina, independiente de la modalidad) ──
+// Se cruza con PERSONALES: el admin fija un precio por persona para cada
+// combinación de (combinación, modalidad) en tarifas.personales — ver
+// claveTarifaPersonal(). "Natación" es la combinación de siempre y usa las
+// claves planas que ya existían (individual/pareja/familia/reducido);
+// el resto usa clave compuesta `${combinacionId}-${modalidadId}`.
+export interface Combinacion {
   id: string
   nombre: string
   desc: string
-  precios: Record<number, number | null> // null = tarifa por confirmar
   incluye: string[]  // se revela al seleccionar
 }
 
-export const CONJUNTOS: Conjunto[] = [
-  { id: 'nat-acuagym', nombre: 'Natación + Acuagym', desc: 'Técnica en el agua y bajo impacto articular.', precios: { 1: 240_000, 2: 480_000 }, incluye: ['Natación técnica', 'Acuagym de bajo impacto', 'Dos disciplinas en un plan'] },
-  { id: 'funcional', nombre: 'Ejercicio funcional', desc: 'Fuerza y movilidad complementaria.', precios: { 1: 280_000, 2: 560_000 }, incluye: ['Trabajo funcional en seco', 'Fuerza y prevención de lesiones', 'Complementa tu natación'] },
-  { id: 'rumba', nombre: 'Rumbaterapia', desc: 'Cardio rítmico en grupo.', precios: { 1: null, 2: null }, incluye: ['Cardio rítmico en grupo', 'Alta quema calórica', 'Tarifa por confirmar'] },
+export const COMBINACIONES: Combinacion[] = [
+  { id: 'natacion', nombre: 'Natación', desc: 'El personalizado de siempre: técnica en el agua a tu ritmo.', incluye: ['Corrección técnica en el agua', 'Plan ajustado a tu nivel y meta', 'La base de todas las combinaciones'] },
+  { id: 'funcional', nombre: 'Ejercicio funcional', desc: 'Fuerza y movilidad complementaria, fuera del agua.', incluye: ['Trabajo funcional en seco', 'Fuerza y prevención de lesiones', 'Complementa tu natación'] },
+  { id: 'rumba', nombre: 'Rumbaterapia', desc: 'Cardio rítmico en grupo.', incluye: ['Cardio rítmico en grupo', 'Alta quema calórica', 'Motivación en equipo'] },
+  { id: 'nat-acuagym', nombre: 'Natación + Acuagym', desc: 'Técnica en el agua y bajo impacto articular.', incluye: ['Natación técnica', 'Acuagym de bajo impacto', 'Dos disciplinas en un plan'] },
 ]
+
+/**
+ * Clave con la que se busca el precio en tarifas.personales — cruza la
+ * modalidad (personas) con la combinación (disciplina). 'natacion' usa las
+ * claves planas históricas para no perder los precios ya cargados.
+ */
+export function claveTarifaPersonal(modalidadId: string, combinacionId: string): string {
+  return combinacionId === 'natacion' ? modalidadId : `${combinacionId}-${modalidadId}`
+}
 
 export const VACACIONES_POR_NINO = 150_000 // 2 semanas
 
@@ -145,8 +149,8 @@ export const FRECUENCIAS: Frecuencia[] = [
 export interface SeleccionPlan {
   tipo: TipoPlan | null
   grupoId: string | null
-  personalId: string | null
-  conjuntoId: string | null
+  personalId: string | null        // modalidad (personas): individual/pareja/familia/reducido
+  combinacionId: string | null     // disciplina: natacion/funcional/rumba/nat-acuagym
   week: number        // frecuencia semanal
   personas: number    // para modalidades por persona
   ninos: number       // para vacaciones
@@ -154,7 +158,7 @@ export interface SeleccionPlan {
 }
 
 export const SELECCION_INICIAL: SeleccionPlan = {
-  tipo: null, grupoId: null, personalId: null, conjuntoId: null,
+  tipo: null, grupoId: null, personalId: null, combinacionId: null,
   week: 2, personas: 2, ninos: 1, profesorVirtualId: null,
 }
 
@@ -174,24 +178,53 @@ export const fmtCOP = (n: number) =>
 // las tarifas de Firestore vía calcularPrecio(sel, tarifas).
 import type { Tarifas } from './types'
 
-export const TARIFAS_FALLBACK: Tarifas = {
-  version: 0,
-  actualizadoEn: 0,
-  grupoPorSesion: GRUPO_POR_SESION,
-  personales: PERSONALES.reduce((acc, p) => {
+function personalesFallback(): Tarifas['personales'] {
+  const acc: Tarifas['personales'] = {}
+
+  // Natación (combinación por defecto) — claves planas ya existentes.
+  for (const p of PERSONALES) {
     acc[p.id] = {
-      categoria: p.id === 'funcional' ? 'AFP' : 'NP',
+      categoria: 'NP',
       porPersona: p.porPersona,
       personasMin: p.personasMin,
       personasMax: p.personasMax,
       precios: p.precios,
     }
-    return acc
-  }, {} as Tarifas['personales']),
-  conjuntos: CONJUNTOS.reduce((acc, c) => {
-    acc[c.id] = { precios: c.precios }
-    return acc
-  }, {} as Tarifas['conjuntos']),
+  }
+
+  // Funcional en modalidad individual migra el precio que ya existía como
+  // "Funcional adultos" antes de fusionarse con Conjuntos.
+  acc['funcional-individual'] = {
+    categoria: 'AFP', porPersona: false, personasMin: 1, personasMax: 1,
+    precios: { 4: 200_000, 8: 376_000, 12: 480_000 },
+  }
+
+  // Resto de combinaciones × modalidades: nunca existieron con esta forma
+  // (Conjuntos cobraba un monto plano por semana, no por persona/sesiones)
+  // — nacen en "tarifa por confirmar" hasta que el admin las cargue.
+  for (const combo of COMBINACIONES) {
+    if (combo.id === 'natacion') continue
+    for (const modalidad of PERSONALES) {
+      const clave = claveTarifaPersonal(modalidad.id, combo.id)
+      if (acc[clave]) continue
+      acc[clave] = {
+        categoria: combo.id === 'funcional' ? 'AFP' : 'NP',
+        porPersona: modalidad.porPersona,
+        personasMin: modalidad.personasMin,
+        personasMax: modalidad.personasMax,
+        precios: { 4: null, 8: null, 12: null },
+      }
+    }
+  }
+
+  return acc
+}
+
+export const TARIFAS_FALLBACK: Tarifas = {
+  version: 0,
+  actualizadoEn: 0,
+  grupoPorSesion: GRUPO_POR_SESION,
+  personales: personalesFallback(),
   vacacionesPorNino: VACACIONES_POR_NINO,
   virtualPorMes: VIRTUAL_POR_MES,
 }
@@ -215,8 +248,9 @@ export function calcularPrecio(sel: SeleccionPlan, tarifas: Tarifas = TARIFAS_FA
   }
 
   if (sel.tipo === 'personal') {
-    const sub = sel.personalId ? tarifas.personales[sel.personalId] : null
     const freq = FRECUENCIAS.find((f) => f.week === sel.week)!
+    if (!sel.personalId || !sel.combinacionId) return { ...base, detalleFrecuencia: freq.label }
+    const sub = tarifas.personales[claveTarifaPersonal(sel.personalId, sel.combinacionId)]
     if (!sub) return { ...base, detalleFrecuencia: freq.label }
     const unit = sub.precios[freq.mes]
     if (unit == null) return { ...base, detalleFrecuencia: freq.label }
@@ -230,16 +264,6 @@ export function calcularPrecio(sel: SeleccionPlan, tarifas: Tarifas = TARIFAS_FA
       personas,
       detalleFrecuencia: `${freq.label} · ${freq.mes} sesiones/mes`,
     }
-  }
-
-  if (sel.tipo === 'conjunto') {
-    const combo = sel.conjuntoId ? tarifas.conjuntos[sel.conjuntoId] : null
-    const semanal = sel.week === 1 ? 1 : 2
-    const freqLabel = semanal === 1 ? '1 vez / semana' : '2 veces / semana'
-    if (!combo) return { ...base, detalleFrecuencia: freqLabel }
-    const precio = combo.precios[semanal]
-    if (precio == null) return { ...base, detalleFrecuencia: freqLabel }
-    return { disponible: true, total: precio, porPersona: null, personas: 1, detalleFrecuencia: freqLabel }
   }
 
   if (sel.tipo === 'vacaciones') {
@@ -270,7 +294,6 @@ export function calcularPrecio(sel: SeleccionPlan, tarifas: Tarifas = TARIFAS_FA
 // Sesiones incluidas al aprobar una tx — deriva del wizard.
 export function sesionesDelPlan(sel: SeleccionPlan): number {
   if (sel.tipo === 'vacaciones') return 10   // programa de 2 semanas ~ 10 clases
-  if (sel.tipo === 'conjunto') return (sel.week === 1 ? 4 : 8)
   if (sel.tipo === 'virtual') return 0       // acceso ilimitado, no se cuenta por sesión
   const freq = FRECUENCIAS.find((f) => f.week === sel.week)
   return freq?.mes ?? 0
@@ -288,12 +311,14 @@ export function resumenPlan(sel: SeleccionPlan): { titulo: string; subtitulo: st
     return { titulo: g?.nombre ?? 'Grupal UTP', subtitulo: 'Plan grupal · sede UTP', horarios: g?.horarios ?? [] }
   }
   if (sel.tipo === 'personal') {
-    const p = PERSONALES.find((x) => x.id === sel.personalId)
-    return { titulo: p?.nombre ?? 'Personalizado', subtitulo: 'Plan personalizado', horarios: [] }
-  }
-  if (sel.tipo === 'conjunto') {
-    const c = CONJUNTOS.find((x) => x.id === sel.conjuntoId)
-    return { titulo: c?.nombre ?? 'Conjunto', subtitulo: 'Plan conjunto', horarios: [] }
+    const modalidad = PERSONALES.find((x) => x.id === sel.personalId)
+    const combinacion = COMBINACIONES.find((x) => x.id === sel.combinacionId)
+    const esNatacion = !combinacion || combinacion.id === 'natacion'
+    return {
+      titulo: esNatacion ? (modalidad?.nombre ?? 'Personalizado') : combinacion.nombre,
+      subtitulo: esNatacion ? 'Plan personalizado' : `Personalizado · ${modalidad?.nombre ?? ''}`,
+      horarios: [],
+    }
   }
   if (sel.tipo === 'vacaciones') {
     return { titulo: 'Vacaciones deportivas', subtitulo: 'Programa intensivo · 2 semanas', horarios: [] }
@@ -352,7 +377,6 @@ export interface PlanDescrito {
 const TIPO_LABEL: Record<TipoPlan, string> = {
   grupal: 'Grupal',
   personal: 'Personalizado',
-  conjunto: 'Conjunto',
   vacaciones: 'Vacaciones',
   virtual: 'Virtual',
 }
@@ -365,7 +389,6 @@ export function describirPlan(sel: SeleccionPlan): PlanDescrito {
 
   const sesionesMes =
     sel.tipo === 'vacaciones' ? 10
-    : sel.tipo === 'conjunto' ? (sel.week === 1 ? 4 : 8)
     : sel.tipo === 'virtual' ? 0
     : freq?.mes ?? 0
 

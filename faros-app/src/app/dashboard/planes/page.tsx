@@ -23,7 +23,7 @@ import { displayName } from '@/lib/types'
 import type { Suscripcion, Sede, Grupo as GrupoFS, Tarifas, Usuario } from '@/lib/types'
 import { Card } from '@/components/ui'
 import {
-  TIPOS, GRUPOS as GRUPOS_FALLBACK, PERSONALES, CONJUNTOS, FRECUENCIAS,
+  TIPOS, GRUPOS as GRUPOS_FALLBACK, PERSONALES, COMBINACIONES, FRECUENCIAS,
   SELECCION_INICIAL, calcularPrecio, resumenPlan, fmtCOP,
   TARIFAS_FALLBACK,
   type SeleccionPlan, type TipoPlan,
@@ -32,7 +32,7 @@ import {
 const EASE = [0.22, 1, 0.36, 1] as const
 
 // Secuencia de pasos según el tipo de plan elegido.
-type StepKey = 'tipo' | 'grupo' | 'personal' | 'accion' | 'conjunto' | 'frecuencia' | 'ninos' | 'virtual' | 'resumen'
+type StepKey = 'tipo' | 'grupo' | 'personal' | 'accion' | 'combinacion' | 'frecuencia' | 'ninos' | 'virtual' | 'resumen'
 export type AccionGrupo = 'adquirir' | 'unirse' | null
 
 // Pareja/Familia/Grupo reducido: hasta 5 personas comparten un plan con
@@ -48,12 +48,12 @@ function stepsFor(tipo: TipoPlan | null, personalId: string | null, accionGrupo:
   switch (tipo) {
     case 'grupal': return ['tipo', 'grupo', 'frecuencia', 'resumen']
     case 'personal': {
-      if (!esModalidadGrupal(personalId)) return ['tipo', 'personal', 'frecuencia', 'resumen']
-      // Unirse no pide frecuencia ni personas — eso ya lo definió el jefe.
-      if (accionGrupo === 'unirse') return ['tipo', 'personal', 'accion']
-      return ['tipo', 'personal', 'accion', 'frecuencia', 'resumen']
+      // Unirse no pide combinación, frecuencia ni personas — eso ya lo
+      // definió el jefe del grupo al adquirir el plan.
+      if (esModalidadGrupal(personalId) && accionGrupo === 'unirse') return ['tipo', 'personal', 'accion']
+      const accion: StepKey[] = esModalidadGrupal(personalId) ? ['accion'] : []
+      return ['tipo', 'personal', ...accion, 'combinacion', 'frecuencia', 'resumen']
     }
-    case 'conjunto': return ['tipo', 'conjunto', 'frecuencia', 'resumen']
     case 'vacaciones': return ['tipo', 'ninos', 'resumen']
     case 'virtual': return ['tipo', 'virtual', 'resumen']
     default: return ['tipo', 'grupo', 'frecuencia', 'resumen']
@@ -65,7 +65,7 @@ const STEP_TITULO: Record<StepKey, string> = {
   grupo: 'Elige tu grupo y sede',
   personal: 'Elige tu modalidad',
   accion: '¿Adquirir el plan o unirte a uno?',
-  conjunto: 'Elige tu combinación',
+  combinacion: '¿Qué combinación quieres entrenar?',
   frecuencia: '¿Con qué frecuencia entrenas?',
   ninos: '¿Cuántos niños?',
   virtual: 'Elige tu entrenador',
@@ -318,7 +318,7 @@ export default function PlanesFlowPage() {
       case 'grupo': return !!sel.grupoId
       case 'personal': return !!sel.personalId
       case 'accion': return accionGrupo === 'adquirir'
-      case 'conjunto': return !!sel.conjuntoId
+      case 'combinacion': return !!sel.combinacionId
       case 'virtual': return !!sel.profesorVirtualId
       default: return true
     }
@@ -331,7 +331,7 @@ export default function PlanesFlowPage() {
     if (stepIdx > 0) { setDir(-1); setStepIdx((s) => s - 1) }
   }
   function pickTipo(tipo: TipoPlan) {
-    setSel({ ...SELECCION_INICIAL, tipo, week: tipo === 'conjunto' ? 1 : 2 })
+    setSel({ ...SELECCION_INICIAL, tipo })
     setAccionGrupo(null)
   }
 
@@ -835,7 +835,7 @@ export default function PlanesFlowPage() {
                   <ChoiceCard
                     key={p.id}
                     selected={sel.personalId === p.id}
-                    onClick={() => { setSel((s) => ({ ...s, personalId: p.id, personas: p.personasMin })); setAccionGrupo(null) }}
+                    onClick={() => { setSel((s) => ({ ...s, personalId: p.id, personas: p.personasMin, combinacionId: null })); setAccionGrupo(null) }}
                     icon={p.porPersona ? 'group' : 'person'}
                     title={p.nombre}
                     desc={p.desc}
@@ -887,15 +887,15 @@ export default function PlanesFlowPage() {
               </div>
             )}
 
-            {/* PASO: CONJUNTO */}
-            {stepKey === 'conjunto' && (
+            {/* PASO: COMBINACIÓN — disciplina, cruzada con la modalidad ya elegida */}
+            {stepKey === 'combinacion' && (
               <div className="space-y-6">
-                {CONJUNTOS.map((c) => (
+                {COMBINACIONES.map((c) => (
                   <ChoiceCard
                     key={c.id}
-                    selected={sel.conjuntoId === c.id}
-                    onClick={() => setSel((s) => ({ ...s, conjuntoId: c.id }))}
-                    icon="join_inner"
+                    selected={sel.combinacionId === c.id}
+                    onClick={() => setSel((s) => ({ ...s, combinacionId: c.id }))}
+                    icon={c.id === 'natacion' ? 'pool' : c.id === 'funcional' ? 'fitness_center' : c.id === 'rumba' ? 'nightlife' : 'join_inner'}
                     title={c.nombre}
                     desc={c.desc}
                     expand={<Bullets items={c.incluye} />}
@@ -908,7 +908,6 @@ export default function PlanesFlowPage() {
             {stepKey === 'frecuencia' && (
               <div className="space-y-6">
                 {FRECUENCIAS
-                  .filter((f) => sel.tipo !== 'conjunto' || f.week <= 2)
                   .map((f) => {
                     const p = calcularPrecio({ ...sel, week: f.week }, tarifasEfectivas)
                     return (

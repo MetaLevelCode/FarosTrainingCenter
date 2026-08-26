@@ -18,7 +18,7 @@ import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button, Spinner } from '@/components/ui'
 import { RutinaVirtualCard } from '@/components/shared/RutinaVirtualCard'
-import { fmtCOP } from '@/lib/planes'
+import { fmtCOP, COMBINACIONES, PERSONALES, claveTarifaPersonal, TARIFAS_FALLBACK } from '@/lib/planes'
 import {
   getSedes, upsertSede, eliminarSede,
   getGrupos, upsertGrupo, eliminarGrupo,
@@ -684,7 +684,15 @@ function TarifasTab({ actualizadoPor }: { actualizadoPor?: string }) {
 
   useEffect(() => {
     getTarifas()
-      .then((t) => setTarifas(t))
+      .then((t) => {
+        if (!t) { setTarifas(null); return }
+        // Migración no destructiva: si el doc en Firestore es de antes de
+        // fusionar Conjuntos en Personalizado, le faltan las claves nuevas
+        // (funcional-pareja, rumba-*, nat-acuagym-*) — se completan acá con
+        // los defaults del fallback SIN pisar ningún precio ya cargado por
+        // el admin. Queda persistido recién cuando el admin guarda.
+        setTarifas({ ...t, personales: { ...TARIFAS_FALLBACK.personales, ...t.personales } })
+      })
       .catch((e) => setErrorPersistente(`Lectura falló: ${errStr(e)}`))
       .finally(() => setCargando(false))
   }, [])
@@ -706,7 +714,6 @@ function TarifasTab({ actualizadoPor }: { actualizadoPor?: string }) {
         version: (tarifas.version ?? 0) + 1,
         grupoPorSesion: tarifas.grupoPorSesion,
         personales: tarifas.personales,
-        conjuntos: tarifas.conjuntos,
         vacacionesPorNino: tarifas.vacacionesPorNino,
         virtualPorMes: tarifas.virtualPorMes,
       }, actualizadoPor)
@@ -769,65 +776,51 @@ function TarifasTab({ actualizadoPor }: { actualizadoPor?: string }) {
         </div>
       </Card>
 
-      {/* Personales */}
+      {/* Personales — agrupadas por combinación (disciplina), una fila por
+          modalidad (personas) dentro de cada una. La clave en Firestore es
+          plana ('individual'...) para Natación y compuesta ('rumba-pareja')
+          para el resto — ver claveTarifaPersonal() en lib/planes.ts. */}
       <Card>
         <p className="label-caps text-[10px] text-[var(--color-primary-fixed)] mb-1">PERSONALES</p>
-        <p className="text-sm text-white/60 mb-5">Precio mensual según sesiones/mes (4=1x, 8=2x, 12=3x).</p>
-        <div className="space-y-6">
-          {Object.entries(tarifas.personales).map(([id, p]) => (
-            <div key={id} className="border-t border-white/5 pt-5 first:border-t-0 first:pt-0">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <p className="font-display text-sm font-black text-white uppercase">{id}</p>
-                  <p className="text-[10px] text-white/40 mt-0.5">
-                    Categoría {p.categoria} · {p.porPersona ? `por persona (${p.personasMin}–${p.personasMax})` : 'monto único'}
-                  </p>
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-4">
-                {[4, 8, 12].map((mes) => (
-                  <Field key={mes} label={`x${mes} sesiones`}>
-                    <InputPrecio
-                      value={p.precios[mes] ?? null}
-                      onChange={(v) => update((t) => ({
-                        ...t,
-                        personales: {
-                          ...t.personales,
-                          [id]: { ...p, precios: { ...p.precios, [mes]: v } },
-                        },
-                      }))}
-                    />
-                  </Field>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      {/* Conjuntos */}
-      <Card>
-        <p className="label-caps text-[10px] text-[var(--color-primary-fixed)] mb-1">CONJUNTOS</p>
-        <p className="text-sm text-white/60 mb-5">Precio mensual según frecuencia semanal (1 o 2).</p>
-        <div className="space-y-6">
-          {Object.entries(tarifas.conjuntos).map(([id, c]) => (
-            <div key={id} className="border-t border-white/5 pt-5 first:border-t-0 first:pt-0">
-              <p className="font-display text-sm font-black text-white uppercase mb-3">{id}</p>
-              <div className="grid grid-cols-2 gap-4">
-                {[1, 2].map((week) => (
-                  <Field key={week} label={`${week}x / semana`}>
-                    <InputPrecio
-                      value={c.precios[week] ?? null}
-                      onChange={(v) => update((t) => ({
-                        ...t,
-                        conjuntos: {
-                          ...t.conjuntos,
-                          [id]: { precios: { ...c.precios, [week]: v } },
-                        },
-                      }))}
-                    />
-                  </Field>
-                ))}
+        <p className="text-sm text-white/60 mb-5">Precio mensual por persona según sesiones/mes (4=1x, 8=2x, 12=3x).</p>
+        <div className="space-y-8">
+          {COMBINACIONES.map((combo) => (
+            <div key={combo.id}>
+              <p className="label-caps text-[9px] text-white/50 mb-4">{combo.nombre.toUpperCase()}</p>
+              <div className="space-y-6">
+                {PERSONALES.map((modalidad) => {
+                  const id = claveTarifaPersonal(modalidad.id, combo.id)
+                  const p = tarifas.personales[id]
+                  if (!p) return null
+                  return (
+                    <div key={id} className="border-t border-white/5 pt-5 first:border-t-0 first:pt-0">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <p className="font-display text-sm font-black text-white uppercase">{modalidad.nombre}</p>
+                          <p className="text-[10px] text-white/40 mt-0.5">
+                            Categoría {p.categoria} · {p.porPersona ? `por persona (${p.personasMin}–${p.personasMax})` : 'monto único'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-3 gap-4">
+                        {[4, 8, 12].map((mes) => (
+                          <Field key={mes} label={`x${mes} sesiones`}>
+                            <InputPrecio
+                              value={p.precios[mes] ?? null}
+                              onChange={(v) => update((t) => ({
+                                ...t,
+                                personales: {
+                                  ...t.personales,
+                                  [id]: { ...p, precios: { ...p.precios, [mes]: v } },
+                                },
+                              }))}
+                            />
+                          </Field>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           ))}

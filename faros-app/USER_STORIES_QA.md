@@ -187,33 +187,45 @@ Todo funciona a la perfección.
 ---
 
 ### E5 — Wizard: Plan Personalizado (armar + agendar franja con profesor)
-**Como** alumno, **quiero** armar un plan Personalizado y luego agendar mi
-horario con un profesor específico, **para** entrenar 1-a-1 (o en pareja,
-familia, grupo reducido) a mi medida.
+**Como** alumno, **quiero** armar un plan Personalizado — eligiendo modalidad,
+combinación (disciplina) y frecuencia — y luego agendar mi horario con un
+profesor específico, **para** entrenar 1-a-1 (o en pareja, familia, grupo
+reducido) la disciplina que quiera, a mi medida.
 
 Pasos, wizard:
 1. Elegir "Personalizado" → elegir modalidad (Individual/Pareja/Familia/Grupo
-   reducido) → si es por persona, probar el contador de personas (mín/máx)
-2. Elegir frecuencia → precio recalculado (por persona si aplica)
+   reducido)
+2. Si la modalidad es Pareja/Familia/Grupo reducido, aparece el paso
+   "¿Adquirir el plan o unirte a uno?" (ver E5.2) — "Adquirir plan" sigue el
+   flujo normal; Individual no pasa por este paso
+3. Elegir combinación (Natación / Ejercicio funcional / Rumbaterapia /
+   Natación + Acuagym) — antes "Conjuntos" era un tipo de plan aparte, ahora
+   es este paso dentro de Personalizado, cruzado con la modalidad. Probar
+   una combinación sin precio cargado para esa modalidad (ej. recién
+   fusionado, "Rumbaterapia + Pareja") → debe mostrar "Por confirmar", no
+   romper el wizard ni dejar solicitar con un precio inventado
+4. Elegir frecuencia (1x/2x/3x — ya no hay tope de 2x para las combinaciones
+   que antes eran Conjuntos) → precio recalculado (por persona si aplica),
+   si la modalidad es por persona probar el contador de personas (mín/máx)
 
 Pasos, agendar franja (una vez el plan está activo, en
 `SolicitudPersonalizada` dentro de `/dashboard/asistencia`):
-3. Elegir un profesor (solo deben aparecer los que tienen al menos N días
-   distintos declarados, N = la frecuencia semanal elegida en el paso 2 — ej.
+5. Elegir un profesor (solo deben aparecer los que tienen al menos N días
+   distintos declarados, N = la frecuencia semanal elegida en el paso 4 — ej.
    con plan 3x/semana, un profesor con disponibilidad en solo 2 días no debe
    aparecer)
-4. Con plan 2x o 3x/semana, la pantalla debe pedir esa cantidad de filas
+6. Con plan 2x o 3x/semana, la pantalla debe pedir esa cantidad de filas
    "Día + Hora", una por sesión, sin dejar repetir el mismo día en dos filas
-5. Elegir día y horario dentro de la disponibilidad de ese profesor, en
+7. Elegir día y horario dentro de la disponibilidad de ese profesor, en
    cada fila
-6. "Solicitar estos horarios" (o "este horario" si el plan es 1x/semana) →
+8. "Solicitar estos horarios" (o "este horario" si el plan es 1x/semana) →
    debe quedar en estado "Esperando respuesta del profesor" listando TODAS
    las franjas pedidas, con botón "Cancelar solicitud"
-7. Probar pedir horarios a un segundo profesor mientras el primero sigue
+9. Probar pedir horarios a un segundo profesor mientras el primero sigue
    pendiente → debe rechazarlo (409)
-8. Cancelar la solicitud pendiente → debe volver a poder pedir otra
-9. Cuando el profesor acepta, verificar que se generen automáticamente las
-   clases recurrentes del mes para CADA una de las N franjas (ej. plan
+10. Cancelar la solicitud pendiente → debe volver a poder pedir otra
+11. Cuando el profesor acepta, verificar que se generen automáticamente las
+    clases recurrentes del mes para CADA una de las N franjas (ej. plan
    3x/semana → 3 clases/semana, no 1) y aparezca el mensaje de horario fijo
    asignado con las N franjas listadas.
 
@@ -285,21 +297,14 @@ Pasos:
 
 ---
 
-### E6 — Wizard: Plan Conjunto
-**Como** alumno, **quiero** armar un plan Conjunto, **para** combinar
-natación con otra disciplina.
-
-Pasos:
-1. Elegir "Conjuntos" → probar las 3 combinaciones (Natación+Acuagym,
-   Ejercicio funcional, Rumbaterapia)
-2. Rumbaterapia no tiene precio cargado — debe mostrar "Por confirmar", no
-   romper el wizard ni dejar solicitar con un precio inventado
-3. Elegir frecuencia (solo 1x/2x, no debe ofrecer 3x) → precio en vivo
-
-**Estado:** 🔲 Pendiente
-
-**Notas / bugs:**
--
+### E6 — (fusionado en E5, 2026-08-26)
+"Plan Conjunto" dejó de ser un tipo de plan aparte — Natación+Acuagym,
+Ejercicio funcional y Rumbaterapia ahora son el paso "combinación" dentro
+de Personalizado, cruzado con la modalidad (individual/pareja/familia/
+grupo reducido). Ver E5, pasos 3-4. El admin debe cargar los precios de
+las combinaciones nuevas × modalidad en `/admin/planes` → Tarifas antes de
+que se puedan cobrar (11 combinaciones nacen en "tarifa por confirmar" —
+ver A4).
 
 ---
 
@@ -728,18 +733,22 @@ Pasos:
 
 ---
 
-### A4 — Admin gestiona Tarifas (los 5 tipos de plan)
+### A4 — Admin gestiona Tarifas (los 4 tipos de plan)
 **Como** admin, **quiero** ajustar los precios de cada tipo de plan,
 **para** mantener el catálogo de precios al día.
 
 Pasos:
 1. Tab Tarifas → editar el precio de Grupal (por sesión, las 3 frecuencias)
-2. Editar precios de cada modalidad Personal (individual/pareja/familia/
-   reducido/funcional)
-3. Editar precios de los 3 Conjuntos (dejar Rumbaterapia en blanco = "por
-   confirmar" y verificar que el wizard lo respeta, ver E6)
+2. Sección Personales: ahora agrupada por combinación (Natación / Ejercicio
+   funcional / Rumbaterapia / Natación+Acuagym), con una fila por modalidad
+   (individual/pareja/familia/reducido) dentro de cada una — 16 filas en
+   total. Confirmar que al abrir el tab por primera vez tras este cambio
+   aparecen las 12 filas nuevas (antes solo existían las 4 de Natación +
+   Funcional individual) sin que se haya perdido ningún precio ya cargado
+3. Dejar alguna combinación×modalidad nueva en blanco = "por confirmar" y
+   verificar que el wizard lo respeta (ver E5, paso 3)
 4. Editar precio de Vacaciones (por niño)
-5. Editar precio de Virtual (mensual fijo, nuevo)
+5. Editar precio de Virtual (mensual fijo)
 6. "Guardar cambios" → volver al wizard del alumno y confirmar que el precio
    nuevo se refleja ahí
 
