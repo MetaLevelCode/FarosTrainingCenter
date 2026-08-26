@@ -139,9 +139,13 @@ service cloud.firestore {
         && validString('email', 200);
 
       allow update: if isAdmin()
+        // estadisticas queda fuera de lo que el dueño puede tocar: se
+        // escribe solo server-side (Admin SDK en inscribir/cancelar, ver
+        // esos endpoints) o por el profesor vía la rama de abajo — nunca
+        // por el propio alumno, para que la racha cacheada sea confiable.
         || (isOwner(uid)
             && !request.resource.data.diff(resource.data).affectedKeys()
-                .hasAny(['rol', 'activo', 'suscripcionActiva'])
+                .hasAny(['rol', 'activo', 'suscripcionActiva', 'estadisticas'])
             && disponibilidadValida())
         // registrarAsistencia() (lib/firestore.ts) corre client-side y
         // necesita que el profesor pueda sumar/restar clasesAsistidas del
