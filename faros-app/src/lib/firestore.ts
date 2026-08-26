@@ -509,7 +509,9 @@ export async function getClasesDisponibles(sede: string): Promise<Clase[]> {
     where('estado', '==', 'programada'),
   )
   const snap = await getDocs(q)
-  return snap.docs.map(docToId<Clase>)
+  // Las personalizadas ya tienen dueño fijo — no son un cupo abierto para
+  // inscripción libre (mismo criterio que dashboard/asistencia/page.tsx).
+  return snap.docs.map(docToId<Clase>).filter((c) => c.catalogo_codigo !== 'personalizada')
 }
 
 export async function updateObservacionesClase(

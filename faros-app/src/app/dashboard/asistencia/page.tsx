@@ -178,6 +178,13 @@ export default function AsistenciaPage() {
                 setClasesDisponibles(
                   disponiblesSnap.docs
                     .map((d) => ({ id: d.id, ...d.data() }) as Clase)
+                    // Las personalizadas ya tienen dueño (estudiantes_inscritos
+                    // fijo, agendadas 1-a-1 o por grupo cerrado) — no son un
+                    // cupo abierto al que cualquier alumno de la sede pueda
+                    // inscribirse. Firestore no deja combinar esta exclusión
+                    // en la query (ya usa un rango en fecha_hora_inicio), así
+                    // que se filtra acá.
+                    .filter((c) => c.catalogo_codigo !== 'personalizada')
                     .filter((c) => !inscritasIds.has(c.id)),
                 )
                 return prevInscritas

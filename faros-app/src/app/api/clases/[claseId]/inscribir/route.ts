@@ -63,6 +63,14 @@ export async function POST(
         return { error: 'No tienes sesiones disponibles en tu plan actual', status: 403 }
       }
 
+      // Las personalizadas ya tienen dueño fijo (1-a-1 o grupo cerrado
+      // agendado por /api/personalizadas/[id]/aceptar) — no son un cupo
+      // abierto. Sin este chequeo, cualquier alumno de la misma sede podía
+      // auto-inscribirse llamando esta ruta directo, aunque el wizard/UI
+      // ya no se las muestre.
+      if (clase.catalogo_codigo === 'personalizada') {
+        return { error: 'Esta clase es personalizada — no está abierta para inscripción libre', status: 403 }
+      }
       if (usu.sede && clase.sede && usu.sede !== clase.sede) {
         return { error: 'Esta clase es de otra sede', status: 403 }
       }
