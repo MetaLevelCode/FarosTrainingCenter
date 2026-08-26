@@ -99,6 +99,19 @@ service cloud.firestore {
         && request.resource.data[field].size() <= maxLen;
     }
 
+    // Deja pasar el write de registrarAsistencia() (lib/firestore.ts): un
+    // profesor SOLO puede tocar clasesAsistidas/tasaAsistencia dentro de
+    // estadisticas — no clasesReservadas ni la racha cacheada (esa la
+    // escribe exclusivamente el server, ver lib/racha-server.ts), aunque
+    // affectedKeys() no distinga sub-campos de un mismo mapa.
+    function soloAsistenciaCambio() {
+      let prev = resource.data.get('estadisticas', {});
+      let next = request.resource.data.get('estadisticas', {});
+      return next.get('clasesReservadas', 0) == prev.get('clasesReservadas', 0)
+        && next.get('racha', 0) == prev.get('racha', 0)
+        && next.get('rachaSemana', 0) == prev.get('rachaSemana', 0);
+    }
+
     // ── usuarios ────────────────────────────────────────────
 
     match /usuarios/{uid} {
@@ -129,7 +142,18 @@ service cloud.firestore {
         || (isOwner(uid)
             && !request.resource.data.diff(resource.data).affectedKeys()
                 .hasAny(['rol', 'activo', 'suscripcionActiva'])
-            && disponibilidadValida());
+            && disponibilidadValida())
+        // registrarAsistencia() (lib/firestore.ts) corre client-side y
+        // necesita que el profesor pueda sumar/restar clasesAsistidas del
+        // ALUMNO al marcar asistencia — sin esto la transacción entera
+        // aborta (incluida la escritura en `asistencias`) porque Firestore
+        // no permite escrituras parciales. No puede verificar acá que sea
+        // instructor de la clase puntual (esa validación real vive en la
+        // regla de `asistencias`, que sí la exige); esta rama solo se
+        // limita a los 2 campos de asistencia, nunca a racha/reservadas.
+        || (isProfesor()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estadisticas'])
+            && soloAsistenciaCambio());
 
       allow delete: if isAdmin();
     }
