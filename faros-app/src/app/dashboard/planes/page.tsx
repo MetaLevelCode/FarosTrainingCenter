@@ -261,16 +261,17 @@ export default function PlanesFlowPage() {
         cupos: disponibles > 0 ? `${disponibles} cupo${disponibles === 1 ? '' : 's'} disponible${disponibles === 1 ? '' : 's'}` : 'Sin cupos disponibles',
         coach: g.coach ?? '',
         lleno: disponibles <= 0,
+        sedeCodigo: g.sedeCodigo ?? '',
       }
     })
   }, [gruposFS, inscritosPorGrupo])
 
   const gruposGrupalEfectivos = useMemo(
-    () => gruposEfectivos.filter((g) => g.categoria !== 'conjunto'),
+    () => gruposEfectivos.filter((g) => g.sedeCodigo === 'UTP'),
     [gruposEfectivos],
   )
   const gruposConjuntoEfectivos = useMemo(
-    () => gruposEfectivos.filter((g) => g.categoria === 'conjunto'),
+    () => gruposEfectivos.filter((g) => g.sedeCodigo !== 'UTP'),
     [gruposEfectivos],
   )
 

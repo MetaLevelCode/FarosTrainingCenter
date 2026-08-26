@@ -47,6 +47,7 @@ export const TIPOS: OpcionTipo[] = [
 export interface Grupo {
   id: string
   nombre: string
+  sedeCodigo?: string
   horarios: string[]
   disponible: boolean
   categoria?: 'grupal' | 'conjunto'
@@ -58,11 +59,11 @@ export interface Grupo {
 }
 
 export const GRUPOS: Grupo[] = [
-  { id: 'knowill', nombre: 'Knowill UTP', horarios: ['Mar · 6:00 PM', 'Jue · 6:00 PM', 'Sáb · 2:00 PM'], disponible: true, categoria: 'grupal', nivel: 'Intermedio – avanzado', cupos: '4 cupos disponibles', coach: 'Coach Ana Torres' },
-  { id: 'estrellas', nombre: 'Estrellas UTP', horarios: ['Lun · 6:00 PM', 'Mié · 6:00 PM', 'Sáb · 10:00 AM'], disponible: true, categoria: 'grupal', nivel: 'Todos los niveles', cupos: '6 cupos disponibles', coach: 'Coach Felipe Cárdenas' },
-  { id: 'bambu', nombre: 'Grupo Bambú', horarios: ['Horario por confirmar'], disponible: false, categoria: 'grupal', nivel: 'Por definir', cupos: 'Apertura próxima', coach: 'Por asignar' },
+  { id: 'knowill', nombre: 'Knowill UTP', sedeCodigo: 'UTP', horarios: ['Mar · 6:00 PM', 'Jue · 6:00 PM', 'Sáb · 2:00 PM'], disponible: true, categoria: 'grupal', nivel: 'Intermedio – avanzado', cupos: '4 cupos disponibles', coach: 'Coach Ana Torres' },
+  { id: 'estrellas', nombre: 'Estrellas UTP', sedeCodigo: 'UTP', horarios: ['Lun · 6:00 PM', 'Mié · 6:00 PM', 'Sáb · 10:00 AM'], disponible: true, categoria: 'grupal', nivel: 'Todos los niveles', cupos: '6 cupos disponibles', coach: 'Coach Felipe Cárdenas' },
+  { id: 'bambu', nombre: 'Grupo Bambú', sedeCodigo: 'UTP', horarios: ['Horario por confirmar'], disponible: false, categoria: 'grupal', nivel: 'Por definir', cupos: 'Apertura próxima', coach: 'Por asignar' },
   // Tulcán II es de Conjuntos, no de natación Grupal — combina natación con acuagym.
-  { id: 'tulcan', nombre: 'Tulcán II', horarios: ['Mié · 6:00 PM', 'Vie · 6:00 PM'], disponible: true, categoria: 'conjunto', combinacionId: 'nat-acuagym', nivel: 'Iniciación', cupos: '8 cupos disponibles', coach: 'Coach Marcos Ruiz' },
+  { id: 'tulcan', nombre: 'Tulcán II', sedeCodigo: 'TULCAN', horarios: ['Mié · 6:00 PM', 'Vie · 6:00 PM'], disponible: true, categoria: 'conjunto', combinacionId: 'nat-acuagym', nivel: 'Iniciación', cupos: '8 cupos disponibles', coach: 'Coach Marcos Ruiz' },
 ]
 
 // Precio POR SESIÓN según la frecuencia semanal (a mayor compromiso, menor tarifa)
