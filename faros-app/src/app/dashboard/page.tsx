@@ -23,6 +23,7 @@ import { MensajesPreview } from '@/components/dashboard/MensajesPreview'
 import { RachaFaro } from '@/components/dashboard/RachaFaro'
 import { faseDeSuscripcion, cuposDisponibles, parseVencimiento } from '@/lib/matricula'
 import { calcularRacha } from '@/lib/racha'
+import { dowColombia } from '@/lib/recurrencia'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -74,8 +75,11 @@ export default function DashboardPage() {
   const [txCargada, setTxCargada] = useState(false)
   const [claseHoy, setClaseHoy] = useState<Clase | null>(null)
   const [claseHoyCargada, setClaseHoyCargada] = useState(false)
-  const [diasSemana, setDiasSemana] = useState<number[]>([])
-  const [horaSemana, setHoraSemana] = useState<string>('6:00 PM')
+  // Cada día puede tener su propia hora (plan personal 2x/3x por semana con
+  // franjas distintas por día) — antes se guardaba una sola hora global y se
+  // mostraba igual bajo TODOS los días marcados, aunque las franjas reales
+  // fueran a horas distintas.
+  const [diasSemana, setDiasSemana] = useState<{ dow: number; hora: string }[]>([])
   const [asistenciaSemanal, setAsistenciaSemanal] = useState<{ semana: string; count: number }[]>([])
   const [racha, setRacha] = useState(0)
 
@@ -136,16 +140,24 @@ export default function DashboardPage() {
             const deHoy = todas.filter((c) => c.fecha_hora_inicio >= inicioDia && c.fecha_hora_inicio < finDia)
             setClaseHoy(deHoy[0] ?? null)
 
-            // "Tu semana" (Semanario) mostraba siempre los 6 días en gris —
-            // no recibía diasIniciales/horaInicial de ningún lado (reportado
-            // en QA manual). El plan del wizard solo guarda la FRECUENCIA
-            // (cuántos días/semana), no cuáles — así que se derivan de las
-            // clases en las que el alumno ya está inscrito de verdad.
+            // "Tu semana" (Semanario) se deriva de las clases reales en las
+            // que el alumno ya está inscrito (el plan del wizard solo guarda
+            // la FRECUENCIA — cuántos días/semana — no cuáles). Cada día
+            // guarda SU PROPIA hora — antes se usaba una sola hora global
+            // (la del próximo evento) para todos los días marcados, lo que
+            // mostraba una hora incorrecta en planes con franjas a horas
+            // distintas por día (reportado por el usuario 2026-08-26).
             const futuras = todas.filter((c) => c.fecha_hora_inicio > Date.now())
-            setDiasSemana([...new Set(futuras.map((c) => new Date(c.fecha_hora_inicio).getDay()))])
-            if (futuras[0]) {
-              setHoraSemana(new Date(futuras[0].fecha_hora_inicio).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' }))
+            // dowColombia (no Date.getDay() crudo) — el día de la semana se
+            // calcula en hora de Colombia, no en la zona horaria del navegador.
+            const porDia = new Map<number, string>()
+            for (const c of futuras) {
+              const dow = dowColombia(c.fecha_hora_inicio)
+              if (!porDia.has(dow)) {
+                porDia.set(dow, new Date(c.fecha_hora_inicio).toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' }))
+              }
             }
+            setDiasSemana([...porDia.entries()].map(([dow, hora]) => ({ dow, hora })))
             setClaseHoyCargada(true)
           },
           (err) => {
@@ -337,8 +349,7 @@ export default function DashboardPage() {
               cupos={cuposDisponibles(susc)}
               nombrePlan={susc?.nombrePlan}
               proximoPago={vencimiento}
-              diasIniciales={diasSemana}
-              horaInicial={horaSemana}
+              diasSemana={diasSemana}
             />
           </Reveal>
         )}

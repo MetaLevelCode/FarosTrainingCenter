@@ -32,12 +32,27 @@ import {
 const EASE = [0.22, 1, 0.36, 1] as const
 
 // Secuencia de pasos según el tipo de plan elegido.
-type StepKey = 'tipo' | 'grupo' | 'personal' | 'conjunto' | 'frecuencia' | 'ninos' | 'virtual' | 'resumen'
+type StepKey = 'tipo' | 'grupo' | 'personal' | 'accion' | 'conjunto' | 'frecuencia' | 'ninos' | 'virtual' | 'resumen'
+export type AccionGrupo = 'adquirir' | 'unirse' | null
 
-function stepsFor(tipo: TipoPlan | null): StepKey[] {
+// Pareja/Familia/Grupo reducido: hasta 5 personas comparten un plan con
+// código — el paso "accion" (Adquirir/Unirse) decide el resto del flujo
+// ANTES de preguntar cuántas personas (no tiene sentido pedir cantidad si
+// el alumno se va a unir a un grupo que ya existe).
+function esModalidadGrupal(personalId: string | null): boolean {
+  const sub = PERSONALES.find((p) => p.id === personalId)
+  return !!sub?.porPersona && sub.personasMax > 1
+}
+
+function stepsFor(tipo: TipoPlan | null, personalId: string | null, accionGrupo: AccionGrupo): StepKey[] {
   switch (tipo) {
     case 'grupal': return ['tipo', 'grupo', 'frecuencia', 'resumen']
-    case 'personal': return ['tipo', 'personal', 'frecuencia', 'resumen']
+    case 'personal': {
+      if (!esModalidadGrupal(personalId)) return ['tipo', 'personal', 'frecuencia', 'resumen']
+      // Unirse no pide frecuencia ni personas — eso ya lo definió el jefe.
+      if (accionGrupo === 'unirse') return ['tipo', 'personal', 'accion']
+      return ['tipo', 'personal', 'accion', 'frecuencia', 'resumen']
+    }
     case 'conjunto': return ['tipo', 'conjunto', 'frecuencia', 'resumen']
     case 'vacaciones': return ['tipo', 'ninos', 'resumen']
     case 'virtual': return ['tipo', 'virtual', 'resumen']
@@ -49,6 +64,7 @@ const STEP_TITULO: Record<StepKey, string> = {
   tipo: '¿Qué tipo de plan buscas?',
   grupo: 'Elige tu grupo y sede',
   personal: 'Elige tu modalidad',
+  accion: '¿Adquirir el plan o unirte a uno?',
   conjunto: 'Elige tu combinación',
   frecuencia: '¿Con qué frecuencia entrenas?',
   ninos: '¿Cuántos niños?',
@@ -181,8 +197,9 @@ export default function PlanesFlowPage() {
   const [comprobanteUrl, setComprobanteUrl] = useState<string | null>(null)
   // "Unirse a plan" — alternativa a "Adquirir plan" para modalidades
   // grupales (pareja/familia/reducido): entra gratis con el código que
-  // le compartió el jefe del grupo, sin crear transacción.
-  const [modoUnirse, setModoUnirse] = useState(false)
+  // le compartió el jefe del grupo, sin crear transacción. Se decide en
+  // el paso "accion", antes de preguntar frecuencia/personas.
+  const [accionGrupo, setAccionGrupo] = useState<AccionGrupo>(null)
   const [codigoUnirse, setCodigoUnirse] = useState('')
   const [uniendo, setUniendo] = useState(false)
   const [errorUnirse, setErrorUnirse] = useState<string | null>(null)
@@ -272,18 +289,21 @@ export default function PlanesFlowPage() {
       localStorage.removeItem(PENDIENTE_KEY)
       const saved = JSON.parse(raw) as SeleccionPlan
       setSel(saved)
-      setStepIdx(stepsFor(saved.tipo).length - 1) // directo al resumen
 
       const codigoGuardado = localStorage.getItem(PENDIENTE_UNIRSE_KEY)
+      const accion: AccionGrupo = codigoGuardado
+        ? 'unirse'
+        : (saved.tipo === 'personal' && esModalidadGrupal(saved.personalId) ? 'adquirir' : null)
       if (codigoGuardado) {
         localStorage.removeItem(PENDIENTE_UNIRSE_KEY)
         setCodigoUnirse(codigoGuardado)
-        setModoUnirse(true)
       }
+      setAccionGrupo(accion)
+      setStepIdx(stepsFor(saved.tipo, saved.personalId, accion).length - 1) // directo al último paso
     } catch {}
   }, [])
 
-  const steps = useMemo(() => stepsFor(sel.tipo), [sel.tipo])
+  const steps = useMemo(() => stepsFor(sel.tipo, sel.personalId, accionGrupo), [sel.tipo, sel.personalId, accionGrupo])
   const stepKey = steps[Math.min(stepIdx, steps.length - 1)]
   const tarifasEfectivas = tarifas ?? TARIFAS_FALLBACK
   const precio = useMemo(() => calcularPrecio(sel, tarifasEfectivas), [sel, tarifasEfectivas])
@@ -297,6 +317,7 @@ export default function PlanesFlowPage() {
       case 'tipo': return !!sel.tipo
       case 'grupo': return !!sel.grupoId
       case 'personal': return !!sel.personalId
+      case 'accion': return accionGrupo === 'adquirir'
       case 'conjunto': return !!sel.conjuntoId
       case 'virtual': return !!sel.profesorVirtualId
       default: return true
@@ -311,6 +332,7 @@ export default function PlanesFlowPage() {
   }
   function pickTipo(tipo: TipoPlan) {
     setSel({ ...SELECCION_INICIAL, tipo, week: tipo === 'conjunto' ? 1 : 2 })
+    setAccionGrupo(null)
   }
 
   async function solicitar() {
@@ -813,13 +835,55 @@ export default function PlanesFlowPage() {
                   <ChoiceCard
                     key={p.id}
                     selected={sel.personalId === p.id}
-                    onClick={() => setSel((s) => ({ ...s, personalId: p.id, personas: p.personasMin }))}
+                    onClick={() => { setSel((s) => ({ ...s, personalId: p.id, personas: p.personasMin })); setAccionGrupo(null) }}
                     icon={p.porPersona ? 'group' : 'person'}
                     title={p.nombre}
                     desc={p.desc}
                     expand={<Bullets items={p.incluye} />}
                   />
                 ))}
+              </div>
+            )}
+
+            {/* PASO: ACCIÓN — Adquirir plan o Unirme a Plan (solo pareja/familia/reducido) */}
+            {stepKey === 'accion' && !necesitaCuenta && (
+              <div className="space-y-6">
+                <ChoiceCard
+                  selected={accionGrupo === 'adquirir'}
+                  onClick={() => setAccionGrupo('adquirir')}
+                  icon="shopping_bag"
+                  title="Adquirir plan"
+                  desc="Lo compras tú y quedas como jefe del grupo, con un código para invitar a los demás."
+                />
+                <ChoiceCard
+                  selected={accionGrupo === 'unirse'}
+                  onClick={() => { setAccionGrupo('unirse'); setErrorUnirse(null) }}
+                  icon="group_add"
+                  title="Unirme a Plan"
+                  desc="Alguien ya compró este plan — entra gratis con el código que te compartió."
+                />
+
+                {accionGrupo === 'unirse' && (
+                  <div className="rounded-3xl border border-white/20 bg-[rgba(255,255,255,0.04)] p-7 space-y-4">
+                    <Input
+                      label="Código del grupo"
+                      placeholder="Ej. F7K2QX"
+                      maxLength={6}
+                      value={codigoUnirse}
+                      onChange={(e) => setCodigoUnirse(e.target.value.toUpperCase())}
+                      autoCapitalize="characters"
+                    />
+                    <Button
+                      fullWidth size="lg" onClick={unirse}
+                      loading={uniendo} disabled={uniendo || !codigoUnirse.trim()}
+                    >
+                      {user ? 'Entrar con código' : 'Continuar'}
+                    </Button>
+                    {errorUnirse && (
+                      <p className="text-xs text-[var(--color-danger-crimson)] text-center">{errorUnirse}</p>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
@@ -979,61 +1043,23 @@ export default function PlanesFlowPage() {
                     </div>
                   )}
 
-                  {pidePersonas && modoUnirse ? (
-                    <div className="space-y-4">
-                      <Input
-                        label="Código del grupo"
-                        placeholder="Ej. F7K2QX"
-                        maxLength={6}
-                        value={codigoUnirse}
-                        onChange={(e) => setCodigoUnirse(e.target.value.toUpperCase())}
-                        autoCapitalize="characters"
-                      />
-                      <Button
-                        fullWidth size="lg" onClick={unirse}
-                        loading={uniendo} disabled={uniendo || !codigoUnirse.trim()}
-                      >
-                        {user ? 'Entrar con código' : 'Continuar'}
-                      </Button>
-                      {errorUnirse && (
-                        <p className="text-xs text-[var(--color-danger-crimson)] text-center">{errorUnirse}</p>
-                      )}
-                      <button
-                        onClick={() => { setModoUnirse(false); setErrorUnirse(null) }}
-                        className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 hover:text-white transition-colors duration-200 block mx-auto"
-                      >
-                        Mejor voy a adquirir el plan
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <Button fullWidth size="lg" onClick={solicitar} loading={solicitando} disabled={solicitando}>
-                        {user ? (pidePersonas ? 'Adquirir plan' : 'Solicitar este plan') : 'Continuar'}
-                      </Button>
-                      {errorSolicitud && (
-                        <p className="text-xs text-[var(--color-danger-crimson)] text-center mt-3">{errorSolicitud}</p>
-                      )}
-                      <p className="text-[11px] text-[var(--color-on-surface-variant)]/40 text-center mt-5">
-                        {user
-                          ? 'Tu solicitud pasa a administración para aprobación del pago.'
-                          : 'Necesitas una cuenta para enviar tu solicitud. No perderás tu plan.'}
-                      </p>
-                      {pidePersonas && (
-                        <button
-                          onClick={() => setModoUnirse(true)}
-                          className="label-caps text-[10px] text-[var(--color-primary-fixed)] hover:text-white transition-colors duration-200 block mx-auto mt-5"
-                        >
-                          Ya tengo un código — unirme a un plan
-                        </button>
-                      )}
-                    </>
+                  <Button fullWidth size="lg" onClick={solicitar} loading={solicitando} disabled={solicitando}>
+                    {user ? (pidePersonas ? 'Adquirir plan' : 'Solicitar este plan') : 'Continuar'}
+                  </Button>
+                  {errorSolicitud && (
+                    <p className="text-xs text-[var(--color-danger-crimson)] text-center mt-3">{errorSolicitud}</p>
                   )}
+                  <p className="text-[11px] text-[var(--color-on-surface-variant)]/40 text-center mt-5">
+                    {user
+                      ? 'Tu solicitud pasa a administración para aprobación del pago.'
+                      : 'Necesitas una cuenta para enviar tu solicitud. No perderás tu plan.'}
+                  </p>
                 </div>
               </div>
             )}
 
             {/* PASO: INVITADO — crear cuenta / iniciar sesión ── */}
-            {stepKey === 'resumen' && necesitaCuenta && (
+            {necesitaCuenta && (
               <div className="rounded-[2rem] liquid-glass p-8 md:p-10 text-center">
                 <div className="relative z-10 flex flex-col items-center">
                   <span className="w-16 h-16 rounded-full bg-[rgba(230,255,0,0.12)] border border-[rgba(230,255,0,0.3)] flex items-center justify-center mb-6">
@@ -1043,7 +1069,7 @@ export default function PlanesFlowPage() {
                     Un último paso
                   </h2>
                   <p className="text-sm text-[var(--color-on-surface-variant)]/70 max-w-sm mb-2 leading-relaxed">
-                    {pidePersonas && modoUnirse
+                    {accionGrupo === 'unirse'
                       ? <>Tu código <span className="text-white font-bold">{codigoUnirse}</span> quedó guardado. Crea una cuenta o inicia sesión para unirte al grupo.</>
                       : <>Tu plan <span className="text-white font-bold">{resumen.titulo}</span> quedó guardado. Crea una cuenta o inicia sesión para enviarlo a administración.</>}
                   </p>
@@ -1118,7 +1144,7 @@ export default function PlanesFlowPage() {
       </main>
 
       {/* ── Navegación inferior ── */}
-      {!(stepKey === 'resumen' && (solicitado || necesitaCuenta)) && (
+      {!(necesitaCuenta || (stepKey === 'resumen' && solicitado) || (stepKey === 'accion' && accionGrupo === 'unirse')) && (
         <footer className="relative z-10 px-5 md:px-10 py-6 shrink-0 border-t border-white/5 bg-[rgba(5,5,5,0.6)] backdrop-blur-xl">
           <div className="max-w-xl mx-auto flex items-center justify-between gap-4">
             <button

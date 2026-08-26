@@ -25,7 +25,7 @@ function estadoDia(fase: Fase): { label: string; cls: string } {
 
 export function Semanario({
   fase, cupos, nombrePlan, recurrente = false, proximoPago,
-  diasIniciales = [], horaInicial = '6:00 PM',
+  diasSemana = [],
 }: {
   fase: Fase
   /** Sesiones que le quedan por reservar (viene de la suscripción). */
@@ -35,8 +35,8 @@ export function Semanario({
   /** true en planes personales: el profesor queda reservado para él. */
   recurrente?: boolean
   proximoPago?: string
-  diasIniciales?: number[]
-  horaInicial?: string
+  /** Cada día puede tener su propia hora (plan 2x/3x semana con franjas distintas). */
+  diasSemana?: { dow: number; hora: string }[]
 }) {
   const hayPlan = Boolean(nombrePlan)
   const est = estadoDia(fase)
@@ -104,7 +104,8 @@ export function Semanario({
         {/* ── Semanario: los 6 días (solo lectura) ── */}
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-6">
           {SEMANA.map((d) => {
-            const sel = diasIniciales.includes(d.dow)
+            const infoDia = diasSemana.find((x) => x.dow === d.dow)
+            const sel = !!infoDia
             return (
               <div
                 key={d.dow}
@@ -122,7 +123,7 @@ export function Semanario({
                     <span className="material-symbols-outlined text-[20px] text-[var(--color-primary-fixed)]">
                       {fase === 'activo' ? 'check_circle' : 'schedule'}
                     </span>
-                    <span className="font-display text-[11px] font-black text-white">{horaInicial}</span>
+                    <span className="font-display text-[11px] font-black text-white">{infoDia?.hora}</span>
                     {est.label && (
                       <span className={`label-caps text-[8px] ${est.cls}`}>{est.label}</span>
                     )}
