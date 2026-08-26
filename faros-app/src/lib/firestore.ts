@@ -366,7 +366,7 @@ async function extenderClasesPersonalizadas(alumnoId: string, hastaTs: number): 
   const [{ db }, { collection, query, where, orderBy, limit, getDocs, getDoc, writeBatch, doc }] = await Promise.all([
     getFirebase(), import('firebase/firestore'),
   ])
-  const { ocurrenciasSemanales } = await import('./recurrencia')
+  const { ocurrenciasSemanales, normalizarFranjas } = await import('./recurrencia')
 
   const solSnap = await getDocs(
     query(
@@ -394,10 +394,7 @@ async function extenderClasesPersonalizadas(alumnoId: string, hastaTs: number): 
     }
   }
 
-  // Compatibilidad hacia atrás: solicitudes viejas guardaban un único
-  // dow/horaInicio/horaFin en vez de `franjas` (ver /api/personalizadas/solicitar).
-  const franjas: Array<{ dow: number; horaInicio: string; horaFin: string }> =
-    sol.franjas ?? (sol.dow != null ? [{ dow: sol.dow, horaInicio: sol.horaInicio, horaFin: sol.horaFin }] : [])
+  const franjas = normalizarFranjas(sol)
   if (franjas.length === 0) return
 
   const desde = new Date(Math.max(Date.now(), sol.rangoGeneradoHasta ?? 0))

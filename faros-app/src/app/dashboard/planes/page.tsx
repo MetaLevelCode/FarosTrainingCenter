@@ -82,10 +82,10 @@ function ChoiceCard({ selected, onClick, icon, title, desc, meta, expand, disabl
       aria-pressed={selected}
       className={`w-full text-left rounded-3xl border overflow-hidden transition-[border-color,background-color,box-shadow,transform] duration-300 active:scale-[0.99] ${
         disabled
-          ? 'border-white/5 bg-white/[0.015] opacity-50 cursor-not-allowed'
+          ? 'border-white/10 bg-white/[0.02] opacity-50 cursor-not-allowed'
           : selected
-            ? 'border-[var(--color-primary-fixed)] bg-[rgba(230,255,0,0.05)] shadow-[0_0_36px_rgba(230,255,0,0.1)]'
-            : 'border-white/8 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.05]'
+            ? 'border-[var(--color-primary-fixed)] bg-[rgba(230,255,0,0.08)] shadow-[0_0_36px_rgba(230,255,0,0.15)]'
+            : 'border-white/20 bg-[rgba(255,255,255,0.04)] hover:border-white/40 hover:bg-[rgba(255,255,255,0.08)]'
       }`}
     >
       <div className="flex items-start gap-5 p-7 md:p-8">
@@ -872,7 +872,7 @@ export default function PlanesFlowPage() {
                   })}
 
                 {pidePersonas && subPersonal && (
-                  <div className="rounded-3xl border border-white/8 bg-white/[0.03] p-7 mt-1">
+                  <div className="rounded-3xl border border-white/20 bg-[rgba(255,255,255,0.04)] p-7 mt-1">
                     <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mb-6 text-center">
                       Personas ({subPersonal.personasMin}–{subPersonal.personasMax})
                     </p>
@@ -890,7 +890,7 @@ export default function PlanesFlowPage() {
 
             {/* PASO: NIÑOS (vacaciones) */}
             {stepKey === 'ninos' && (
-              <div className="rounded-3xl border border-white/8 bg-white/[0.03] p-10">
+              <div className="rounded-3xl border border-white/20 bg-[rgba(255,255,255,0.04)] p-10">
                 <Contador
                   value={sel.ninos}
                   min={1}

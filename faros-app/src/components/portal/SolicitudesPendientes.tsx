@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react'
 import { Card, Badge, Button } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { getFirebase } from '@/lib/firebase'
+import { normalizarFranjas } from '@/lib/recurrencia'
 import type { SolicitudPersonalizada } from '@/lib/types'
 
 const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
@@ -48,7 +49,11 @@ export function SolicitudesPendientes() {
             orderBy('creadoEn', 'desc'),
           ),
           (snap) => {
-            setSolicitudes(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as SolicitudPersonalizada))
+            setSolicitudes(snap.docs.map((d) => {
+              const sol = { id: d.id, ...d.data() } as SolicitudPersonalizada
+              sol.franjas = normalizarFranjas(sol)
+              return sol
+            }))
             setCargando(false)
           },
           (err) => {

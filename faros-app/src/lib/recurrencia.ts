@@ -88,6 +88,24 @@ function proximaFecha(dow: number, horaStr: string, semanaOffset: number, desde:
   return new Date(targetTs)
 }
 
+/**
+ * Compatibilidad hacia atrás: antes de que SolicitudPersonalizada guardara
+ * un array `franjas`, cada solicitud tenía un único `dow/horaInicio/horaFin`
+ * suelto. Cualquier código que lea `franjas` de un doc de Firestore debe
+ * pasar por acá — solicitudes viejas (pendientes/aceptadas antes del cambio)
+ * siguen vivas en la base y no se migran retroactivamente.
+ */
+export function normalizarFranjas(sol: {
+  franjas?: Array<{ dow: number; horaInicio: string; horaFin: string }>
+  dow?: number; horaInicio?: string; horaFin?: string
+}): Array<{ dow: number; horaInicio: string; horaFin: string }> {
+  if (sol.franjas) return sol.franjas
+  if (sol.dow != null && sol.horaInicio && sol.horaFin) {
+    return [{ dow: sol.dow, horaInicio: sol.horaInicio, horaFin: sol.horaFin }]
+  }
+  return []
+}
+
 /** ¿La franja pedida (dow+horaInicio+horaFin) cabe dentro de alguna franja declarada? */
 export function franjaContenida(
   dow: number, horaInicio: string, horaFin: string,

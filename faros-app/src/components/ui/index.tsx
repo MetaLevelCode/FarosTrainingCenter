@@ -33,7 +33,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
   const variants: Record<ButtonVariant, string> = {
     primary: 'bg-[var(--color-primary-fixed)] text-[var(--color-on-primary)] hover:shadow-[0_0_35px_rgba(230,255,0,0.5)]',
     outline: 'bg-transparent text-[var(--color-primary-fixed)] border-2 border-[var(--color-primary-fixed)] hover:bg-[rgba(230,255,0,0.08)]',
-    ghost: 'bg-white/5 text-[var(--color-on-surface-variant)] border border-white/5 hover:text-[var(--color-primary-fixed)] hover:border-[rgba(230,255,0,0.3)]',
+    ghost: 'bg-[rgba(255,255,255,0.04)] text-[var(--color-on-surface-variant)] border border-white/20 hover:text-[var(--color-primary-fixed)] hover:border-[rgba(230,255,0,0.4)] hover:bg-[rgba(255,255,255,0.08)]',
     danger: 'bg-[var(--color-danger-crimson)] text-white hover:opacity-90',
   }
 
@@ -114,9 +114,9 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(
         ref={ref}
         id={id}
         className={`
-          w-full bg-white/5 border border-white/5 rounded-2xl px-6 py-4
-          text-[var(--color-on-surface)] placeholder:text-[var(--color-on-surface-variant)]/30
-          focus:border-[rgba(230,255,0,0.5)] focus:outline-none
+          w-full bg-[rgba(255,255,255,0.04)] border border-white/20 rounded-2xl px-6 py-4
+          text-[var(--color-on-surface)] placeholder:text-[var(--color-on-surface-variant)]/40
+          focus:border-[rgba(230,255,0,0.6)] focus:bg-[rgba(255,255,255,0.08)] focus:outline-none
           transition-colors duration-300
           ${error ? 'border-[var(--color-danger-crimson)]' : ''} ${className}
         `}

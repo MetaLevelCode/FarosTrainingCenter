@@ -268,7 +268,7 @@ export default function RegistroPage() {
                 <select
                   value={tipoDoc}
                   onChange={(e) => setTipoDoc(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-[rgba(230,255,0,0.5)] focus:outline-none transition-colors"
+                  className="w-full bg-[rgba(255,255,255,0.04)] border border-white/20 rounded-xl px-4 py-3 text-sm text-white focus:border-[rgba(230,255,0,0.6)] focus:bg-[rgba(255,255,255,0.08)] focus:outline-none transition-colors"
                 >
                   {TIPO_DOC.map((t) => (
                     <option key={t.value} value={t.value} className="bg-[#0a0a0a]">{t.label}</option>
@@ -303,7 +303,7 @@ export default function RegistroPage() {
                 <select
                   value={sede}
                   onChange={(e) => setSede(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-[rgba(230,255,0,0.5)] focus:outline-none transition-colors"
+                  className="w-full bg-[rgba(255,255,255,0.04)] border border-white/20 rounded-xl px-4 py-3 text-sm text-white focus:border-[rgba(230,255,0,0.6)] focus:bg-[rgba(255,255,255,0.08)] focus:outline-none transition-colors"
                 >
                   <option value="" className="bg-[#0a0a0a]">Selecciona tu sede</option>
                   {sedes.map((s) => (

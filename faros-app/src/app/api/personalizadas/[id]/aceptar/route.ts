@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAdminAuth, getAdminDb } from '@/lib/admin'
 import { rateLimit, clientIp } from '@/lib/ratelimit'
 import { log } from '@/lib/logger'
-import { ocurrenciasSemanales, dowColombia, horaColombia, franjaContenida, haySolape } from '@/lib/recurrencia'
+import { ocurrenciasSemanales, dowColombia, horaColombia, franjaContenida, haySolape, normalizarFranjas } from '@/lib/recurrencia'
 
 export const runtime = 'nodejs'
 
@@ -72,7 +72,9 @@ export async function POST(
       const cupoMaximo: number = grupo?.personasMax ?? (sol.personas ?? 1)
 
       // Re-validar disponibilidad: pudo cambiar desde que se solicitó.
-      const solFranjas: Array<{ dow: number; horaInicio: string; horaFin: string }> = sol.franjas ?? []
+      // normalizarFranjas cubre solicitudes viejas (creadas antes de que
+      // se guardara el array `franjas`) que solo tienen dow/horaInicio/horaFin sueltos.
+      const solFranjas = normalizarFranjas(sol)
       const disponibilidad: Array<{ dow: number; horaInicio: string; horaFin: string }> = profesor.disponibilidadPersonal ?? []
       for (const f of solFranjas) {
         if (!franjaContenida(f.dow, f.horaInicio, f.horaFin, disponibilidad)) {

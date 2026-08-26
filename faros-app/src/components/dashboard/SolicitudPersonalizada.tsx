@@ -14,7 +14,7 @@ import { Card, Badge, Button, Spinner } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { getFirebase } from '@/lib/firebase'
 import {
-  DURACION_PERSONALIZADA_MIN, slotsDisponibles, sumarMinutos, dowColombia, horaColombia,
+  DURACION_PERSONALIZADA_MIN, slotsDisponibles, sumarMinutos, dowColombia, horaColombia, normalizarFranjas,
 } from '@/lib/recurrencia'
 import type { FranjaDisponibilidad, SolicitudPersonalizada as Solicitud } from '@/lib/types'
 
@@ -122,6 +122,7 @@ export function SolicitudPersonalizada() {
         ),
       )
       const sol = solSnap.empty ? null : ({ id: solSnap.docs[0].id, ...solSnap.docs[0].data() } as Solicitud)
+      if (sol) sol.franjas = normalizarFranjas(sol)
       setSolicitud(sol && (sol.estado === 'pendiente' || sol.estado === 'aceptada') ? sol : null)
 
       if (!sol || (sol.estado !== 'pendiente' && sol.estado !== 'aceptada')) {
