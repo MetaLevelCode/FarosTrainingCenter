@@ -19,7 +19,7 @@ import {
 import type { Transaccion, Movimiento, Categoria } from '@/lib/types'
 import { fmtCOP, resumenPlan } from '@/lib/planes'
 import { BarraIngresosEgresos, TortaEgresosPorCategoria } from '@/components/admin/FinanzasCharts'
-import { exportarFinanzasExcel } from '@/lib/exportarExcel'
+import { exportarFinanzasExcel, exportarReporteIA } from '@/lib/exportarExcel'
 
 const PALETA_CATEGORIAS = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767']
 const NUEVA_CATEGORIA = '__nueva__'
@@ -472,12 +472,21 @@ export default function FinanzasPage() {
                 </h3>
               </div>
               {historialIA.length > 0 && (
-                <button
-                  onClick={reiniciarIA}
-                  className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/60 hover:text-white transition-colors shrink-0"
-                >
-                  Nuevo reporte
-                </button>
+                <div className="flex items-center gap-4 shrink-0">
+                  <button
+                    onClick={() => exportarReporteIA(historialIA)}
+                    className="label-caps text-[10px] text-[var(--color-primary-fixed)] hover:opacity-80 transition-opacity inline-flex items-center gap-1"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">print</span>
+                    Exportar
+                  </button>
+                  <button
+                    onClick={reiniciarIA}
+                    className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/60 hover:text-white transition-colors"
+                  >
+                    Nuevo reporte
+                  </button>
+                </div>
               )}
             </div>
 
