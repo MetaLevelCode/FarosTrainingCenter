@@ -16,9 +16,11 @@ import { log } from '@/lib/logger'
 
 export const runtime = 'nodejs'
 
-// Alias que Google mantiene apuntando al flash "actual" — evita repetir
-// este arreglo cada vez que deprecan una versión numerada (ej. 2.5-flash).
-const MODELO = 'gemini-flash-latest'
+// Alias que Google mantiene apuntando al flash-lite "actual" — evita
+// repetir este arreglo cada vez que deprecan una versión numerada (ej.
+// 2.5-flash). La variante "lite" responde bastante más rápido y con
+// menos 503 de "alta demanda" en el tier gratuito que el flash normal.
+const MODELO = 'gemini-flash-lite-latest'
 const MAX_FILAS = 5000
 const MAX_TURNOS = 40
 const MAX_TEXTO_TURNO = 800
@@ -28,12 +30,23 @@ const SYSTEM_PROMPT = `Eres un asesor financiero para Faros Training Center, un 
 Con esos datos, genera un reporte inicial en español que:
 - Señale patrones y riesgos que NO son obvios mirando las cifras crudas (concentración de ingresos en pocos alumnos o categorías, estacionalidad, gastos hormiga, categorías de egreso creciendo más rápido que los ingresos, dependencia excesiva de un tipo de plan, tasa de rechazo de pagos, etc.).
 - Dé recomendaciones concretas y accionables para mejorar la situación económica del negocio, no genéricas.
-- Vaya directo al punto, en texto plano (sin markdown de tablas ni asteriscos de negrita), con títulos cortos en MAYÚSCULAS y viñetas con guiones.
 - Cite cifras reales de los datos cuando respalden una afirmación.
+- Responda en TEXTO PLANO puro: nunca uses #, ##, **, *, emojis ni ningún símbolo de markdown. Solo el título corto (2-4 palabras) de cada sección va en MAYÚSCULAS; el resto del texto (párrafos y viñetas) va en minúsculas normales. Las viñetas usan guion simple "-".
 
 Después de este reporte inicial, el admin te hará preguntas puntuales sobre los mismos datos. Respóndelas con la misma precisión, en texto plano, y sin inventar cifras que no estén en los datos.`
 
 interface Turno { rol: 'user' | 'model'; texto: string }
+
+// Red de seguridad: modelos "lite" no siempre respetan la instrucción de
+// texto plano y meten markdown (#, **, viñetas con *). La UI renderiza
+// texto crudo con whitespace-pre-wrap, así que esos símbolos se verían
+// literalmente en pantalla si no se limpian acá.
+function limpiarMarkdown(texto: string): string {
+  return texto
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/^\s*[*•]\s+/gm, '- ')
+}
 
 export async function POST(req: NextRequest) {
   const ip = clientIp(req)
@@ -108,8 +121,9 @@ export async function POST(req: NextRequest) {
     }
 
     const data = await res.json()
-    const texto: string = (data?.candidates?.[0]?.content?.parts ?? [])
+    const textoCrudo: string = (data?.candidates?.[0]?.content?.parts ?? [])
       .map((p: { text?: string }) => p.text ?? '').join('')
+    const texto = limpiarMarkdown(textoCrudo)
     if (!texto.trim()) {
       log.error({ scope: 'finanzas-ia', event: 'sin_contenido', ip, data: JSON.stringify(data).slice(0, 500) })
       return NextResponse.json({ error: 'La IA no devolvió contenido. Intenta de nuevo.' }, { status: 502 })
