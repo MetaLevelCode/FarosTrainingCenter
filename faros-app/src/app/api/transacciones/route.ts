@@ -54,7 +54,24 @@ export async function POST(req: NextRequest) {
     const tarifasSnap = await db.collection('tarifas').doc('actual').get()
     const tarifas = tarifasSnap.exists ? (tarifasSnap.data() as Tarifas) : TARIFAS_FALLBACK
 
-    const precio = calcularPrecio(seleccion, tarifas)
+    let precio = calcularPrecio(seleccion, tarifas)
+    let nombrePlantilla: string | null = null
+
+    if (seleccion.tipo === 'plantilla' && seleccion.planId) {
+      const planSnap = await db.collection('planes').doc(seleccion.planId).get()
+      if (planSnap.exists) {
+        const p = planSnap.data() as any
+        precio = {
+          disponible: true,
+          total: p.precio_total,
+          porPersona: null,
+          personas: 1,
+          detalleFrecuencia: `${p.sesiones_incluidas} sesiones totales`,
+        }
+        nombrePlantilla = p.nombre ?? null
+      }
+    }
+
     const resumen = resumenPlan(seleccion)
     const now = Date.now()
 
@@ -64,8 +81,8 @@ export async function POST(req: NextRequest) {
       usuarioId: uid,
       nombre_usuario: `${u.nombres} ${u.apellidos}`,
       seleccion,
-      nombre_plan: resumen.titulo,
-      planId: '',
+      nombre_plan: nombrePlantilla ?? resumen.titulo,
+      planId: seleccion.planId ?? '',
       monto: precio.disponible ? precio.total : 0,
       monto_disponible: precio.disponible,
       estado: 'pendiente',

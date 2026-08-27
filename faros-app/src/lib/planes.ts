@@ -8,7 +8,7 @@
 // gestione planes desde su panel.
 // ============================================================
 
-export type TipoPlan = 'grupal' | 'personal' | 'conjunto' | 'vacaciones' | 'virtual'
+export type TipoPlan = 'grupal' | 'personal' | 'conjunto' | 'vacaciones' | 'virtual' | 'plantilla'
 
 export interface OpcionTipo {
   id: TipoPlan
@@ -165,6 +165,7 @@ export interface SeleccionPlan {
   grupoId: string | null
   personalId: string | null        // modalidad (personas): individual/pareja/familia/reducido
   combinacionId: string | null     // disciplina: natacion/funcional/rumba/nat-acuagym
+  planId?: string | null           // para guardar el id de la plantilla seleccionada
   week: number        // frecuencia semanal
   personas: number    // para modalidades por persona
   ninos: number       // para vacaciones
@@ -172,7 +173,7 @@ export interface SeleccionPlan {
 }
 
 export const SELECCION_INICIAL: SeleccionPlan = {
-  tipo: null, grupoId: null, personalId: null, combinacionId: null,
+  tipo: null, grupoId: null, personalId: null, combinacionId: null, planId: null,
   week: 2, personas: 2, ninos: 1, profesorVirtualId: null,
 }
 
@@ -323,6 +324,9 @@ export function calcularPrecio(sel: SeleccionPlan, tarifas: Tarifas = TARIFAS_FA
 export function sesionesDelPlan(sel: SeleccionPlan): number {
   if (sel.tipo === 'vacaciones') return 10   // programa de 2 semanas ~ 10 clases
   if (sel.tipo === 'virtual') return 0       // acceso ilimitado, no se cuenta por sesión
+  // Nota: para plantilla, sesionesDelPlan no tiene el objeto completo aquí,
+  // la API de servidor (route) usará la plantilla real. Devolvemos 0 aquí por fallback.
+  if (sel.tipo === 'plantilla') return 0
   const freq = FRECUENCIAS.find((f) => f.week === sel.week)
   return freq?.mes ?? 0
 }
@@ -362,6 +366,9 @@ export function resumenPlan(sel: SeleccionPlan): { titulo: string; subtitulo: st
   }
   if (sel.tipo === 'virtual') {
     return { titulo: 'Plan Virtual', subtitulo: 'Rutina remota con tu entrenador', horarios: [] }
+  }
+  if (sel.tipo === 'plantilla') {
+    return { titulo: 'Plan Especial', subtitulo: 'Plantilla seleccionada', horarios: [] }
   }
   return { titulo: '', subtitulo: '', horarios: [] }
 }
@@ -411,12 +418,13 @@ export interface PlanDescrito {
   tipoLabel: string
 }
 
-const TIPO_LABEL: Record<TipoPlan, string> = {
+export const TIPO_LABEL: Record<TipoPlan, string> = {
   grupal: 'Grupal',
   personal: 'Personalizado',
   conjunto: 'Conjunto',
   vacaciones: 'Vacaciones',
   virtual: 'Virtual',
+  plantilla: 'Especial',
 }
 
 /** Describe un plan (asignado o en construcción) con cifras coherentes. */

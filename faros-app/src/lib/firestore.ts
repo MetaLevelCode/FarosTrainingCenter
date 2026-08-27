@@ -172,12 +172,25 @@ export async function aprobarTransaccion(
 
     const sel = t.seleccion
     const now = Date.now()
-    const sesiones = sesionesDelPlan(sel)
-    const dias = duracionDiasDelPlan(sel)
+
+    // Plantilla (Plan Especial): sesionesDelPlan/duracionDiasDelPlan no
+    // conocen la plantilla real (son stubs para este tipo) — hay que leer
+    // el doc de planes/ antes de cualquier escritura (regla de las
+    // transacciones de Firestore, igual que la lectura del profesor de
+    // abajo).
+    interface PlantillaData { nombre?: string; sesiones_incluidas?: number; duracion_dias?: number }
+    let plantilla: PlantillaData | null = null
+    if (sel.tipo === 'plantilla' && sel.planId) {
+      const planSnap = await tx.get(doc(db, 'planes', sel.planId))
+      if (planSnap.exists()) plantilla = planSnap.data() as PlantillaData
+    }
+
+    const sesiones = plantilla?.sesiones_incluidas ?? sesionesDelPlan(sel)
+    const dias = plantilla?.duracion_dias ?? duracionDiasDelPlan(sel)
     const fechaVencimiento = now + dias * 86_400_000
     const monto = Number.isFinite(opts?.montoOverride) ? (opts!.montoOverride as number) : t.monto
     const resumen = resumenPlan(sel)
-    const nombrePlan = t.nombre_plan ?? resumen.titulo
+    const nombrePlan = plantilla?.nombre ?? t.nombre_plan ?? resumen.titulo
 
     // Lectura del profesor asignado ANTES de cualquier escritura — las
     // transacciones de Firestore exigen que todos los get() vayan primero.

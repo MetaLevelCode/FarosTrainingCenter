@@ -17,10 +17,10 @@ import { FarosWordmark, Spinner, Button, Input } from '@/components/ui'
 import { WaterBackground } from '@/components/shared/WaterBackground'
 import { SubirComprobante } from '@/components/dashboard/SubirComprobante'
 import { GrupoPersonalizado } from '@/components/dashboard/GrupoPersonalizado'
-import { getTransaccionesUsuario, getSuscripcionesUsuario, getSedes, getGrupos, getTarifas, getUsuarios } from '@/lib/firestore'
+import { getTransaccionesUsuario, getSuscripcionesUsuario, getSedes, getGrupos, getTarifas, getUsuarios, getPlanes } from '@/lib/firestore'
 import { parseVencimiento } from '@/lib/matricula'
 import { displayName } from '@/lib/types'
-import type { Suscripcion, Sede, Grupo as GrupoFS, Tarifas, Usuario } from '@/lib/types'
+import type { Suscripcion, Sede, Grupo as GrupoFS, Tarifas, Usuario, Plan } from '@/lib/types'
 import { Card } from '@/components/ui'
 import {
   TIPOS, GRUPOS as GRUPOS_FALLBACK, PERSONALES, COMBINACIONES, FRECUENCIAS,
@@ -32,7 +32,7 @@ import {
 const EASE = [0.22, 1, 0.36, 1] as const
 
 // Secuencia de pasos según el tipo de plan elegido.
-type StepKey = 'tipo' | 'grupo' | 'personal' | 'accion' | 'combinacion' | 'conjunto' | 'frecuencia' | 'ninos' | 'virtual' | 'resumen'
+type StepKey = 'tipo' | 'grupo' | 'personal' | 'accion' | 'combinacion' | 'conjunto' | 'frecuencia' | 'ninos' | 'virtual' | 'plantilla' | 'resumen'
 export type AccionGrupo = 'adquirir' | 'unirse' | null
 
 // Pareja/Familia/Grupo reducido (personas) y Vacaciones (niños) comparten
@@ -68,6 +68,7 @@ function stepsFor(tipo: TipoPlan | null, personalId: string | null, accionGrupo:
       return ['tipo', 'accion', 'ninos', 'resumen']
     }
     case 'virtual': return ['tipo', 'virtual', 'resumen']
+    case 'plantilla': return ['tipo', 'plantilla', 'resumen']
     default: return ['tipo', 'grupo', 'frecuencia', 'resumen']
   }
 }
@@ -82,6 +83,7 @@ const STEP_TITULO: Record<StepKey, string> = {
   frecuencia: '¿Con qué frecuencia entrenas?',
   ninos: '¿Cuántos niños?',
   virtual: 'Elige tu entrenador',
+  plantilla: 'Elige tu plan especial',
   resumen: 'Tu plan a la medida',
 }
 
@@ -235,12 +237,14 @@ export default function PlanesFlowPage() {
   // mostrar cupos disponibles reales, no solo la capacidad máxima.
   const [inscritosPorGrupo, setInscritosPorGrupo] = useState<Record<string, number>>({})
   const [profesores, setProfesores] = useState<Usuario[]>([])
+  const [plantillas, setPlantillas] = useState<Plan[]>([])
 
   useEffect(() => {
     // allSettled: si UNA falla (ej. falta un índice), las otras dos no
     // deben caer también al fallback — antes un solo error tumbaba las tres.
     getSedes().then(setSedes).catch(() => {})
     getGrupos().then(setGruposFS).catch(() => {})
+    getPlanes(true).then((p) => setPlantillas(p.filter(x => x.estado !== false))).catch(() => {})
     getTarifas().then((t) => {
       if (!t) return
       // El doc de Firestore puede ser de antes de un campo nuevo (ej.
@@ -248,6 +252,8 @@ export default function PlanesFlowPage() {
       // rompería el wizard hasta que un admin guarde el panel de Tarifas.
       setTarifas({
         ...TARIFAS_FALLBACK, ...t,
+        grupoPorSesion: { ...TARIFAS_FALLBACK.grupoPorSesion, ...t.grupoPorSesion },
+        conjuntoPorSesion: { ...TARIFAS_FALLBACK.conjuntoPorSesion, ...t.conjuntoPorSesion },
         personales: { ...TARIFAS_FALLBACK.personales, ...t.personales },
       })
     }).catch(() => {})
@@ -320,6 +326,20 @@ export default function PlanesFlowPage() {
       .catch(() => {})
   }, [user?.uid, user?.suscripcionActiva?.suscripcionId])
 
+  const tiposDinamicos = useMemo(() => {
+    const t = [...TIPOS]
+    if (plantillas.length > 0) {
+      t.push({
+        id: 'plantilla',
+        nombre: 'Especiales',
+        desc: 'Planes promocionales, corporativos o eventos únicos.',
+        icon: 'star',
+        detalle: ['Opciones de tiempo limitado', 'Condiciones exclusivas diseñadas para ti']
+      })
+    }
+    return t
+  }, [plantillas])
+
   // Restaura el plan que un invitado dejó a medias antes de iniciar sesión.
   useEffect(() => {
     try {
@@ -350,8 +370,28 @@ export default function PlanesFlowPage() {
   const steps = useMemo(() => stepsFor(sel.tipo, sel.personalId, accionGrupo), [sel.tipo, sel.personalId, accionGrupo])
   const stepKey = steps[Math.min(stepIdx, steps.length - 1)]
   const tarifasEfectivas = tarifas ?? TARIFAS_FALLBACK
-  const precio = useMemo(() => calcularPrecio(sel, tarifasEfectivas), [sel, tarifasEfectivas])
-  const resumen = useMemo(() => resumenPlan(sel), [sel])
+  const precio = useMemo(() => {
+    if (sel.tipo === 'plantilla' && sel.planId) {
+      const p = plantillas.find((x) => x.id === sel.planId)
+      if (p) {
+        return {
+          disponible: true,
+          total: p.precio_total,
+          porPersona: null,
+          personas: 1,
+          detalleFrecuencia: `${p.sesiones_incluidas} sesiones totales`,
+        }
+      }
+    }
+    return calcularPrecio(sel, tarifasEfectivas)
+  }, [sel, tarifasEfectivas, plantillas])
+  const resumen = useMemo(() => {
+    if (sel.tipo === 'plantilla' && sel.planId) {
+      const p = plantillas.find((x) => x.id === sel.planId)
+      if (p) return { titulo: p.nombre, subtitulo: p.descripcion || 'Plan especial', horarios: [] }
+    }
+    return resumenPlan(sel)
+  }, [sel, plantillas])
 
   const subPersonal = PERSONALES.find((p) => p.id === sel.personalId)
   const pidePersonas = sel.tipo === 'personal' && subPersonal?.porPersona
@@ -820,7 +860,7 @@ export default function PlanesFlowPage() {
             {/* PASO: TIPO */}
             {stepKey === 'tipo' && (
               <div className="space-y-6">
-                {TIPOS.map((t) => (
+                {tiposDinamicos.map((t) => (
                   <ChoiceCard
                     key={t.id}
                     selected={sel.tipo === t.id}
@@ -1098,6 +1138,36 @@ export default function PlanesFlowPage() {
                     icon="person"
                     title={displayName(p)}
                     desc="Te arma y actualiza tu rutina remota."
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* PASO: PLANTILLA (Especiales) */}
+            {stepKey === 'plantilla' && (
+              <div className="space-y-6">
+                {plantillas.length === 0 ? (
+                  <p className="text-sm text-[var(--color-on-surface-variant)]/50 text-center py-10">
+                    No hay planes especiales activos por ahora.
+                  </p>
+                ) : plantillas.map((p) => (
+                  <ChoiceCard
+                    key={p.id}
+                    selected={sel.planId === p.id}
+                    onClick={() => setSel((s) => ({ ...s, planId: p.id }))}
+                    icon="workspace_premium"
+                    title={p.nombre}
+                    desc={p.descripcion || `Plan especial de ${p.sesiones_incluidas} sesiones.`}
+                    meta={
+                      <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                        <span className="px-2 py-1 bg-white/5 border border-white/10 rounded-lg text-white font-medium">
+                          {p.sesiones_incluidas} sesiones
+                        </span>
+                        <span className="px-2 py-1 bg-[rgba(230,255,0,0.1)] border border-[rgba(230,255,0,0.2)] rounded-lg text-[var(--color-primary-fixed)] font-bold">
+                          {fmtCOP(p.precio_total)}
+                        </span>
+                      </div>
+                    }
                   />
                 ))}
               </div>

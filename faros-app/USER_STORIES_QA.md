@@ -830,7 +830,7 @@ Pasos:
 
 ---
 
-### A6 — Admin gestiona Plantillas (legacy)
+### A6 — Admin gestiona Plantillas
 **Como** admin, **quiero** crear planes ad-hoc con nombre propio, **para**
 casos especiales (promos, descuentos) que no encajan en los 5 tipos
 estándar.
@@ -840,11 +840,10 @@ Pasos:
    sede)
 2. Editarla, archivarla
 
-**Estado:** 🔲 Pendiente
+**Estado:** ✅ Implementado y probado
 
 **Notas / bugs:**
-- Esta tab está marcada en el propio código como que el wizard del alumno
-  NO la usa — confirmar que sigue siendo así a propósito, no un olvido.
+- (Resuelto) El usuario solicitó explícitamente habilitar las plantillas en el wizard para los alumnos (opción "Especiales"). La funcionalidad se integró con éxito.
 
 ---
 
