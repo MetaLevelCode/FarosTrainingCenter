@@ -385,7 +385,7 @@ export default function UsuariosPage() {
                     )}
                   </div>
 
-                  {/* Estadísticas */}
+                  {/* Estadísticas de Estudiante */}
                   {selectedUser.rol === 'estudiante' && selectedUser.estadisticas && (
                     <div className="space-y-4 md:col-span-2 mt-2">
                       <h4 className="label-caps text-[10px] text-[var(--color-primary-fixed)] border-b border-[rgba(230,255,0,0.15)] pb-2">Asistencia (Histórico global)</h4>
@@ -401,6 +401,19 @@ export default function UsuariosPage() {
                         <div className="bg-[rgba(230,255,0,0.05)] border border-[rgba(230,255,0,0.2)] rounded-xl p-3">
                           <span className="font-display text-2xl font-black text-[var(--color-primary-fixed)]">{selectedUser.estadisticas.tasaAsistencia}%</span>
                           <p className="label-caps text-[9px] text-[var(--color-primary-fixed)]/60 mt-1">Tasa</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Estadísticas de Profesor */}
+                  {selectedUser.rol === 'profesor' && (
+                    <div className="space-y-4 md:col-span-2 mt-2">
+                      <h4 className="label-caps text-[10px] text-[var(--color-primary-fixed)] border-b border-[rgba(230,255,0,0.15)] pb-2">Desempeño</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="bg-[rgba(230,255,0,0.05)] border border-[rgba(230,255,0,0.2)] rounded-xl p-4 flex flex-col items-center">
+                          <span className="font-display text-4xl font-black text-[var(--color-primary-fixed)]">{selectedUser.clasesDadas ?? 0}</span>
+                          <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/60 mt-2">Clases Dadas (Histórico)</p>
                         </div>
                       </div>
                     </div>

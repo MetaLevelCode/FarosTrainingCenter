@@ -30,17 +30,33 @@ export interface CanalItem {
 export function ChatShell({ canales, yoId, cargando, onEnviar }: {
   canales: CanalItem[]
   yoId: string
-  cargando: boolean
+  cargando?: boolean
   onEnviar: (canalId: string, texto: string) => Promise<void>
 }) {
   const [activoId, setActivoId] = useState<string | null>(null)
   const [verHilo, setVerHilo] = useState(false) // controla el swap de pantalla en mobile
+  
+  // Estado para guardar el timestamp del último mensaje de cada canal
+  const [tiempos, setTiempos] = useState<Record<string, number>>({})
 
+  // Ordenar canales: los que tienen mensajes primero (ordenados por fecha),
+  // luego los que no tienen (mantienen su orden original).
+  const canalesOrdenados = useMemo(() => {
+    return [...canales].sort((a, b) => {
+      const tA = tiempos[a.id] || 0
+      const tB = tiempos[b.id] || 0
+      return tB - tA
+    })
+  }, [canales, tiempos])
+
+  // Si se cierra el canal activo (ej. porque el padre cambió la lista y
+  // el canal seleccionado ya no existe), limpiarlo.
   useEffect(() => {
-    if (canales.length > 0 && !canales.some((c) => c.id === activoId)) {
-      setActivoId(canales[0].id)
+    if (activoId && !canales.some((c) => c.id === activoId)) {
+      setActivoId(null)
+      setVerHilo(false)
     }
-  }, [canales, activoId])
+  }, [activoId, canales])
 
   const activo = canales.find((c) => c.id === activoId) ?? null
   const { mensajes } = useCanalMensajes(activo?.id ?? null)
@@ -80,15 +96,16 @@ export function ChatShell({ canales, yoId, cargando, onEnviar }: {
         <div className="flex-1 min-h-0 overflow-y-auto">
           {cargando ? (
             <div className="flex justify-center py-10"><Spinner /></div>
-          ) : canales.length === 0 ? (
+          ) : canalesOrdenados.length === 0 ? (
             <p className="text-center text-sm text-white/40 px-6 py-10">Aún no tienes conversaciones.</p>
-          ) : canales.map((c) => (
+          ) : canalesOrdenados.map((c) => (
             <ChatListRow
               key={c.id}
               canal={c}
               yoId={yoId}
               seleccionada={c.id === activoId}
               onAbrir={() => abrir(c.id)}
+              onUltimoMensaje={(ts) => setTiempos(prev => prev[c.id] === ts ? prev : { ...prev, [c.id]: ts })}
             />
           ))}
         </div>
@@ -137,13 +154,21 @@ export function ChatShell({ canales, yoId, cargando, onEnviar }: {
   )
 }
 
-function ChatListRow({ canal, yoId, seleccionada, onAbrir }: {
+function ChatListRow({ canal, yoId, seleccionada, onAbrir, onUltimoMensaje }: {
   canal: CanalItem
   yoId: string
   seleccionada: boolean
   onAbrir: () => void
+  onUltimoMensaje: (ts: number) => void
 }) {
   const ultimo = useUltimoMensaje(canal.id)
+  
+  useEffect(() => {
+    if (ultimo) {
+      onUltimoMensaje(ultimo.ts)
+    }
+  }, [ultimo?.ts, onUltimoMensaje])
+
   const preview = ultimo
     ? `${ultimo.autorId === yoId ? 'Tú: ' : ''}${ultimo.texto}`
     : canal.subtitulo

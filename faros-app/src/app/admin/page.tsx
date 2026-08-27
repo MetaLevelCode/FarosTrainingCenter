@@ -12,9 +12,7 @@ import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button, Spinner } from '@/components/ui'
-import { BotonSeed } from '@/components/admin/BotonSeed'
-import { BotonSeedClases } from '@/components/admin/BotonSeedClases'
-import { BotonBackfillMensajes } from '@/components/admin/BotonBackfillMensajes'
+
 import { getMovimientosDesde, getTransacciones, getUsuarios } from '@/lib/firestore'
 import { fmtCOP } from '@/lib/planes'
 import type { Movimiento, Transaccion, Usuario } from '@/lib/types'
@@ -113,9 +111,7 @@ export default function AdminPage() {
               </h2>
             </div>
             <div className="flex flex-wrap items-start gap-3">
-              <BotonSeed />
-              <BotonSeedClases />
-              <BotonBackfillMensajes />
+              {/* Botones de desarrollo removidos para producción */}
             </div>
           </div>
         </Reveal>
