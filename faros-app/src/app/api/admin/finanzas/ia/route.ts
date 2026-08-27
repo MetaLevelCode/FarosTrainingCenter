@@ -82,18 +82,28 @@ export async function POST(req: NextRequest) {
       ...historial.map((h) => ({ role: h.rol, parts: [{ text: h.texto }] })),
     ]
 
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${MODELO}:generateContent`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-        body: JSON.stringify({ contents }),
-      },
-    )
+    // El tier gratuito de Gemini devuelve 503 "high demand" con frecuencia
+    // aunque la key y la cuota estén bien — normalmente se resuelve solo
+    // en unos segundos, así que reintentamos antes de rendirnos.
+    let res: Response | null = null
+    let errBody = ''
+    for (let intento = 0; intento < 3; intento++) {
+      res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${MODELO}:generateContent`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+          body: JSON.stringify({ contents }),
+        },
+      )
+      if (res.ok) break
+      errBody = await res.text().catch(() => '')
+      if (res.status !== 503 || intento === 2) break
+      await new Promise((r) => setTimeout(r, 2000 * (intento + 1)))
+    }
 
-    if (!res.ok) {
-      const errBody = await res.text().catch(() => '')
-      log.error({ scope: 'finanzas-ia', event: 'gemini_error', ip, status: res.status, errBody: errBody.slice(0, 500) })
+    if (!res || !res.ok) {
+      log.error({ scope: 'finanzas-ia', event: 'gemini_error', ip, status: res?.status, errBody: errBody.slice(0, 500) })
       return NextResponse.json({ error: 'No se pudo generar el reporte con IA. Intenta de nuevo.' }, { status: 502 })
     }
 
