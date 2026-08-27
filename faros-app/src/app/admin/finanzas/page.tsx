@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
-import { Card, Badge, Button, Input } from '@/components/ui'
+import { Card, Badge, Button, Input, Spinner } from '@/components/ui'
 import {
   getTransacciones, getMovimientosDesde, aprobarTransaccion,
   getCategorias, addMovimiento, crearCategoria,
@@ -64,6 +64,17 @@ export default function FinanzasPage() {
   const [comprobanteProxyUrl, setComprobanteProxyUrl] = useState<string | null>(null)
   const [imgError, setImgError] = useState(false)
   const [imgLoading, setImgLoading] = useState(false)
+
+  // ── Reporte financiero con IA (Gemini) ──
+  // Sube el mismo Excel que ya se puede exportar arriba; el cliente lo
+  // parsea (misma lib `xlsx` del export) y solo manda las filas al
+  // servidor. Sin persistencia: el historial vive en este estado y se
+  // reenvía completo en cada pregunta de seguimiento.
+  const [datosIA, setDatosIA] = useState<{ movimientos: unknown[]; transacciones: unknown[] } | null>(null)
+  const [historialIA, setHistorialIA] = useState<{ rol: 'user' | 'model'; texto: string }[]>([])
+  const [cargandoIA, setCargandoIA] = useState(false)
+  const [preguntaIA, setPreguntaIA] = useState('')
+  const [errorIA, setErrorIA] = useState<string | null>(null)
 
   useEffect(() => {
     // Sin tope de cantidad — "Balance" es un total histórico, no un
@@ -222,6 +233,72 @@ export default function FinanzasPage() {
     } finally {
       setProcesando(null)
     }
+  }
+
+  async function llamarIA(payload: { movimientos: unknown[]; transacciones: unknown[]; historial: { rol: 'user' | 'model'; texto: string }[] }) {
+    const { getAuth } = await import('firebase/auth')
+    const idToken = await getAuth().currentUser?.getIdToken()
+    if (!idToken) throw new Error('Sesión expirada')
+
+    const res = await fetch('/api/admin/finanzas/ia', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+      body: JSON.stringify(payload),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
+    return data.texto as string
+  }
+
+  async function subirExcelYAnalizar(file: File) {
+    setErrorIA(null)
+    setCargandoIA(true)
+    try {
+      const XLSX = await import('xlsx')
+      const buf = await file.arrayBuffer()
+      const wb = XLSX.read(buf, { type: 'array' })
+      const hojaMov = wb.Sheets['Movimientos']
+      const hojaTx = wb.Sheets['Transacciones']
+      const movimientos = hojaMov ? XLSX.utils.sheet_to_json(hojaMov) : []
+      const transacciones = hojaTx ? XLSX.utils.sheet_to_json(hojaTx) : []
+      if (movimientos.length === 0 && transacciones.length === 0) {
+        throw new Error('Ese archivo no tiene datos en las hojas "Movimientos" o "Transacciones". ¿Es el Excel exportado desde este panel?')
+      }
+
+      setDatosIA({ movimientos, transacciones })
+      const texto = await llamarIA({ movimientos, transacciones, historial: [] })
+      setHistorialIA([{ rol: 'model', texto }])
+    } catch (err: any) {
+      setErrorIA(err?.message ?? 'No se pudo generar el reporte.')
+    } finally {
+      setCargandoIA(false)
+    }
+  }
+
+  async function preguntarIA() {
+    const pregunta = preguntaIA.trim()
+    if (!pregunta || !datosIA || cargandoIA) return
+
+    setErrorIA(null)
+    setPreguntaIA('')
+    const nuevoHistorial: { rol: 'user' | 'model'; texto: string }[] = [...historialIA, { rol: 'user', texto: pregunta }]
+    setHistorialIA(nuevoHistorial)
+    setCargandoIA(true)
+    try {
+      const texto = await llamarIA({ ...datosIA, historial: nuevoHistorial })
+      setHistorialIA([...nuevoHistorial, { rol: 'model', texto }])
+    } catch (err: any) {
+      setErrorIA(err?.message ?? 'No se pudo obtener la respuesta.')
+    } finally {
+      setCargandoIA(false)
+    }
+  }
+
+  function reiniciarIA() {
+    setDatosIA(null)
+    setHistorialIA([])
+    setErrorIA(null)
+    setPreguntaIA('')
   }
 
   return (
@@ -383,6 +460,89 @@ export default function FinanzasPage() {
             <TortaEgresosPorCategoria movimientos={movimientos} />
           </Reveal>
         </div>
+
+        {/* ── Reporte financiero con IA ── */}
+        <Reveal delay={0.18}>
+          <Card>
+            <div className="flex items-center justify-between mb-5 gap-4">
+              <div>
+                <p className="label-caps text-[10px] text-[var(--color-primary-fixed)] tracking-[0.3em] mb-1">Análisis con IA</p>
+                <h3 className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight">
+                  Reporte financiero
+                </h3>
+              </div>
+              {historialIA.length > 0 && (
+                <button
+                  onClick={reiniciarIA}
+                  className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/60 hover:text-white transition-colors shrink-0"
+                >
+                  Nuevo reporte
+                </button>
+              )}
+            </div>
+
+            {historialIA.length === 0 ? (
+              <div className="space-y-4">
+                <p className="text-sm text-[var(--color-on-surface-variant)]/70">
+                  Sube el Excel que exportas arriba y Gemini analizará ingresos, egresos y transacciones para
+                  señalar patrones que no son obvios a simple vista y darte recomendaciones para mejorar la
+                  salud financiera del negocio.
+                </p>
+                <label className={`flex flex-col items-center justify-center gap-2 border-2 border-dashed border-white/10 rounded-2xl py-8 transition-colors ${cargandoIA ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[rgba(230,255,0,0.4)]'}`}>
+                  <span className="material-symbols-outlined text-[28px] text-[var(--color-on-surface-variant)]/50">upload_file</span>
+                  <span className="text-xs text-[var(--color-on-surface-variant)]/60">
+                    {cargandoIA ? 'Analizando…' : 'Elige el .xlsx exportado de Finanzas'}
+                  </span>
+                  <input
+                    type="file"
+                    accept=".xlsx"
+                    className="hidden"
+                    disabled={cargandoIA}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (file) subirExcelYAnalizar(file)
+                      e.target.value = ''
+                    }}
+                  />
+                </label>
+                {cargandoIA && <div className="flex justify-center py-2"><Spinner /></div>}
+                {errorIA && <p className="text-xs text-[var(--color-danger-crimson)]">{errorIA}</p>}
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="space-y-4 max-h-[520px] overflow-y-auto pr-1">
+                  {historialIA.map((h, i) => (
+                    <div key={i} className={h.rol === 'user' ? 'flex justify-end' : ''}>
+                      <div className={h.rol === 'user'
+                        ? 'max-w-[85%] bg-[rgba(230,255,0,0.1)] border border-[rgba(230,255,0,0.2)] rounded-2xl px-4 py-3 text-sm text-white whitespace-pre-wrap'
+                        : 'bg-white/[0.03] border border-white/10 rounded-2xl px-4 py-4 text-sm text-[var(--color-on-surface)] whitespace-pre-wrap leading-relaxed'
+                      }>
+                        {h.texto}
+                      </div>
+                    </div>
+                  ))}
+                  {cargandoIA && <div className="flex justify-start py-2"><Spinner /></div>}
+                </div>
+
+                {errorIA && <p className="text-xs text-[var(--color-danger-crimson)]">{errorIA}</p>}
+
+                <div className="flex gap-3 pt-4 border-t border-white/10">
+                  <input
+                    value={preguntaIA}
+                    onChange={(e) => setPreguntaIA(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') preguntarIA() }}
+                    placeholder="Pregúntale algo puntual al reporte…"
+                    disabled={cargandoIA}
+                    className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-white/20 focus:border-[rgba(230,255,0,0.5)] focus:outline-none"
+                  />
+                  <Button size="sm" loading={cargandoIA} disabled={!preguntaIA.trim()} onClick={preguntarIA}>
+                    Preguntar
+                  </Button>
+                </div>
+              </div>
+            )}
+          </Card>
+        </Reveal>
 
         {/* ── Transacciones pendientes ── */}
         <Reveal delay={0.16}>
