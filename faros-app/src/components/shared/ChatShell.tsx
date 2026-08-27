@@ -10,7 +10,7 @@
 // solo arma su propia lista de canales (CanalItem[]) según su rol.
 // ============================================================
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { Conversacion } from '@/components/shared/Conversacion'
 import { useCanalMensajes, useUltimoMensaje } from '@/hooks/useCanalMensajes'
 import { useAlturaVisible } from '@/hooks/useAlturaVisible'
@@ -98,7 +98,7 @@ export function ChatShell({ canales, yoId, cargando, onEnviar }: {
             <div className="flex justify-center py-10"><Spinner /></div>
           ) : canalesOrdenados.length === 0 ? (
             <p className="text-center text-sm text-white/40 px-6 py-10">Aún no tienes conversaciones.</p>
-          ) : canalesOrdenados.map((c) => (
+          ) : canalesOrdenados.map((c: CanalItem) => (
             <ChatListRow
               key={c.id}
               canal={c}
