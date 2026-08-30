@@ -25,8 +25,8 @@
 
 import { useEffect, useState } from 'react'
 
-const T_FINAL = 2600
-const T_OCULTAR = T_FINAL + 1550
+const T_FINAL = 900
+const T_OCULTAR = T_FINAL + 1000
 
 export function BootSplash() {
   const [visible, setVisible] = useState(true)
@@ -53,14 +53,27 @@ export function BootSplash() {
       <div
         className={`absolute inset-0 z-10 flex flex-col items-center justify-center gap-6 px-6 ${ciclo ? 'faros-contenido--ciclo' : ''}`}
       >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/farosWordmark/logo-amarillo.png" alt="" style={{ width: 92, height: 'auto' }} />
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/farosWordmark/letras-brush-amarillas.png"
-          alt="Faros Training"
-          style={{ width: 260, height: 'auto' }}
-        />
+        <div className="flex items-center justify-center gap-3 sm:gap-8 max-w-[100vw] px-4">
+
+          <div className="flex flex-col items-center gap-4 sm:gap-6 shrink-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/farosWordmark/logo-amarillo.png" alt="" className="w-[60px] sm:w-[92px] h-auto" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/farosWordmark/letras-brush-amarillas.png"
+              alt="Faros Training"
+              className="w-[140px] sm:w-[260px] h-auto"
+            />
+          </div>
+
+          <span className="font-display font-black text-white/40 text-sm sm:text-xl shrink-0">X</span>
+
+          <div className="flex items-center opacity-90 shrink-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/metalevel-logo.png" alt="MetaLevel Code" className="h-[56px] sm:h-[84px] w-auto object-contain mix-blend-screen" />
+          </div>
+
+        </div>
       </div>
 
       {/* La marea — caja el doble de alta que la pantalla (bottom:0,
@@ -69,7 +82,7 @@ export function BootSplash() {
           (cubre entera) y sigue bajando hasta quedar del todo fuera
           de pantalla. */}
       <div
-        className={`faros-marea ${ciclo ? 'faros-marea--ciclo' : ''}`}
+        className={`z-20 faros-marea ${ciclo ? 'faros-marea--ciclo' : ''}`}
         style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '200%' }}
       >
         <svg

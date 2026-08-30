@@ -336,7 +336,7 @@ a, button, [role='button'], input, textarea, select {
   animation: farosMareaIdle 3.2s ease-in-out infinite;
 }
 .faros-marea--ciclo {
-  animation: farosMareaCiclo 1.5s forwards;
+  animation: farosMareaCiclo 0.95s forwards;
 }
 @keyframes farosMareaIdle {
   0%, 100% { transform: translateY(90%); }
@@ -349,14 +349,14 @@ a, button, [role='button'], input, textarea, select {
   100% { transform: translateY(108%); }
 }
 .faros-fondo--ciclo {
-  animation: farosFondoApaga 1.5s forwards;
+  animation: farosFondoApaga 0.95s forwards;
 }
 @keyframes farosFondoApaga {
   0%, 40% { opacity: 1; }
   42%, 100% { opacity: 0; }
 }
 .faros-contenido--ciclo {
-  animation: farosContenidoApaga 1.5s forwards;
+  animation: farosContenidoApaga 0.95s forwards;
 }
 @keyframes farosContenidoApaga {
   0%, 22% { opacity: 1; }
