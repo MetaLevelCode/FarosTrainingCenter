@@ -1,7 +1,7 @@
 // ============================================================
 // FAROS Training — Service Worker
 // Strategy per resource type:
-//   · Navigations (HTML) ......... network-first → cache → /offline
+//   · Navigations (HTML) ......... red vs cache en carrera (2.5s) → /offline
 //   · /_next/static (hashed) ..... cache-first (immutable)
 //   · Images / media / fonts ..... stale-while-revalidate (capped)
 //   · Google Fonts ............... cache-first (fonts rarely change)
@@ -81,28 +81,48 @@ async function trimCache(cacheName, maxEntries) {
   return trimCache(cacheName, maxEntries)
 }
 
-async function networkFirstPage(request) {
-  try {
-    const res = await fetch(request)
+// El backend (App Hosting/Cloud Run) corre con minInstances:0 — tras un
+// rato sin tráfico, la primera navegación de una nueva sesión puede
+// tardar varios segundos en "despertar" el contenedor. Antes, ese cold
+// start bloqueaba la pantalla entera aunque ya hubiera una versión
+// cacheada lista para mostrar. Ahora, si hay cache, se le da a la red
+// una ventana corta (RACE_MS) para responder; si no llega a tiempo se
+// sirve el cache YA (la red sigue en segundo plano y actualiza el
+// cache sola cuando responda — waitUntil evita que el SW se mate antes
+// de que termine).
+const RACE_MS = 2500
+
+async function networkFirstPage(request, event) {
+  // ignoreVary/ignoreSearch: una navegación real trae headers propios
+  // de Next (rsc, next-router-state-tree...) que no estaban presentes
+  // cuando el SW cacheó estas URLs con un fetch/add plano — sin esto,
+  // una respuesta cacheada con Vary podía no calzar y el fallback
+  // caía al último recurso sin necesidad.
+  const cached = await caches.match(request, { ignoreVary: true, ignoreSearch: true })
+
+  const networkPromise = fetch(request).then((res) => {
     if (res.ok) {
-      const cache = await caches.open(RUNTIME)
-      cache.put(request, res.clone())
+      caches.open(RUNTIME).then((cache) => cache.put(request, res.clone()))
     }
     return res
-  } catch {
-    // ignoreVary/ignoreSearch: una navegación real trae headers propios
-    // de Next (rsc, next-router-state-tree...) que no estaban presentes
-    // cuando el SW cacheó estas URLs con un fetch/add plano — sin esto,
-    // una respuesta cacheada con Vary podía no calzar y el fallback
-    // caía al último recurso sin necesidad.
-    const cached = await caches.match(request, { ignoreVary: true, ignoreSearch: true })
-    if (cached) return cached
-    const offline = await caches.match('/offline', { ignoreVary: true })
-    if (offline) return offline
-    return new Response(FALLBACK_HTML, {
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
-    })
+  }).catch(() => null)
+
+  if (cached) {
+    event?.waitUntil(networkPromise)
+    const timeout = new Promise((resolve) => setTimeout(() => resolve(null), RACE_MS))
+    const res = await Promise.race([networkPromise, timeout])
+    return res ?? cached
   }
+
+  // Sin cache (primera vez que se navega a esta URL): esperar la red
+  // normal, no hay nada más rápido que mostrar mientras tanto.
+  const res = await networkPromise
+  if (res) return res
+  const offline = await caches.match('/offline', { ignoreVary: true })
+  if (offline) return offline
+  return new Response(FALLBACK_HTML, {
+    headers: { 'Content-Type': 'text/html; charset=utf-8' },
+  })
 }
 
 async function cacheFirst(request, cacheName) {
@@ -155,7 +175,7 @@ self.addEventListener('fetch', (e) => {
 
   // Page navigations
   if (request.mode === 'navigate') {
-    e.respondWith(networkFirstPage(request))
+    e.respondWith(networkFirstPage(request, e))
     return
   }
 
