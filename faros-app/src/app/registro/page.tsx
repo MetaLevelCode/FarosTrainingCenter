@@ -13,6 +13,7 @@ import { motion, AnimatePresence } from 'motion/react'
 import { useAuth } from '@/contexts/AuthContext'
 import { Button, Input, FarosWordmark } from '@/components/ui'
 import { WaterBackground } from '@/components/shared/WaterBackground'
+import { MetaLevelWatermark } from '@/components/shared/MetaLevelWatermark'
 import { comprimirImagen } from '@/lib/imagen'
 import { updateFotoPerfil, getSedes } from '@/lib/firestore'
 import { getFirebase } from '@/lib/firebase'
@@ -195,7 +196,7 @@ export default function RegistroPage() {
   }
 
   return (
-    <div className="min-h-dvh flex items-center justify-center px-5 py-12 relative">
+    <div className="min-h-dvh flex flex-col items-center justify-center px-5 py-12 relative">
       <WaterBackground />
 
       <motion.div
@@ -380,6 +381,11 @@ export default function RegistroPage() {
           </Button>
         </form>
       </motion.div>
+      
+      {/* ── MetaLevel Code Watermark ── */}
+      <div className="mt-8 z-10">
+        <MetaLevelWatermark />
+      </div>
     </div>
   )
 }

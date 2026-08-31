@@ -8,3 +8,5 @@
 # Caché incremental de TypeScript: artefacto de compilación,
 # cambia en cada build y genera conflictos entre máquinas.
 tsconfig.tsbuildinfo
+
+/.apphosting/

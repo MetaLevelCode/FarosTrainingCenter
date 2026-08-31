@@ -13,6 +13,7 @@ import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button, Spinner } from '@/components/ui'
 import { AvatarFoto } from '@/components/shared/AvatarFoto'
+import { MetaLevelWatermark } from '@/components/shared/MetaLevelWatermark'
 import { useAuth } from '@/contexts/AuthContext'
 import { getFirebase } from '@/lib/firebase'
 import type { Sugerencia } from '@/lib/types'
@@ -291,6 +292,11 @@ export default function PerfilPage() {
             </div>
           </Card>
         </Reveal>
+      </div>
+      
+      {/* ── MetaLevel Code Watermark ── */}
+      <div className="mt-16 flex justify-center pb-8">
+        <MetaLevelWatermark />
       </div>
     </GuardedShell>
   )

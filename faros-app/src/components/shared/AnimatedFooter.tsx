@@ -12,6 +12,7 @@ import type { ComponentProps, ReactNode } from 'react'
 import Link from 'next/link'
 import { motion, useReducedMotion } from 'motion/react'
 import { FarosLogo } from '@/components/ui'
+import { MetaLevelWatermark } from '@/components/shared/MetaLevelWatermark'
 
 type IconoProps = { className?: string }
 
@@ -110,6 +111,11 @@ export function AnimatedFooter() {
             </Entrada>
           ))}
         </div>
+      </div>
+      
+      {/* ── MetaLevel Code Watermark ── */}
+      <div className="w-full mt-16 pt-8 border-t border-[var(--color-surface-stroke)] flex justify-center">
+        <MetaLevelWatermark />
       </div>
     </footer>
   )

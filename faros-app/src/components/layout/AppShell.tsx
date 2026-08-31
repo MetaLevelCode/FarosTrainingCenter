@@ -202,39 +202,39 @@ export function AppShell({ title, children, hideFab = false }: { title: string; 
               transition={{ duration: 0.28, ease: [0.23, 1, 0.32, 1] }}
               className="absolute bottom-20 right-0 flex flex-col gap-3"
             >
-              {navItems.map((item, i) => {
-                const active = pathname === item.href
-                return (
-                  <motion.button
-                    key={item.href}
-                    initial={{ opacity: 0, x: 16 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.04, duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
-                    onClick={() => { router.push(item.href); setFabOpen(false) }}
-                    className="flex items-center justify-end gap-3 group"
-                  >
-                    <span className={`
-                      px-3 py-1.5 rounded-lg label-caps text-[11px] whitespace-nowrap backdrop-blur-md border transition-colors duration-200
-                      ${active
-                        ? 'bg-[var(--color-primary-fixed)] text-black border-transparent'
-                        : 'bg-black/80 text-white/90 border-white/5 group-hover:text-[var(--color-primary-fixed)]'}
-                    `}>
-                      {item.label}
-                    </span>
-                    <span className={`
-                      w-11 h-11 rounded-full flex items-center justify-center backdrop-blur-md border transition-all duration-200
-                      ${active
-                        ? 'bg-[var(--color-primary-fixed)] text-black border-transparent'
-                        : 'bg-white/5 text-white/70 border-white/10 group-hover:bg-[var(--color-primary-fixed)] group-hover:text-black'}
-                    `}>
-                      <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
-                    </span>
-                  </motion.button>
-                )
-              })}
-            </motion.div>
-          )}
-        </AnimatePresence>
+                {navItems.map((item, i) => {
+                  const active = pathname === item.href
+                  return (
+                    <motion.button
+                      key={item.href}
+                      initial={{ opacity: 0, x: 16 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.04, duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+                      onClick={() => { router.push(item.href); setFabOpen(false) }}
+                      className="flex items-center justify-end gap-3 group"
+                    >
+                      <span className={`
+                        px-3 py-1.5 rounded-lg label-caps text-[11px] whitespace-nowrap backdrop-blur-md border transition-colors duration-200
+                        ${active
+                          ? 'bg-[var(--color-primary-fixed)] text-black border-transparent'
+                          : 'bg-black/80 text-white/90 border-white/5 group-hover:text-[var(--color-primary-fixed)]'}
+                      `}>
+                        {item.label}
+                      </span>
+                      <span className={`
+                        w-11 h-11 rounded-full flex items-center justify-center backdrop-blur-md border transition-all duration-200
+                        ${active
+                          ? 'bg-[var(--color-primary-fixed)] text-black border-transparent'
+                          : 'bg-white/5 text-white/70 border-white/10 group-hover:bg-[var(--color-primary-fixed)] group-hover:text-black'}
+                      `}>
+                        <span className="material-symbols-outlined text-[20px]">{item.icon}</span>
+                      </span>
+                    </motion.button>
+                  )
+                })}
+              </motion.div>
+            )}
+          </AnimatePresence>
 
         <motion.button
           ref={fabRef as any}

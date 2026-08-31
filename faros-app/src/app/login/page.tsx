@@ -16,6 +16,7 @@ import { motion } from 'motion/react'
 import { useAuth } from '@/contexts/AuthContext'
 import { Button, Input, FarosWordmark } from '@/components/ui'
 import { WaterBackground } from '@/components/shared/WaterBackground'
+import { MetaLevelWatermark } from '@/components/shared/MetaLevelWatermark'
 
 const ROLE_HOME: Record<string, string> = {
   estudiante: '/dashboard', profesor: '/portal', admin: '/admin',
@@ -117,7 +118,7 @@ export default function LoginPage() {
       </div>
 
       {/* ── RIGHT: Login form ── */}
-      <div className="flex items-center justify-center px-5 py-10 relative">
+      <div className="flex flex-col items-center justify-center px-5 py-10 relative">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -224,6 +225,11 @@ export default function LoginPage() {
             </div>
           )}
         </motion.div>
+        
+        {/* ── MetaLevel Code Watermark ── */}
+        <div className="mt-8 z-10">
+          <MetaLevelWatermark />
+        </div>
       </div>
     </div>
   )
