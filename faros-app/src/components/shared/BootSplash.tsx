@@ -70,7 +70,7 @@ export function BootSplash() {
 
           <div className="flex items-center opacity-100 shrink-0">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/metalevel-logo.png" alt="MetaLevel Code" className="h-[90px] sm:h-[150px] w-auto object-contain mix-blend-screen scale-[1.5] sm:scale-[1.8]" />
+            <img src="/metalevel-logo.png" alt="MetaLevel Code" className="h-[90px] sm:h-[150px] w-auto object-contain mix-blend-screen scale-[2] sm:scale-[2.5]" />
           </div>
 
         </div>
