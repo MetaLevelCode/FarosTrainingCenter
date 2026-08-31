@@ -43,7 +43,7 @@ export function NadarCTA({ href = '/dashboard/planes' }: { href?: string }) {
       <div className="relative z-10 flex flex-col items-center gap-9 text-center">
         {/* Parte superior: la pregunta */}
         <p className="font-body text-lg md:text-2xl text-[var(--color-on-surface-variant)] max-w-xl leading-snug">
-          ¿Listo para bajar tus tiempos y subir el nivel?
+          No esperes el momento perfecto, créalo.
         </p>
 
         <div
@@ -156,7 +156,7 @@ export function NadarCTA({ href = '/dashboard/planes' }: { href?: string }) {
           className="max-w-md text-sm leading-relaxed text-[var(--color-on-surface-variant)]/60 transition-opacity duration-500"
           style={{ opacity: isClicked ? 0 : 1 }}
         >
-          Arma tu plan a la medida — grupal, personal, en pareja o en familia.
+          Elige el plan que mejor se adapte a ti — bienvenid@ a Faros Training.
         </p>
       </div>
     </section>

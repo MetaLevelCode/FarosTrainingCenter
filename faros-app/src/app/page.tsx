@@ -251,20 +251,18 @@ export default function LandingPage() {
             </h2>
           </Reveal>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
-            <Reveal className="md:col-span-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
+            <Reveal className="md:col-span-1">
               <div className="liquid-glass rounded-3xl p-8 md:p-10 h-full">
                 <div className="relative z-10">
                   <div className="flex items-center gap-4 mb-6">
                     <span className="material-symbols-outlined text-[var(--color-primary-fixed)] text-3xl">flag</span>
-                    <h3 className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight">Nuestra Misión</h3>
+                    <h3 className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight">Quienes somos?</h3>
                   </div>
                   <p className="text-[var(--color-secondary)] leading-relaxed">
-                    En Faros Training nos dedicamos a forjar atletas inquebrantables.
-                    Proveemos las herramientas, la analítica y el entorno necesario para
-                    que tanto deportistas amateurs como profesionales alcancen su máximo
-                    potencial biológico y técnico. No creemos en atajos: creemos en el
-                    trabajo métrico y disciplinado.
+                    Existimos para ayudar a las personas a descubrir y desarrollar su máximo potencial a través 
+                    del movimiento, creando experiencias de entrenamiento que combinan ciencia, disciplina y 
+                    acompañamiento profesional para generar cambios duraderos.
                   </p>
                 </div>
               </div>
@@ -276,26 +274,10 @@ export default function LandingPage() {
                   <span className="block font-display text-[56px] font-black text-[var(--color-primary-fixed)] leading-none mb-3 drop-shadow-[0_0_15px_rgba(230,255,0,0.3)]">
                     +500
                   </span>
-                  <span className="label-caps text-[var(--color-secondary)]">Atletas Activos</span>
+                  <span className="label-caps text-[var(--color-secondary)]">La Familia Faros</span>
                 </div>
               </div>
             </Reveal>
-
-            {[
-              { icon: 'monitoring', title: 'Análisis de Datos', body: 'Métricas en tiempo real para ajustar tu rendimiento sesión a sesión.' },
-              { icon: 'calendar_month', title: 'Planificación', body: 'Rutinas periodizadas y adaptables a tu calendario competitivo.' },
-              { icon: 'group', title: 'Comunidad', body: 'Conecta con entrenadores de élite y compañeros de entrenamiento.' },
-            ].map((f, i) => (
-              <Reveal key={f.title} delay={0.06 * (i + 1)}>
-                <div className="liquid-glass rounded-3xl p-8 h-full">
-                  <div className="relative z-10">
-                    <span className="material-symbols-outlined text-[var(--color-primary-fixed)] text-3xl mb-4">{f.icon}</span>
-                    <h4 className="label-caps text-white mb-3">{f.title}</h4>
-                    <p className="text-sm text-[var(--color-secondary)] leading-relaxed">{f.body}</p>
-                  </div>
-                </div>
-              </Reveal>
-            ))}
           </div>
         </section>
 
@@ -320,15 +302,6 @@ export default function LandingPage() {
                   sizes="(max-width: 768px) 100vw, 50vw"
                   className="object-cover transition-transform duration-700 ease-out group-hover:scale-105"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/40 to-transparent" />
-                <div className="absolute bottom-0 left-0 p-8 w-full">
-                  <span className="inline-block label-caps text-[10px] text-[var(--color-primary-fixed)] bg-[rgba(230,255,0,0.15)] backdrop-blur-md border border-[rgba(230,255,0,0.3)] px-3 py-1.5 rounded-full mb-4">
-                    Técnica
-                  </span>
-                  <h3 className="font-display text-headline-md font-extrabold text-white tracking-tight">
-                    Perfeccionando la técnica de brazada
-                  </h3>
-                </div>
               </div>
             </Reveal>
 
@@ -341,22 +314,18 @@ export default function LandingPage() {
                   sizes="(max-width: 768px) 100vw, 50vw"
                   className="object-cover transition-transform duration-700 ease-out group-hover:scale-105"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-[#050505]/20 to-transparent" />
-                <div className="absolute bottom-0 left-0 p-6">
-                  <h3 className="font-display text-lg font-extrabold text-white tracking-tight">Métricas que importan</h3>
-                </div>
               </div>
             </Reveal>
 
             <Reveal delay={0.14} className="md:col-span-1">
-              <div className="liquid-glass relative overflow-hidden rounded-[2rem] p-8 flex flex-col justify-center min-h-[160px] h-full cursor-pointer group">
-                <div className="relative z-10">
-                  <span className="material-symbols-outlined text-[var(--color-primary-fixed)] text-5xl mb-5 drop-shadow-[0_0_10px_rgba(230,255,0,0.5)] transition-transform duration-300 group-hover:scale-110">
-                    play_circle
-                  </span>
-                  <h4 className="label-caps text-white mb-2">Video Reciente</h4>
-                  <p className="text-sm text-[var(--color-secondary)]">Resumen de la competencia regional.</p>
-                </div>
+              <div className="relative group overflow-hidden rounded-[2rem] min-h-[160px] h-full shadow-2xl">
+                <Image
+                  src="/media/logo-poster.jpg"
+                  alt="Faros Training"
+                  fill
+                  sizes="(max-width: 768px) 100vw, 25vw"
+                  className="object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+                />
               </div>
             </Reveal>
 
@@ -369,12 +338,6 @@ export default function LandingPage() {
                   sizes="(max-width: 768px) 100vw, 25vw"
                   className="object-cover transition-transform duration-700 ease-out group-hover:scale-105"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-[#050505] via-transparent to-transparent" />
-                <div className="absolute bottom-0 left-0 p-6">
-                  <span className="label-caps text-[10px] text-[var(--color-primary-fixed)] drop-shadow-[0_0_5px_rgba(230,255,0,0.5)]">
-                    Nutrición
-                  </span>
-                </div>
               </div>
             </Reveal>
           </div>

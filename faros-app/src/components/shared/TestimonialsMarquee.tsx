@@ -109,11 +109,11 @@ export function TestimonialsMarquee() {
     <section id="opiniones" className="py-24 px-5 md:px-10 max-w-[1400px] mx-auto">
       <div className="text-center mb-14">
         <p className="label-caps text-[var(--color-primary-fixed)] mb-4 tracking-[0.3em]">
-          Lo que dicen en el agua
+          Comentarios
         </p>
         <h2 className="font-display text-headline-lg font-black text-white uppercase tracking-tight">
-          Atletas que ya{' '}
-          <span className="text-[var(--color-primary-fixed)]">entrenan</span> con nosotros
+          Lo que dicen en los{' '}
+          <span className="text-[var(--color-primary-fixed)]">entrenamientos</span>
         </h2>
       </div>
 
