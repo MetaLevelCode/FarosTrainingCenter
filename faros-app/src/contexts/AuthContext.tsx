@@ -35,6 +35,36 @@ const MOCK_USERS: Record<string, Usuario & { password: string }> =
     // tasaAsistencia se guarda como fracción (0-1), igual que en Firestore real.
     estadisticas: { clasesReservadas: 8, clasesAsistidas: 7, tasaAsistencia: 0.87 },
     suscripcionActiva: null,
+    suscripcionesActivas: {},
+    password: '123456',
+  },
+  // Mock con DOS planes 'personal' concurrentes (natación personalizada +
+  // actividad física) — para probar en local el caso que motivó soportar
+  // suscripcionesActivas como mapa en vez de un solo plan.
+  'estudiante-doble@faros.com': {
+    uid: 'mock-4', email: 'estudiante-doble@faros.com',
+    nombres: 'Valentina', apellidos: 'Rojas',
+    cedula: '1094552310', rol: 'estudiante',
+    telefono: '+57 300 111 2233',
+    eps: 'Sura', sede: 'UTP', nivel: 'Delfines',
+    estadisticas: { clasesReservadas: 12, clasesAsistidas: 11, tasaAsistencia: 0.92 },
+    suscripcionActiva: null,
+    suscripcionesActivas: {
+      'mock-susc-np': {
+        suscripcionId: 'mock-susc-np', planId: 'mock-plan-np', nombrePlan: 'Natación Personalizada',
+        sesionesRestantes: 8, sesionesCompradas: 8,
+        fechaVencimiento: Date.now() + 20 * 86_400_000, estado: 'activa',
+        tipo: 'personal', combinacionId: 'natacion', personalId: 'individual',
+        personas: 1, week: 2, grupoId: null, esJefeGrupo: false,
+      },
+      'mock-susc-afp': {
+        suscripcionId: 'mock-susc-afp', planId: 'mock-plan-afp', nombrePlan: 'Ejercicio funcional',
+        sesionesRestantes: 8, sesionesCompradas: 8,
+        fechaVencimiento: Date.now() + 15 * 86_400_000, estado: 'activa',
+        tipo: 'personal', combinacionId: 'funcional', personalId: 'individual',
+        personas: 1, week: 2, grupoId: null, esJefeGrupo: false,
+      },
+    },
     password: '123456',
   },
   'profesor@faros.com': {
@@ -95,6 +125,7 @@ function construirUsuario(fbUser: { uid: string; email: string | null }, data: R
     fecha_registro: data.fecha_registro,
     estadisticas: data.estadisticas,
     suscripcionActiva: data.suscripcionActiva ?? null,
+    suscripcionesActivas: data.suscripcionesActivas ?? {},
     activo: data.activo !== false,
   } as Usuario
 }
