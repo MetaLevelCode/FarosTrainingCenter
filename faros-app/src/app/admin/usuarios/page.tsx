@@ -13,6 +13,7 @@ import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge, Button } from '@/components/ui'
 import { getUsuarios, setUsuarioActivo, setUsuarioRol } from '@/lib/firestore'
+import { listaSuscripciones } from '@/lib/types'
 import type { Usuario, UserRole } from '@/lib/types'
 
 const EASE = [0.22, 1, 0.36, 1] as const
@@ -228,20 +229,24 @@ export default function UsuariosPage() {
                           <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/70">{u.sede || '—'}</span>
                         </td>
                         <td className="px-6 py-4">
-                          {u.suscripcionActiva ? (
-                            <div>
-                              <p className="text-[11px] font-bold text-white leading-tight">
-                                {u.suscripcionActiva.nombrePlan}
-                              </p>
-                              {u.suscripcionActiva.estado === 'activa' ? (
-                                <p className="label-caps text-[9px] text-[var(--color-primary-fixed)]/80 mt-1">
-                                  {u.suscripcionActiva.sesionesRestantes} sesiones
-                                </p>
-                              ) : (
-                                <p className="label-caps text-[9px] text-[var(--color-danger-crimson)] mt-1">
-                                  Vencido
-                                </p>
-                              )}
+                          {listaSuscripciones(u).length > 0 ? (
+                            <div className="space-y-2">
+                              {listaSuscripciones(u).map((s) => (
+                                <div key={s.suscripcionId}>
+                                  <p className="text-[11px] font-bold text-white leading-tight">
+                                    {s.nombrePlan}
+                                  </p>
+                                  {s.estado === 'activa' ? (
+                                    <p className="label-caps text-[9px] text-[var(--color-primary-fixed)]/80 mt-1">
+                                      {s.sesionesRestantes} sesiones
+                                    </p>
+                                  ) : (
+                                    <p className="label-caps text-[9px] text-[var(--color-danger-crimson)] mt-1">
+                                      Vencido
+                                    </p>
+                                  )}
+                                </div>
+                              ))}
                             </div>
                           ) : (
                             <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/40">—</span>
@@ -354,28 +359,33 @@ export default function UsuariosPage() {
                     </div>
                   </div>
 
-                  {/* Suscripción */}
+                  {/* Suscripción(es) — puede tener varias a la vez (ej.
+                      natación personalizada + actividad física) */}
                   <div className="space-y-4">
-                    <h4 className="label-caps text-[10px] text-[var(--color-primary-fixed)] border-b border-[rgba(230,255,0,0.15)] pb-2">Plan Activo</h4>
-                    {selectedUser.suscripcionActiva ? (
-                      <div className="bg-[rgba(230,255,0,0.03)] border border-[rgba(230,255,0,0.1)] rounded-2xl p-4">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-white font-bold text-base">{selectedUser.suscripcionActiva.nombrePlan}</span>
-                          <Badge variant={selectedUser.suscripcionActiva.estado === 'activa' ? 'success' : 'danger'}>
-                            {selectedUser.suscripcionActiva.estado === 'activa' ? 'Activo' : 'Vencido'}
-                          </Badge>
-                        </div>
-                        <div className="flex items-end gap-2 mt-4">
-                          <span className="font-display text-4xl font-black text-[var(--color-primary-fixed)] leading-none">
-                            {selectedUser.suscripcionActiva.sesionesRestantes}
-                          </span>
-                          <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/60 mb-1">
-                            / {selectedUser.suscripcionActiva.sesionesCompradas || '—'} sesiones
-                          </span>
-                        </div>
-                        <p className="text-xs text-[var(--color-on-surface-variant)]/60 mt-3">
-                          Vence: <span className="text-white font-medium">{new Date(selectedUser.suscripcionActiva.fechaVencimiento).toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: '2-digit' })}</span>
-                        </p>
+                    <h4 className="label-caps text-[10px] text-[var(--color-primary-fixed)] border-b border-[rgba(230,255,0,0.15)] pb-2">Plan(es) Activo(s)</h4>
+                    {listaSuscripciones(selectedUser).length > 0 ? (
+                      <div className="space-y-3">
+                        {listaSuscripciones(selectedUser).map((s) => (
+                          <div key={s.suscripcionId} className="bg-[rgba(230,255,0,0.03)] border border-[rgba(230,255,0,0.1)] rounded-2xl p-4">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-white font-bold text-base">{s.nombrePlan}</span>
+                              <Badge variant={s.estado === 'activa' ? 'success' : 'danger'}>
+                                {s.estado === 'activa' ? 'Activo' : 'Vencido'}
+                              </Badge>
+                            </div>
+                            <div className="flex items-end gap-2 mt-4">
+                              <span className="font-display text-4xl font-black text-[var(--color-primary-fixed)] leading-none">
+                                {s.sesionesRestantes}
+                              </span>
+                              <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/60 mb-1">
+                                / {s.sesionesCompradas || '—'} sesiones
+                              </span>
+                            </div>
+                            <p className="text-xs text-[var(--color-on-surface-variant)]/60 mt-3">
+                              Vence: <span className="text-white font-medium">{new Date(s.fechaVencimiento).toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: '2-digit' })}</span>
+                            </p>
+                          </div>
+                        ))}
                       </div>
                     ) : (
                       <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col items-center justify-center py-8">
