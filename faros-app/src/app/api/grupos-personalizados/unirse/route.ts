@@ -22,6 +22,8 @@ import { FieldValue } from 'firebase-admin/firestore'
 import { getAdminAuth, getAdminDb } from '@/lib/admin'
 import { rateLimit, clientIp } from '@/lib/ratelimit'
 import { log } from '@/lib/logger'
+import { canalGrupo } from '@/lib/mensajes'
+import { tieneSubModalidad } from '@/lib/types'
 
 export const runtime = 'nodejs'
 
@@ -63,11 +65,6 @@ export async function POST(req: NextRequest) {
       if (usuario.rol !== 'estudiante') return { error: 'Solo estudiantes pueden unirse a un plan', status: 403 }
       if (usuario.activo === false) return { error: 'Tu cuenta está suspendida', status: 403 }
 
-      const susc = usuario.suscripcionActiva
-      if (susc && susc.estado === 'activa' && susc.fechaVencimiento > Date.now()) {
-        return { error: 'Ya tienes un plan activo', status: 409 }
-      }
-
       if (!grupoSnap.exists) return { error: 'Código inválido' as const, status: 404 }
       const grupo = grupoSnap.data()!
       if (grupo.estado !== 'activo' || grupo.fechaVencimiento <= Date.now()) {
@@ -101,6 +98,21 @@ export async function POST(req: NextRequest) {
       const jefeSuscSnap = await tx.get(db.collection('suscripciones').doc(grupo.suscripcionId))
       const jefeSusc = jefeSuscSnap.exists ? jefeSuscSnap.data()! : null
 
+      // Bloquea solo si ya tiene activa la MISMA sub-modalidad de este
+      // grupo (ej. ya está en otro grupo de "Familia" natación) — no
+      // cualquier plan activo, porque el usuario puede tener varios
+      // planes de tipos distintos a la vez (ej. natación personalizada +
+      // actividad física).
+      const combinacionIdGrupo = esVacaciones ? null : (jefeSusc?.seleccion?.combinacionId ?? null)
+      if (tieneSubModalidad(
+        { suscripcionesActivas: usuario.suscripcionesActivas ?? (usuario.suscripcionActiva?.suscripcionId ? { [usuario.suscripcionActiva.suscripcionId]: usuario.suscripcionActiva } : {}) },
+        esVacaciones
+          ? { tipo: 'vacaciones' }
+          : { tipo: 'personal', personalId: grupo.personalId ?? null, combinacionId: combinacionIdGrupo },
+      )) {
+        return { error: 'Ya tienes un plan activo de este mismo tipo', status: 409 }
+      }
+
       const nombre = `${usuario.nombres ?? ''} ${usuario.apellidos ?? ''}`.trim() || 'Alumno'
       const now = Date.now()
 
@@ -132,23 +144,31 @@ export async function POST(req: NextRequest) {
         creadoEn: now,
       })
 
+      // Dual-write en transición (ver aprobarTransaccion() en
+      // lib/firestore.ts) — suscripcionActiva (legacy, se sobrescribe) se
+      // mantiene por compatibilidad; suscripcionesActivas (mapa por
+      // suscripcionId) es aditivo y no pisa otros planes activos del
+      // usuario. Se retira en Release 4.
+      const entradaMiembro = {
+        suscripcionId: suscRef.id,
+        planId: jefeSusc?.planId ?? '',
+        nombrePlan: jefeSusc?.nombre_plan ?? (esVacaciones ? 'Vacaciones deportivas' : 'Plan personalizado'),
+        sesionesRestantes: sesionesCompradas,
+        sesionesCompradas,
+        fechaVencimiento: grupo.fechaVencimiento,
+        estado: 'activa',
+        tipo: esVacaciones ? 'vacaciones' : 'personal',
+        combinacionId: esVacaciones ? null : (jefeSusc?.seleccion?.combinacionId ?? null),
+        personalId: esVacaciones ? null : grupo.personalId,
+        personas: esVacaciones ? null : grupo.personasMax,
+        ninos: esVacaciones ? ninosSolicitados : null,
+        week: esVacaciones ? null : (jefeSusc?.seleccion?.week ?? null),
+        grupoId: codigo,
+        esJefeGrupo: false,
+      }
       tx.update(usuarioRef, {
-        suscripcionActiva: {
-          suscripcionId: suscRef.id,
-          planId: jefeSusc?.planId ?? '',
-          nombrePlan: jefeSusc?.nombre_plan ?? (esVacaciones ? 'Vacaciones deportivas' : 'Plan personalizado'),
-          sesionesRestantes: sesionesCompradas,
-          sesionesCompradas,
-          fechaVencimiento: grupo.fechaVencimiento,
-          estado: 'activa',
-          tipo: esVacaciones ? 'vacaciones' : 'personal',
-          personalId: esVacaciones ? null : grupo.personalId,
-          personas: esVacaciones ? null : grupo.personasMax,
-          ninos: esVacaciones ? ninosSolicitados : null,
-          week: esVacaciones ? null : (jefeSusc?.seleccion?.week ?? null),
-          grupoId: codigo,
-          esJefeGrupo: false,
-        },
+        suscripcionActiva: entradaMiembro,
+        [`suscripcionesActivas.${suscRef.id}`]: entradaMiembro,
       })
 
       return { ok: true as const, esVacaciones }
@@ -203,13 +223,28 @@ async function inscribirEnClasesFuturas(
   )
   const batch = db.batch()
   let hayCambios = false
+  let nombreClase: string | undefined
   for (const snap of clasesSnaps) {
     if (!snap.exists) continue
     const c = snap.data()!
     if (c.estado === 'cancelada') continue
     if (c.fecha_hora_inicio < ahora) continue
+    nombreClase = c.nombre_clase
     if ((c.estudiantes_inscritos ?? []).includes(uid)) continue
     batch.update(snap.ref, { estudiantes_inscritos: FieldValue.arrayUnion(uid) })
+    hayCambios = true
+  }
+  // Muro de mensajería del grupo: sin esto, quien se une con código queda
+  // inscrito en las clases pero sin permiso para leer/escribir su canal
+  // (firestore.rules exige estar en `participantes`) — mismo patrón que
+  // /api/clases/[id]/inscribir y /api/personalizadas/[id]/aceptar.
+  if (nombreClase) {
+    batch.set(db.collection('mensajes').doc(canalGrupo(nombreClase)), {
+      tipo: 'grupo',
+      nombre: nombreClase,
+      participantes: FieldValue.arrayUnion(uid),
+      actualizadoEn: ahora,
+    }, { merge: true })
     hayCambios = true
   }
   if (hayCambios) await batch.commit()

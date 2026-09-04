@@ -7,10 +7,13 @@
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server'
+import { FieldValue } from 'firebase-admin/firestore'
 import { getAdminAuth, getAdminDb } from '@/lib/admin'
 import { rateLimit, clientIp } from '@/lib/ratelimit'
 import { log } from '@/lib/logger'
 import { ocurrenciasSemanales, dowColombia, horaColombia, franjaContenida, haySolape, normalizarFranjas } from '@/lib/recurrencia'
+import { notifPayload } from '@/lib/notificaciones'
+import { canalGrupo } from '@/lib/mensajes'
 
 export const runtime = 'nodejs'
 
@@ -83,8 +86,14 @@ export async function POST(
       }
 
       // Re-validar que el plan del alumno sigue vigente: pudo vencer
-      // entre la solicitud y la aceptación.
-      const susc = alumno.suscripcionActiva
+      // entre la solicitud y la aceptación. Se revalida la MISMA entrada
+      // (sol.suscripcionId) con la que se creó la solicitud — el alumno
+      // puede tener varios planes tipo:'personal' activos a la vez (ej.
+      // natación personalizada + actividad física), así que "el" plan ya
+      // no identifica cuál corresponde a esta solicitud puntual.
+      const mapaAlumno: Record<string, any> = alumno.suscripcionesActivas
+        ?? (alumno.suscripcionActiva?.suscripcionId ? { [alumno.suscripcionActiva.suscripcionId]: alumno.suscripcionActiva } : {})
+      const susc = sol.suscripcionId ? mapaAlumno[sol.suscripcionId] : alumno.suscripcionActiva
       if (!susc || susc.tipo !== 'personal' || susc.estado !== 'activa' || susc.fechaVencimiento <= Date.now()) {
         return { error: 'El alumno ya no tiene un plan personalizado activo', status: 409 }
       }
@@ -148,6 +157,20 @@ export async function POST(
         }
       }
 
+      // Muro de mensajería del grupo: igual que /api/clases/[id]/inscribir,
+      // sin esto los alumnos de una personalizada aceptada quedan con
+      // estudiantes_inscritos pero sin permiso para leer/escribir en su
+      // canal (firestore.rules exige estar en `participantes`).
+      if (clasesGeneradas.length > 0) {
+        const nombreClase = `Personalizada — ${nombreAlumno}`
+        tx.set(db.collection('mensajes').doc(canalGrupo(nombreClase)), {
+          tipo: 'grupo',
+          nombre: nombreClase,
+          participantes: FieldValue.arrayUnion(...estudiantesInscritos, sol.profesorId),
+          actualizadoEn: ahora,
+        }, { merge: true })
+      }
+
       tx.update(solRef, {
         estado: 'aceptada',
         respondidoEn: ahora,
@@ -155,6 +178,16 @@ export async function POST(
         rangoGeneradoHasta: hasta,
         mensajeProfesor,
       })
+
+      const notifRef = db.collection('notificaciones').doc()
+      tx.set(notifRef, notifPayload({
+        destinatarioId: sol.alumnoId,
+        tipo: 'clase_aceptada',
+        titulo: 'Tu horario fue aceptado',
+        mensaje: `${nombreInstructor || 'Tu profesor'} aceptó tu solicitud de clase personalizada.`,
+        enlace: '/dashboard/asistencia',
+        actorId: uid,
+      }))
 
       return { ok: true as const, clasesCreadas: clasesGeneradas.length }
     })

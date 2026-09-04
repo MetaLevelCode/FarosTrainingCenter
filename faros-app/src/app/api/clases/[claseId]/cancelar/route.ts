@@ -12,6 +12,7 @@ import { rateLimit, clientIp } from '@/lib/ratelimit'
 import { log } from '@/lib/logger'
 import { canalGrupo } from '@/lib/mensajes'
 import { recalcularYGuardarRacha } from '@/lib/racha-server'
+import { suscripcionesPorTipo } from '@/lib/types'
 
 export const runtime = 'nodejs'
 
@@ -117,8 +118,31 @@ export async function POST(
         })
       }
 
-      // Devuelve la sesión al saldo del plan (tope en el total comprado).
-      const susc = usu.suscripcionActiva
+      // Devuelve la sesión a la MISMA entrada que se cobró al inscribirse
+      // (clase.cargosSuscripcion[uid], ver /inscribir) — necesario en
+      // cuanto el usuario puede tener varios planes activos a la vez y
+      // "cualquier plan con saldo" ya no identifica el correcto.
+      const suscripcionIdCobrada: string | undefined = clase.cargosSuscripcion?.[uid]
+      const mapaSusc: Record<string, any> = { ...(usu.suscripcionesActivas ?? {}) }
+      if (usu.suscripcionActiva?.suscripcionId && !mapaSusc[usu.suscripcionActiva.suscripcionId]) {
+        mapaSusc[usu.suscripcionActiva.suscripcionId] = usu.suscripcionActiva
+      }
+
+      let susc = suscripcionIdCobrada ? mapaSusc[suscripcionIdCobrada] : null
+      if (!susc) {
+        // Reserva de antes de este cambio (clase.cargosSuscripcion no
+        // existía todavía) — mejor esfuerzo: recalcula con el mismo
+        // criterio que usa /inscribir contra el estado ACTUAL del
+        // usuario. Puede no ser exactamente la misma entrada si el
+        // usuario cambió de planes desde que reservó.
+        const candidatos = suscripcionesPorTipo({ suscripcionesActivas: mapaSusc }, ['grupal', 'conjunto', 'vacaciones'])
+        if (candidatos.length > 0) {
+          candidatos.sort((a, b) => a.fechaVencimiento - b.fechaVencimiento)
+          susc = candidatos[0]
+          log.warn({ scope: 'clases', event: 'cancelar_reembolso_sin_cargo_registrado', ip, uid, claseId, suscripcionId: susc.suscripcionId })
+        }
+      }
+
       if (susc) {
         const restantesPrev: number = susc.sesionesRestantes ?? 0
         const sesionesCompradas: number | undefined = susc.sesionesCompradas
@@ -126,9 +150,19 @@ export async function POST(
         const restantes = Math.max(0, Math.min(cap, restantesPrev + 1))
         const nuevoEstado = restantes > 0 ? 'activa' : susc.estado
 
+        const yaEnMapa = !!(usu.suscripcionesActivas ?? {})[susc.suscripcionId]
+        const updateSusc = yaEnMapa
+          ? {
+              [`suscripcionesActivas.${susc.suscripcionId}.sesionesRestantes`]: restantes,
+              [`suscripcionesActivas.${susc.suscripcionId}.estado`]: nuevoEstado,
+            }
+          : { [`suscripcionesActivas.${susc.suscripcionId}`]: { ...susc, sesionesRestantes: restantes, estado: nuevoEstado } }
+
         tx.update(usuSnap.ref, {
-          'suscripcionActiva.sesionesRestantes': restantes,
-          'suscripcionActiva.estado': nuevoEstado,
+          ...updateSusc,
+          ...(usu.suscripcionActiva?.suscripcionId === susc.suscripcionId
+            ? { 'suscripcionActiva.sesionesRestantes': restantes, 'suscripcionActiva.estado': nuevoEstado }
+            : {}),
         })
 
         if (susc.suscripcionId) {
@@ -137,6 +171,10 @@ export async function POST(
             estado: nuevoEstado,
           })
         }
+      }
+
+      if (suscripcionIdCobrada) {
+        tx.update(claseSnap.ref, { [`cargosSuscripcion.${uid}`]: FieldValue.delete() })
       }
 
       return { ok: true }

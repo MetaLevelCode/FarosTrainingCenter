@@ -17,13 +17,14 @@ import { Button, Spinner } from '@/components/ui'
 interface Props {
   transaccionId: string
   uid: string
+  nombreUsuario?: string
   onSubido: (url: string) => void
 }
 
 const EASE = [0.22, 1, 0.36, 1] as const
 const MAX_MB = 10
 
-export function SubirComprobante({ transaccionId, uid, onSubido }: Props) {
+export function SubirComprobante({ transaccionId, uid, nombreUsuario, onSubido }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [archivo, setArchivo] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
@@ -75,7 +76,7 @@ export function SubirComprobante({ transaccionId, uid, onSubido }: Props) {
       })
 
       const url = await getDownloadURL(storageRef)
-      await updateComprobanteTransaccion(transaccionId, url)
+      await updateComprobanteTransaccion(transaccionId, url, uid, nombreUsuario)
       onSubido(url)
     } catch {
       setError('No se pudo subir el comprobante. Intenta de nuevo.')

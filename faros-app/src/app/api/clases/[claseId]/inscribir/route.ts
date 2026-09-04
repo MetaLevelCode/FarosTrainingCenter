@@ -8,6 +8,13 @@
 //   - Descuenta 1 sesión de sesionesRestantes (se consume al reservar,
 //     no al marcar asistencia — evita que el alumno sobre-reserve más
 //     clases de las que su saldo permite). /cancelar la devuelve.
+//   - El usuario puede tener VARIOS planes activos a la vez
+//     (suscripcionesActivas, ver lib/types.ts) — esta ruta solo cobra
+//     entradas tipo grupal/conjunto/vacaciones (las personalizadas nunca
+//     pasan por acá, ver chequeo de catalogo_codigo abajo). Si hay más
+//     de un candidato, se cobra el que vence más pronto primero, y se
+//     registra en clase.cargosSuscripcion[uid] para que /cancelar
+//     reembolse exactamente esa misma entrada.
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -16,8 +23,22 @@ import { getAdminAuth, getAdminDb } from '@/lib/admin'
 import { rateLimit, clientIp } from '@/lib/ratelimit'
 import { log } from '@/lib/logger'
 import { canalGrupo } from '@/lib/mensajes'
+import { suscripcionesPorTipo } from '@/lib/types'
 
 export const runtime = 'nodejs'
+
+/**
+ * Une el mapa suscripcionesActivas con el campo legacy suscripcionActiva
+ * (por si este usuario aún no pasó por la migración/dual-write) para que
+ * la selección de candidatos nunca deje a alguien sin su plan real solo
+ * por timing del rollout. Ver PLAN de refactor (Release 3).
+ */
+function mapaSuscripciones(usu: Record<string, any>): Record<string, any> {
+  const mapa: Record<string, any> = { ...(usu.suscripcionesActivas ?? {}) }
+  const legacy = usu.suscripcionActiva
+  if (legacy?.suscripcionId && !mapa[legacy.suscripcionId]) mapa[legacy.suscripcionId] = legacy
+  return mapa
+}
 
 export async function POST(
   req: NextRequest,
@@ -55,13 +76,21 @@ export async function POST(
       if (usu.rol !== 'estudiante') return { error: 'Solo estudiantes pueden inscribirse', status: 403 }
       if (usu.activo === false) return { error: 'Tu cuenta está suspendida', status: 403 }
 
-      const susc = usu.suscripcionActiva
-      if (!susc || susc.estado !== 'activa') {
+      // El usuario puede tener varios planes activos a la vez — de los
+      // que cubren clases abiertas (grupal/conjunto/vacaciones; los
+      // 'personal' se agendan aparte, ver /api/personalizadas/*), se
+      // cobra el que tenga sesiones Y venza más pronto.
+      const mapaSusc = mapaSuscripciones(usu)
+      const candidatos = suscripcionesPorTipo({ suscripcionesActivas: mapaSusc }, ['grupal', 'conjunto', 'vacaciones'])
+      if (candidatos.length === 0) {
         return { error: 'Necesitas una suscripción activa para inscribirte', status: 403 }
       }
-      if ((susc.sesionesRestantes ?? 0) <= 0) {
+      const conSesiones = candidatos.filter((s) => (s.sesionesRestantes ?? 0) > 0)
+      if (conSesiones.length === 0) {
         return { error: 'No tienes sesiones disponibles en tu plan actual', status: 403 }
       }
+      conSesiones.sort((a, b) => a.fechaVencimiento - b.fechaVencimiento)
+      const susc = conSesiones[0]
 
       // Las personalizadas ya tienen dueño fijo (1-a-1 o grupo cerrado
       // agendado por /api/personalizadas/[id]/aceptar) — no son un cupo
@@ -85,12 +114,14 @@ export async function POST(
 
       tx.update(claseSnap.ref, {
         estudiantes_inscritos: FieldValue.arrayUnion(uid),
+        [`cargosSuscripcion.${uid}`]: susc.suscripcionId,
         actualizadoEn: Date.now(),
       })
 
       // Muro de mensajería del grupo: agrega al alumno (y re-agrega al
-      // instructor, idempotente) a la lista de miembros del canal. Es el
-      // único lugar donde se mantiene esta lista — ver firestore.rules.
+      // instructor, idempotente) a la lista de miembros del canal — ver
+      // firestore.rules y lib/mensajes.ts (otras rutas que tocan
+      // estudiantes_inscritos hacen lo mismo).
       tx.set(db.collection('mensajes').doc(canalGrupo(clase.nombre_clase)), {
         tipo: 'grupo',
         nombre: clase.nombre_clase,
@@ -108,11 +139,28 @@ export async function POST(
       const restantes = Math.max(0, Math.min(cap, restantesPrev - 1))
       const nuevoEstado = restantes === 0 ? 'vencida' : 'activa'
 
+      // Si la entrada cobrada ya vivía en suscripcionesActivas, un
+      // dot-path parcial alcanza; si vino del fallback legacy (usuario
+      // aún no migrado, ver mapaSuscripciones()) hay que escribir la
+      // entrada completa para no dejar el resto de sus campos vacíos.
+      const yaEnMapa = !!mapaSusc[susc.suscripcionId] && !!(usu.suscripcionesActivas ?? {})[susc.suscripcionId]
+      const updateSusc = yaEnMapa
+        ? {
+            [`suscripcionesActivas.${susc.suscripcionId}.sesionesRestantes`]: restantes,
+            [`suscripcionesActivas.${susc.suscripcionId}.estado`]: nuevoEstado,
+          }
+        : { [`suscripcionesActivas.${susc.suscripcionId}`]: { ...susc, sesionesRestantes: restantes, estado: nuevoEstado } }
+
       tx.update(usuSnap.ref, {
         'estadisticas.clasesReservadas': reservadas,
         'estadisticas.tasaAsistencia': reservadas > 0 ? Math.min(1, asistidas / reservadas) : 0,
-        'suscripcionActiva.sesionesRestantes': restantes,
-        'suscripcionActiva.estado': nuevoEstado,
+        ...updateSusc,
+        // Dual-write: si esta es la entrada que también vive en el
+        // campo legacy, se mantiene coherente mientras dure la
+        // transición (ver PLAN de refactor, Release 4 la retira).
+        ...(usu.suscripcionActiva?.suscripcionId === susc.suscripcionId
+          ? { 'suscripcionActiva.sesionesRestantes': restantes, 'suscripcionActiva.estado': nuevoEstado }
+          : {}),
       })
 
       if (susc.suscripcionId) {

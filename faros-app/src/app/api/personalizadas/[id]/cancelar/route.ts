@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAdminAuth, getAdminDb } from '@/lib/admin'
 import { rateLimit, clientIp } from '@/lib/ratelimit'
 import { log } from '@/lib/logger'
+import { notifPayload } from '@/lib/notificaciones'
 
 export const runtime = 'nodejs'
 
@@ -41,6 +42,17 @@ export async function POST(
       if (sol.estado !== 'pendiente') return { error: 'Esta solicitud ya fue respondida', status: 409 }
 
       tx.update(solRef, { estado: 'cancelada', respondidoEn: Date.now() })
+
+      const notifRef = db.collection('notificaciones').doc()
+      tx.set(notifRef, notifPayload({
+        destinatarioId: sol.profesorId,
+        tipo: 'clase_cancelada',
+        titulo: 'Solicitud de horario cancelada',
+        mensaje: `${sol.nombreAlumno ?? 'Un alumno'} canceló su solicitud pendiente.`,
+        enlace: '/portal',
+        actorId: uid,
+      }))
+
       return { ok: true as const }
     })
 

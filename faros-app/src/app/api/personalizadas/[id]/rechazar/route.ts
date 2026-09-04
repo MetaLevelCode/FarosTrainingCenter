@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAdminAuth, getAdminDb } from '@/lib/admin'
 import { rateLimit, clientIp } from '@/lib/ratelimit'
 import { log } from '@/lib/logger'
+import { notifPayload } from '@/lib/notificaciones'
 
 export const runtime = 'nodejs'
 
@@ -55,6 +56,17 @@ export async function POST(
         motivoRechazo: motivo,
         respondidoEn: Date.now(),
       })
+
+      const notifRef = db.collection('notificaciones').doc()
+      tx.set(notifRef, notifPayload({
+        destinatarioId: sol.alumnoId,
+        tipo: 'clase_rechazada',
+        titulo: 'Tu solicitud de horario fue rechazada',
+        mensaje: motivo,
+        enlace: '/dashboard/asistencia',
+        actorId: uid,
+      }))
+
       return { ok: true as const }
     })
 

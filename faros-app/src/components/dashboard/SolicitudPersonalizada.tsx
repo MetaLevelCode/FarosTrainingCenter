@@ -9,13 +9,15 @@
 // acepta/rechaza desde /portal (ver SolicitudesPendientes).
 // ============================================================
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Card, Badge, Button, Spinner } from '@/components/ui'
 import { useAuth } from '@/contexts/AuthContext'
 import { getFirebase } from '@/lib/firebase'
 import {
   DURACION_PERSONALIZADA_MIN, slotsDisponibles, sumarMinutos, dowColombia, horaColombia, normalizarFranjas,
 } from '@/lib/recurrencia'
+import { listaSuscripciones } from '@/lib/types'
+import { COMBINACIONES } from '@/lib/planes'
 import type { FranjaDisponibilidad, SolicitudPersonalizada as Solicitud } from '@/lib/types'
 
 const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
@@ -85,7 +87,26 @@ function opcionesFranjaPara(profesor: Profesor, filas: FilaSlot[], filaIdx: numb
 
 export function SolicitudPersonalizada() {
   const { user } = useAuth()
-  const franjasRequeridas = Math.max(1, user?.suscripcionActiva?.week ?? 1)
+  // El alumno puede tener VARIAS entradas tipo:'personal' a la vez (ej.
+  // natación personalizada + actividad física) — cada una agenda su
+  // propia franja/solicitud por separado. Con una sola, se comporta
+  // igual que antes (sin selector visible).
+  const personales = useMemo(
+    () => listaSuscripciones(user).filter((s) => s.tipo === 'personal' && s.estado === 'activa'),
+    [user],
+  )
+  const [suscripcionIdSel, setSuscripcionIdSel] = useState<string>('')
+  useEffect(() => {
+    // Si el plan seleccionado ya no está entre los activos (venció, o
+    // cambió el usuario), vuelve al primero disponible.
+    if (personales.length === 0) { setSuscripcionIdSel(''); return }
+    if (!personales.some((s) => s.suscripcionId === suscripcionIdSel)) {
+      setSuscripcionIdSel(personales[0].suscripcionId)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [personales])
+  const planActivo = personales.find((s) => s.suscripcionId === suscripcionIdSel) ?? personales[0] ?? user?.suscripcionActiva
+  const franjasRequeridas = Math.max(1, planActivo?.week ?? 1)
   const [cargando, setCargando] = useState(true)
   const [solicitud, setSolicitud] = useState<Solicitud | null>(null)
   const [profesores, setProfesores] = useState<Profesor[]>([])
@@ -113,29 +134,42 @@ export function SolicitudPersonalizada() {
         getFirebase(), import('firebase/firestore'),
       ])
 
+      // Con más de un plan 'personal' activo, cada uno agenda su propia
+      // solicitud — sin filtrar por suscripcionId, la última solicitud de
+      // CUALQUIERA de los planes tapa el estado del que se está viendo.
       const solSnap = await getDocs(
-        query(
-          collection(db, 'solicitudes_personalizadas'),
-          where('alumnoId', '==', user.uid),
-          orderBy('creadoEn', 'desc'),
-          limit(1),
-        ),
+        personales.length > 1 && suscripcionIdSel
+          ? query(
+              collection(db, 'solicitudes_personalizadas'),
+              where('alumnoId', '==', user.uid),
+              where('suscripcionId', '==', suscripcionIdSel),
+              orderBy('creadoEn', 'desc'),
+              limit(1),
+            )
+          : query(
+              collection(db, 'solicitudes_personalizadas'),
+              where('alumnoId', '==', user.uid),
+              orderBy('creadoEn', 'desc'),
+              limit(1),
+            ),
       )
       const sol = solSnap.empty ? null : ({ id: solSnap.docs[0].id, ...solSnap.docs[0].data() } as Solicitud)
       if (sol) sol.franjas = normalizarFranjas(sol)
       setSolicitud(sol && (sol.estado === 'pendiente' || sol.estado === 'aceptada') ? sol : null)
 
       if (!sol || (sol.estado !== 'pendiente' && sol.estado !== 'aceptada')) {
-        const profSnap = await getDocs(query(collection(db, 'usuarios'), where('rol', '==', 'profesor')))
-        const lista = profSnap.docs
-          .map((d) => {
-            const u = d.data()
-            return {
-              uid: d.id,
-              nombre: `${u.nombres ?? ''} ${u.apellidos ?? ''}`.trim(),
-              franjas: (u.disponibilidadPersonal ?? []) as FranjaDisponibilidad[],
-            }
-          })
+        const token = await getIdToken()
+        const res = await fetch('/api/profesores/publico', {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const data = await res.json().catch(() => ({}))
+        const profs = (data.profesores ?? []) as { uid: string; nombres: string; apellidos: string; disponibilidadPersonal?: FranjaDisponibilidad[] }[]
+        const lista = profs
+          .map((u) => ({
+            uid: u.uid,
+            nombre: `${u.nombres ?? ''} ${u.apellidos ?? ''}`.trim(),
+            franjas: (u.disponibilidadPersonal ?? []) as FranjaDisponibilidad[],
+          }))
           // Necesita al menos `franjasRequeridas` días distintos declarados
           // — si no, no alcanza a cubrir la frecuencia semanal del plan.
           .filter((p) => new Set(p.franjas.map((f) => f.dow)).size >= franjasRequeridas)
@@ -149,7 +183,7 @@ export function SolicitudPersonalizada() {
     }
   }
 
-  useEffect(() => { cargar() }, [user?.uid]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { cargar() }, [user?.uid, suscripcionIdSel]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function solicitar() {
     const profesor = profesores.find((p) => p.uid === profesorSel)
@@ -168,7 +202,10 @@ export function SolicitudPersonalizada() {
       const res = await fetch('/api/personalizadas/solicitar', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ profesorId: profesor.uid, franjas: franjasBody, direccion: direccion.trim() }),
+        body: JSON.stringify({
+          profesorId: profesor.uid, franjas: franjasBody, direccion: direccion.trim(),
+          suscripcionId: planActivo?.suscripcionId,
+        }),
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'No se pudo enviar la solicitud')
@@ -221,6 +258,28 @@ export function SolicitudPersonalizada() {
       <h3 className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight mb-5">
         Clase personalizada
       </h3>
+
+      {personales.length > 1 && (
+        <div className="flex gap-2 mb-5">
+          {personales.map((s) => {
+            const nombre = COMBINACIONES.find((c) => c.id === s.combinacionId)?.nombre ?? s.nombrePlan
+            const activo = s.suscripcionId === suscripcionIdSel
+            return (
+              <button
+                key={s.suscripcionId}
+                onClick={() => setSuscripcionIdSel(s.suscripcionId)}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold uppercase tracking-tight transition-colors duration-200 ${
+                  activo
+                    ? 'bg-[var(--color-primary-fixed)] text-black'
+                    : 'bg-white/5 text-[var(--color-on-surface-variant)]/70 border border-white/10 hover:text-white'
+                }`}
+              >
+                {nombre}
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {error && <p className="text-sm text-[var(--color-danger-crimson)] mb-4">{error}</p>}
 

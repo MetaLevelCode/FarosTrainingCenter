@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAdminAuth, getAdminDb, getAdminStorage, pathFromDownloadUrl } from '@/lib/admin'
 import { rateLimit, clientIp } from '@/lib/ratelimit'
 import { log } from '@/lib/logger'
+import { notifPayload } from '@/lib/notificaciones'
 
 export const runtime = 'nodejs'
 
@@ -55,6 +56,16 @@ export async function POST(
       motivo_rechazo: motivo,
       comprobante_url: null,
     })
+
+    // 1b. Notificar al alumno, con el motivo.
+    await db.collection('notificaciones').add(notifPayload({
+      destinatarioId: tx.usuarioId,
+      tipo: 'plan_rechazado',
+      titulo: 'Tu plan fue rechazado',
+      mensaje: motivo,
+      enlace: '/dashboard/planes',
+      actorId: decoded.uid,
+    }))
 
     // 2. Borrar comprobante de Storage (best-effort, no bloquea el rechazo)
     const url = tx.comprobante_url as string | undefined

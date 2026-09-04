@@ -5,7 +5,11 @@
 // disponibilidad, todas con el mismo profesor y en días distintos. Queda
 // 'pendiente' hasta que el profesor la acepte o rechace (ver ./[id]/aceptar,
 // ./[id]/rechazar).
-// Body: { profesorId, franjas: [{ dow, horaInicio, horaFin }, ...], direccion, mensaje? }
+// Body: { profesorId, franjas: [{ dow, horaInicio, horaFin }, ...], direccion,
+//         mensaje?, suscripcionId? } — suscripcionId identifica de cuál
+// de las (potencialmente varias) entradas tipo:'personal' del alumno es
+// esta solicitud (ej. natación personalizada vs actividad física);
+// opcional si el alumno solo tiene un plan personal activo.
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -15,6 +19,8 @@ import { log } from '@/lib/logger'
 import {
   DURACION_PERSONALIZADA_MIN, sumarMinutos, franjaContenida, haySolape, dowColombia, horaColombia,
 } from '@/lib/recurrencia'
+import { notifPayload } from '@/lib/notificaciones'
+import { suscripcionPersonal } from '@/lib/types'
 
 export const runtime = 'nodejs'
 
@@ -52,12 +58,17 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json().catch(() => null) as {
       profesorId?: string; franjas?: FranjaBody[]
-      direccion?: string; mensaje?: string
+      direccion?: string; mensaje?: string; suscripcionId?: string
     } | null
     const profesorId = body?.profesorId
     const franjas = body?.franjas
     const direccion = body?.direccion?.trim().slice(0, 300)
     const mensaje = body?.mensaje?.trim().slice(0, 500) || null
+    // De cuál de las (potencialmente varias) entradas tipo:'personal' del
+    // alumno es esta solicitud — ej. natación personalizada vs actividad
+    // física. Si no se manda (alumno con un solo plan personal), se
+    // resuelve más abajo con suscripcionPersonal() sin selector.
+    const suscripcionIdBody = body?.suscripcionId
 
     if (!profesorId || !Array.isArray(franjas) || franjas.length === 0 || franjas.length > 3
       || !franjas.every(franjaValida)) {
@@ -96,7 +107,19 @@ export async function POST(req: NextRequest) {
       if (alumno.rol !== 'estudiante') return { error: 'Solo estudiantes pueden solicitar clases personalizadas', status: 403 }
       if (alumno.activo === false) return { error: 'Tu cuenta está suspendida', status: 403 }
 
-      const susc = alumno.suscripcionActiva
+      // El alumno puede tener VARIAS entradas tipo:'personal' a la vez
+      // (ej. natación personalizada + actividad física) — si mandó
+      // suscripcionId (selector en la UI cuando hay más de una), se usa
+      // esa puntual; si no, se cae a la única disponible (compat con
+      // alumnos con un solo plan personal, y con usuarios que aún no
+      // pasaron por la migración a suscripcionesActivas).
+      const mapaAlumno = {
+        suscripcionesActivas: alumno.suscripcionesActivas
+          ?? (alumno.suscripcionActiva?.suscripcionId ? { [alumno.suscripcionActiva.suscripcionId]: alumno.suscripcionActiva } : {}),
+      }
+      const susc = suscripcionIdBody
+        ? mapaAlumno.suscripcionesActivas[suscripcionIdBody]
+        : suscripcionPersonal(mapaAlumno)
       if (!susc || susc.tipo !== 'personal' || susc.estado !== 'activa' || susc.fechaVencimiento <= Date.now()) {
         return { error: 'Necesitas un plan personalizado activo para solicitar una clase', status: 403 }
       }
@@ -164,6 +187,7 @@ export async function POST(req: NextRequest) {
         profesorId,
         franjas,
         direccion,
+        suscripcionId: susc.suscripcionId,
         personas: susc.personas ?? 1,
         grupoId: susc.grupoId ?? null,
         estado: 'pendiente',
@@ -175,6 +199,16 @@ export async function POST(req: NextRequest) {
         clasesGeneradas: [],
         rangoGeneradoHasta: null,
       })
+
+      const notifRef = db.collection('notificaciones').doc()
+      tx.set(notifRef, notifPayload({
+        destinatarioId: profesorId,
+        tipo: 'clase_solicitada',
+        titulo: 'Nueva solicitud de horario',
+        mensaje: `${nombreAlumno} pidió una clase personalizada.`,
+        enlace: '/portal',
+        actorId: uid,
+      }))
 
       return { ok: true as const, solicitudId: solRef.id }
     })
