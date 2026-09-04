@@ -17,10 +17,10 @@ import { FarosWordmark, Spinner, Button, Input } from '@/components/ui'
 import { WaterBackground } from '@/components/shared/WaterBackground'
 import { SubirComprobante } from '@/components/dashboard/SubirComprobante'
 import { GrupoPersonalizado } from '@/components/dashboard/GrupoPersonalizado'
-import { getTransaccionesUsuario, getSuscripcionesUsuario, getSedes, getGrupos, getTarifas, getUsuarios, getPlanes } from '@/lib/firestore'
+import { getTransaccionesUsuario, getSuscripcionesUsuario, getSedes, getGrupos, getTarifas, getPerfilesPublicos, getPlanes } from '@/lib/firestore'
 import { parseVencimiento } from '@/lib/matricula'
-import { displayName } from '@/lib/types'
-import type { Suscripcion, Sede, Grupo as GrupoFS, Tarifas, Usuario, Plan } from '@/lib/types'
+import { displayName, listaSuscripciones, tieneSubModalidad } from '@/lib/types'
+import type { Suscripcion, Sede, Grupo as GrupoFS, Tarifas, PerfilPublico, Plan } from '@/lib/types'
 import { Card } from '@/components/ui'
 import {
   TIPOS, GRUPOS as GRUPOS_FALLBACK, PERSONALES, COMBINACIONES, FRECUENCIAS,
@@ -236,8 +236,13 @@ export default function PlanesFlowPage() {
   // Cuántos alumnos ya ocupan cada grupo (suscripciones activas) — para
   // mostrar cupos disponibles reales, no solo la capacidad máxima.
   const [inscritosPorGrupo, setInscritosPorGrupo] = useState<Record<string, number>>({})
-  const [profesores, setProfesores] = useState<Usuario[]>([])
+  const [profesores, setProfesores] = useState<PerfilPublico[]>([])
   const [plantillas, setPlantillas] = useState<Plan[]>([])
+  // El alumno puede tener varios planes activos a la vez (ej. natación
+  // personalizada + actividad física) — por defecto se muestra el
+  // resumen de todos, y este flag deja re-entrar al wizard para agregar
+  // uno adicional sin perder de vista los que ya tiene.
+  const [agregandoOtro, setAgregandoOtro] = useState(false)
 
   useEffect(() => {
     // allSettled: si UNA falla (ej. falta un índice), las otras dos no
@@ -257,7 +262,7 @@ export default function PlanesFlowPage() {
         personales: { ...TARIFAS_FALLBACK.personales, ...t.personales },
       })
     }).catch(() => {})
-    getUsuarios('profesor').then(setProfesores).catch(() => {})
+    getPerfilesPublicos().then(setProfesores).catch(() => {})
     fetch('/api/grupos/cupos')
       .then((r) => r.json())
       .then((d) => setInscritosPorGrupo(d.inscritosPorGrupo ?? {}))
@@ -313,18 +318,21 @@ export default function PlanesFlowPage() {
       .finally(() => setCheckingPendiente(false))
   }, [user?.uid])
 
-  // Detalle de la suscripción activa — necesario para conocer sesiones_compradas
-  // y fecha_compra, que suscripcionActiva (denormalizado en usuario) no incluye.
+  // Detalle de la suscripción activa que se titula (la que vence más
+  // pronto, ver más abajo) — necesario para conocer sesiones_compradas y
+  // fecha_compra, que suscripcionesActivas (denormalizado en usuario) no
+  // incluye.
+  const planesActivosEfecto = listaSuscripciones(user).filter((s) => s.estado === 'activa')
+  const suscIdPrimario = [...planesActivosEfecto].sort((a, b) => a.fechaVencimiento - b.fechaVencimiento)[0]?.suscripcionId
   useEffect(() => {
-    const suscId = user?.suscripcionActiva?.suscripcionId
-    if (!user?.uid || !suscId) return
+    if (!user?.uid || !suscIdPrimario) return
     getSuscripcionesUsuario(user.uid)
       .then((ss) => {
-        const s = ss.find((x) => x.id === suscId) ?? ss[0] ?? null
+        const s = ss.find((x) => x.id === suscIdPrimario) ?? ss[0] ?? null
         setSuscripcionDetalle(s)
       })
       .catch(() => {})
-  }, [user?.uid, user?.suscripcionActiva?.suscripcionId])
+  }, [user?.uid, suscIdPrimario])
 
   const tiposDinamicos = useMemo(() => {
     const t = [...TIPOS]
@@ -427,6 +435,16 @@ export default function PlanesFlowPage() {
       return
     }
 
+    // Evita mandar una solicitud condenada a chocar con un plan que ya
+    // tiene activo de la MISMA sub-modalidad exacta (ej. ya tiene
+    // Natación personalizada y está tratando de comprarla otra vez) —
+    // no bloquea agregar un tipo/combinación distinta (ej. ya tiene
+    // Natación y quiere agregar Actividad física).
+    if (sel.tipo && tieneSubModalidad(user, { tipo: sel.tipo, personalId: sel.personalId, combinacionId: sel.combinacionId })) {
+      setErrorSolicitud('Ya tienes un plan activo de este mismo tipo — elige otra combinación o modalidad.')
+      return
+    }
+
     setSolicitando(true)
     setErrorSolicitud(null)
     try {
@@ -486,8 +504,10 @@ export default function PlanesFlowPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.error ?? 'No se pudo unir al grupo')
       // El listener de useAuth() escucha usuarios/{uid} en tiempo real —
-      // en cuanto la API actualice suscripcionActiva, este mismo componente
-      // pasa solo a la pantalla "plan activo" con el grupo ya cargado.
+      // en cuanto la API actualice suscripcionesActivas, este mismo
+      // componente pasa solo a la pantalla "plan activo" con el grupo ya
+      // cargado (agregandoOtro se resetea para que el gate no lo tape).
+      setAgregandoOtro(false)
     } catch (err: any) {
       setErrorUnirse(err.message ?? 'No se pudo unir al grupo. Intenta de nuevo.')
       setUniendo(false)
@@ -502,9 +522,14 @@ export default function PlanesFlowPage() {
     )
   }
 
-  // Ya tiene una suscripción activa — muestra resumen y bloquea el wizard
-  const suscActiva = user?.suscripcionActiva
-  if (suscActiva && suscActiva.estado === 'activa' && !solicitado) {
+  // Ya tiene alguna suscripción activa — muestra resumen y bloquea el
+  // wizard, salvo que haya pedido explícitamente agregar OTRO plan
+  // (agregandoOtro). El alumno puede tener varias a la vez (ej. natación
+  // personalizada + actividad física); se titula con la que más urge
+  // (vence más pronto) y el resto se lista compacto debajo.
+  const suscActiva = planesActivosEfecto.find((s) => s.suscripcionId === suscIdPrimario)
+  const otrosPlanesActivos = planesActivosEfecto.filter((p) => p.suscripcionId !== suscIdPrimario)
+  if (suscActiva && !solicitado && !agregandoOtro) {
     const venceDate = parseVencimiento(suscActiva.fechaVencimiento)
     const vence = venceDate?.toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })
     const hoy = Date.now()
@@ -679,6 +704,36 @@ export default function PlanesFlowPage() {
               </motion.div>
             )}
 
+            {/* ── Otros planes activos — el hero de arriba solo titula el
+                que vence más pronto; si tiene más (ej. natación
+                personalizada + actividad física a la vez), se listan
+                acá compactos. ── */}
+            {otrosPlanesActivos.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, delay: 0.2, ease: EASE }}
+                className="space-y-3"
+              >
+                <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50">También tienes activo</p>
+                {otrosPlanesActivos.map((p) => (
+                  <Card key={p.suscripcionId} padding="lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-display text-lg font-black text-white">{p.nombrePlan}</p>
+                        <p className="text-xs text-[var(--color-on-surface-variant)]/60 mt-1">
+                          {p.sesionesRestantes} sesiones restantes
+                        </p>
+                      </div>
+                      <span className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">
+                        Vence {parseVencimiento(p.fechaVencimiento)?.toLocaleDateString('es-CO', { day: '2-digit', month: 'short' })}
+                      </span>
+                    </div>
+                  </Card>
+                ))}
+              </motion.div>
+            )}
+
             {/* ── Aviso vencimiento cercano ── */}
             {vencePronto && (
               <motion.div
@@ -702,9 +757,17 @@ export default function PlanesFlowPage() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.35, ease: EASE }}
+              className="space-y-3"
             >
+              <Button
+                variant="outline" size="lg" fullWidth
+                onClick={() => { setSel(SELECCION_INICIAL); setAccionGrupo(null); setStepIdx(0); setAgregandoOtro(true) }}
+              >
+                <span className="material-symbols-outlined text-[18px]">add</span>
+                Agregar otro plan
+              </Button>
               <Link href="/dashboard">
-                <Button variant="outline" size="lg" fullWidth>
+                <Button variant="ghost" size="lg" fullWidth>
                   <span className="material-symbols-outlined text-[18px]">arrow_back</span>
                   Volver al dashboard
                 </Button>
@@ -774,6 +837,7 @@ export default function PlanesFlowPage() {
             <SubirComprobante
               transaccionId={txPendienteId}
               uid={user!.uid}
+              nombreUsuario={displayName(user!)}
               onSubido={(url) => { setComprobanteUrl(url); setTxPendienteId(null) }}
             />
           </div>
@@ -1296,6 +1360,7 @@ export default function PlanesFlowPage() {
                   <SubirComprobante
                     transaccionId={transaccionId}
                     uid={user!.uid}
+                    nombreUsuario={displayName(user!)}
                     onSubido={(url) => setComprobanteUrl(url)}
                   />
                 </div>
