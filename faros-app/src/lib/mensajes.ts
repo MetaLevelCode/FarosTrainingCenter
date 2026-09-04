@@ -12,10 +12,13 @@
 //                                    reglas; el cliente nunca lo lee).
 //   mensajes/{canalId}/items/{id} — los mensajes reales.
 //
-// La membresía del canal grupal (`participantes`) la mantienen las
-// rutas /api/clases/[id]/inscribir y /cancelar — son la única fuente
-// de verdad de `estudiantes_inscritos` (ver esas rutas y
-// firestore.rules). Este módulo NO escribe `participantes`.
+// La membresía del canal grupal (`participantes`) la mantiene cada ruta
+// que toca `estudiantes_inscritos` de una clase: /api/clases/[id]/inscribir
+// y /cancelar, /api/personalizadas/[id]/aceptar (genera las clases del
+// grupo) y /api/grupos-personalizados/unirse (suma miembros después).
+// Toda ruta nueva que agregue alumnos a una clase debe hacer lo mismo o
+// quedan sin permiso para leer/escribir su canal (firestore.rules exige
+// estar en `participantes`). Este módulo NO escribe `participantes`.
 // ============================================================
 
 import { getFirebase } from './firebase'

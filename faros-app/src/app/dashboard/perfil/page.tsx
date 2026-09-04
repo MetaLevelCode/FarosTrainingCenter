@@ -2,7 +2,7 @@
 
 // ============================================================
 // FAROS — Estudiante · Perfil
-// Datos de usuario.suscripcionActiva + estadísticas.
+// Datos de usuario.suscripcionesActivas + estadísticas.
 // Buzón de sugerencias escribe a colección `sugerencias`.
 // ============================================================
 
@@ -16,6 +16,7 @@ import { AvatarFoto } from '@/components/shared/AvatarFoto'
 import { MetaLevelWatermark } from '@/components/shared/MetaLevelWatermark'
 import { useAuth } from '@/contexts/AuthContext'
 import { getFirebase } from '@/lib/firebase'
+import { listaSuscripciones } from '@/lib/types'
 import type { Sugerencia } from '@/lib/types'
 
 const EASE = [0.22, 1, 0.36, 1] as const
@@ -45,7 +46,10 @@ export default function PerfilPage() {
   const [cargandoHistorial, setCargandoHistorial] = useState(true)
 
   const nombre = user ? `${user.nombres} ${user.apellidos}` : 'Atleta'
-  const susc = user?.suscripcionActiva
+  // El alumno puede tener varios planes activos a la vez (ej. natación
+  // personalizada + actividad física).
+  const planes = listaSuscripciones(user)
+  const susc = planes[0]
   const iniciales = user ? `${user.nombres.charAt(0)}${user.apellidos.charAt(0)}`.toUpperCase() : 'A'
 
   useEffect(() => {
@@ -169,7 +173,33 @@ export default function PerfilPage() {
                   <h3 className="label-caps text-[var(--color-on-surface-variant)]/60">Tu plan</h3>
                   <span className="material-symbols-outlined text-[var(--color-primary-fixed)]">workspace_premium</span>
                 </div>
-                {susc ? (
+                {planes.length > 1 ? (
+                  <>
+                    <div className="space-y-3 mb-4">
+                      {planes.map((p) => (
+                        <div key={p.suscripcionId} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                          <div className="flex items-center justify-between mb-1.5">
+                            <p className="font-display text-base font-black text-[var(--color-primary-fixed)]">{p.nombrePlan}</p>
+                            <Badge variant={p.estado === 'activa' ? 'success' : 'danger'}>
+                              {p.estado === 'activa' ? 'Activo' : 'Vencido'}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-[var(--color-on-surface-variant)]/60">
+                            {p.sesionesRestantes} sesiones restantes · Vence: {new Date(p.fechaVencimiento).toLocaleDateString('es-CO', { day: '2-digit', month: 'long' })}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                    {user?.eps && (
+                      <div className="mt-auto pt-4 border-t border-white/5">
+                        <div className="flex items-center justify-between">
+                          <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50">EPS</span>
+                          <span className="text-sm text-white">{user.eps}</span>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : susc ? (
                   <>
                     <p className="font-display text-3xl font-black leading-tight text-[var(--color-primary-fixed)] mb-2">
                       {susc.nombrePlan}

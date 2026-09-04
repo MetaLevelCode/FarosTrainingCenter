@@ -12,10 +12,15 @@ import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { ChatShell, type CanalItem } from '@/components/shared/ChatShell'
-import { getClasesAlumno, getUsuario } from '@/lib/firestore'
+import { getClasesAlumno } from '@/lib/firestore'
 import { canalGrupo, canalPrivado, enviarMensaje } from '@/lib/mensajes'
 import { displayName } from '@/lib/types'
-import type { Clase, Usuario } from '@/lib/types'
+import type { Clase, ProfesorAutenticado } from '@/lib/types'
+
+async function getIdToken(): Promise<string | null> {
+  const { getAuth } = await import('firebase/auth')
+  return (await getAuth().currentUser?.getIdToken()) ?? null
+}
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -33,16 +38,21 @@ export default function MensajesPage() {
   const { authorized, loading, user } = useRoleGuard(['estudiante'])
   const [cargando, setCargando] = useState(true)
   const [grupos, setGrupos] = useState<string[]>([])
-  const [profesores, setProfesores] = useState<Usuario[]>([])
+  const [profesores, setProfesores] = useState<ProfesorAutenticado[]>([])
 
   useEffect(() => {
     if (!user) return
     getClasesAlumno(user.uid)
       .then(async (clases: Clase[]) => {
         setGrupos([...new Set(clases.map((c) => c.nombre_clase))])
-        const instructorIds = [...new Set(clases.map((c) => c.instructor_id).filter(Boolean))]
-        const usuarios = await Promise.all(instructorIds.map((uid) => getUsuario(uid)))
-        setProfesores(usuarios.filter((u): u is Usuario => !!u))
+        const instructorIds = new Set(clases.map((c) => c.instructor_id).filter(Boolean))
+        const token = await getIdToken()
+        const res = await fetch('/api/profesores/publico', {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const data = await res.json().catch(() => ({}))
+        const todos = (data.profesores ?? []) as ProfesorAutenticado[]
+        setProfesores(todos.filter((p) => instructorIds.has(p.uid)))
       })
       .catch(console.error)
       .finally(() => setCargando(false))

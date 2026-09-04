@@ -14,6 +14,7 @@ import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { GuardedShell } from '@/components/layout/AppShell'
 import { Card, Badge } from '@/components/ui'
 import { getUsuarios, getClasesProfesor } from '@/lib/firestore'
+import { listaSuscripciones } from '@/lib/types'
 import type { Usuario } from '@/lib/types'
 
 const EASE = [0.22, 1, 0.36, 1] as const
@@ -36,10 +37,14 @@ function nombreCompleto(u: Usuario) {
   return `${u.nombres} ${u.apellidos}`
 }
 
+// El alumno puede tener varios planes activos a la vez (ej. natación
+// personalizada + actividad física) — el estado resumido prioriza
+// "Activo" si CUALQUIERA de sus planes lo está.
 function estadoSuscripcion(u: Usuario) {
-  const s = u.suscripcionActiva
-  if (!s) return 'Sin plan'
-  return s.estado === 'activa' ? 'Activo' : 'Vencido'
+  const planes = listaSuscripciones(u)
+  if (planes.length === 0) return 'Sin plan'
+  if (planes.some((s) => s.estado === 'activa')) return 'Activo'
+  return 'Vencido'
 }
 
 export default function EstudiantesPage() {
@@ -79,8 +84,11 @@ export default function EstudiantesPage() {
     })
   }, [estudiantes, busqueda, filtroEstado])
 
-  const activos = estudiantes.filter((u) => u.suscripcionActiva?.estado === 'activa').length
-  const enRiesgo = estudiantes.filter((u) => u.suscripcionActiva?.estado === 'vencida').length
+  const activos = estudiantes.filter((u) => listaSuscripciones(u).some((s) => s.estado === 'activa')).length
+  const enRiesgo = estudiantes.filter((u) => {
+    const planes = listaSuscripciones(u)
+    return planes.length > 0 && !planes.some((s) => s.estado === 'activa')
+  }).length
 
   return (
     <GuardedShell authorized={authorized} loading={loading} title="Estudiantes">
@@ -167,7 +175,7 @@ export default function EstudiantesPage() {
                       </td>
                     </tr>
                   ) : visibles.map((u) => {
-                    const susc = u.suscripcionActiva
+                    const planes = listaSuscripciones(u)
                     const estado = estadoSuscripcion(u)
                     // tasaAsistencia se guarda como fracción (0-1) — a porcentaje para mostrar.
                     const tasa = Math.round((u.estadisticas?.tasaAsistencia ?? 0) * 100)
@@ -188,8 +196,12 @@ export default function EstudiantesPage() {
                           <span className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/70">{u.nivel || '—'}</span>
                         </td>
                         <td className="px-6 py-4">
-                          {susc ? (
-                            <Badge variant="default">{susc.nombrePlan}</Badge>
+                          {planes.length > 0 ? (
+                            <div className="flex flex-wrap gap-1.5">
+                              {planes.map((p) => (
+                                <Badge key={p.suscripcionId} variant="default">{p.nombrePlan}</Badge>
+                              ))}
+                            </div>
                           ) : (
                             <span className="text-[10px] text-[var(--color-on-surface-variant)]/40">Sin plan</span>
                           )}
@@ -210,7 +222,9 @@ export default function EstudiantesPage() {
                           </div>
                         </td>
                         <td className="px-6 py-4 text-sm text-[var(--color-on-surface-variant)]/70 whitespace-nowrap">
-                          {susc ? `${susc.sesionesRestantes} restantes` : '—'}
+                          {planes.length > 0
+                            ? planes.map((p) => `${p.sesionesRestantes}`).join(' + ') + ' restantes'
+                            : '—'}
                         </td>
                         <td className="px-6 py-4">
                           <Badge variant={estado === 'Activo' ? 'success' : estado === 'Vencido' ? 'danger' : 'default'}>

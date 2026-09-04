@@ -2,7 +2,7 @@
 
 // ============================================================
 // FAROS — Estudiante Dashboard
-// Información derivada de usuario.suscripcionActiva y estadísticas
+// Información derivada de usuario.suscripcionesActivas y estadísticas
 // guardadas en Firestore.
 // ============================================================
 
@@ -24,6 +24,7 @@ import { RachaFaro } from '@/components/dashboard/RachaFaro'
 import { faseDeSuscripcion, cuposDisponibles, parseVencimiento } from '@/lib/matricula'
 import { calcularRacha } from '@/lib/racha'
 import { dowColombia } from '@/lib/recurrencia'
+import { listaSuscripciones } from '@/lib/types'
 
 const EASE = [0.22, 1, 0.36, 1] as const
 
@@ -83,7 +84,13 @@ export default function DashboardPage() {
   const [asistenciaSemanal, setAsistenciaSemanal] = useState<{ semana: string; count: number }[]>([])
   const [racha, setRacha] = useState(0)
 
-  const susc = user?.suscripcionActiva
+  // El alumno puede tener varios planes activos a la vez (ej. natación
+  // personalizada + actividad física) — se titula con el que necesita
+  // atención primero (vence más pronto) y el resto se lista compacto
+  // debajo del hero, sin rediseñar cada widget que ya asumía "el" plan.
+  const planes = listaSuscripciones(user)
+  const susc = [...planes].sort((a, b) => a.fechaVencimiento - b.fechaVencimiento)[0] ?? user?.suscripcionActiva
+  const otrosPlanes = planes.filter((p) => p.suscripcionId !== susc?.suscripcionId)
   // tasaAsistencia se guarda como fracción (0-1) — a porcentaje para mostrar.
   const tasa = Math.round((user?.estadisticas?.tasaAsistencia ?? 0) * 100)
   const asistidas = user?.estadisticas?.clasesAsistidas ?? 0
@@ -302,6 +309,29 @@ export default function DashboardPage() {
             </div>
           </section>
         </Reveal>
+
+        {/* Otros planes activos — el hero solo titula el que vence más
+            pronto; si hay más (ej. natación personalizada + actividad
+            física a la vez), se listan compactos acá. */}
+        {otrosPlanes.length > 0 && (
+          <Reveal delay={0.02}>
+            <div className="flex flex-wrap gap-3">
+              {otrosPlanes.map((p) => (
+                <Link
+                  key={p.suscripcionId}
+                  href="/dashboard/planes"
+                  className="flex items-center gap-2.5 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 hover:border-white/25 transition-colors duration-200"
+                >
+                  <span className={`w-2 h-2 rounded-full shadow-[0_0_8px_currentColor] ${
+                    p.estado === 'activa' ? 'bg-[var(--color-success-emerald)] text-[var(--color-success-emerald)]' : 'bg-[var(--color-danger-crimson)] text-[var(--color-danger-crimson)]'
+                  }`} />
+                  <span className="text-sm font-bold text-white">{p.nombrePlan}</span>
+                  <span className="text-xs text-[var(--color-on-surface-variant)]/50">{p.sesionesRestantes} sesiones</span>
+                </Link>
+              ))}
+            </div>
+          </Reveal>
+        )}
 
         {/* Banner de transacción pendiente */}
         {txPendiente && (
