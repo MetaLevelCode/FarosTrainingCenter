@@ -15,6 +15,7 @@ import { WaterBackground } from '@/components/shared/WaterBackground'
 import { FarosWordmark, Spinner } from '@/components/ui'
 import { CuentaSuspendida } from '@/components/shared/CuentaSuspendida'
 import { PendienteSync } from '@/components/shared/PendienteSync'
+import { NotificationBell } from '@/components/layout/NotificationBell'
 import type { UserRole } from '@/lib/types'
 
 interface NavItem { label: string; href: string; icon: string }
@@ -134,6 +135,7 @@ export function AppShell({ title, children, hideFab = false }: { title: string; 
             </h1>
           </div>
           <div className="flex items-center gap-4">
+            <NotificationBell />
             <button
               onClick={() => signOut()}
               className="label-caps text-[10px] min-h-[44px] min-w-[44px] px-3 flex items-center justify-center rounded-xl text-[var(--color-on-surface-variant)] hover:text-[var(--color-danger-crimson)] hover:bg-white/5 active:scale-[0.96] transition-[color,background-color,transform] duration-200"
