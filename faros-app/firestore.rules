@@ -9,7 +9,20 @@ rules_version = '2';
 //   nombres: string, apellidos: string, cedula: string,
 //   email: string, rol: 'admin'|'profesor'|'estudiante',
 //   activo: bool (optional), estadisticas: map (optional),
-//   suscripcionActiva: map|null (optional)
+//   suscripcionActiva: map|null (optional, LEGACY — un solo plan, en
+//     transición hacia suscripcionesActivas, ver abajo)
+//   suscripcionesActivas: map<suscripcionId, map> (optional) — permite
+//     varios planes concurrentes (ej. natación personalizada + actividad
+//     física a la vez), indexado por suscripcionId para poder actualizar
+//     una sola entrada por dot-path sin tocar las demás.
+//
+// perfiles_publicos/{uid}  — read: true (público, sin login); write: false
+//   Subconjunto público de un profesor (usuarios/{uid}): nombres,
+//   apellidos, rol. Sin PII (nada de cédula/teléfono/email/EPS/
+//   dificultades/disponibilidad). Alimenta el wizard de inscripción
+//   abierto a invitados (/dashboard/planes). Sincronizado exclusivamente
+//   por Admin SDK en POST /api/admin/usuarios/[uid]/rol al promover o
+//   quitar el rol 'profesor' — nunca por el cliente.
 //
 // catalogo/{codigo}  — read: any auth; write: admin only
 //
@@ -40,7 +53,7 @@ rules_version = '2';
 //
 // categorias/{id}    — read: any auth; write: admin only
 //
-// sugerencias/{id}   — write: owner; read: admin only
+// sugerencias/{id}   — write: owner; read: admin o el dueño (uid)
 //
 // cancelaciones/{id}  — write: Admin SDK only
 //   usuarioId: string, claseId: string, fecha_hora_clase: number, canceladoEn: number
@@ -49,6 +62,11 @@ rules_version = '2';
 //   mensajes/{canalId}/items/{id}
 //     autorId: string, autorNombre: string, autorRol: 'alumno'|'entrenador',
 //     texto: string, ts: number
+//
+// notificaciones/{id}  — avisos por acciones que afectan a otro usuario
+//   destinatarioId: string|null (uno de los dos), paraRol: 'admin'|null,
+//   tipo: string (enum), titulo: string, mensaje: string, enlace: string|null,
+//   actorId: string, leida: bool, creadoEn: number
 // ============================================================
 
 service cloud.firestore {
@@ -99,31 +117,15 @@ service cloud.firestore {
         && request.resource.data[field].size() <= maxLen;
     }
 
-    // Deja pasar el write de registrarAsistencia() (lib/firestore.ts): un
-    // profesor SOLO puede tocar clasesAsistidas/tasaAsistencia dentro de
-    // estadisticas — no clasesReservadas ni la racha cacheada (esa la
-    // escribe exclusivamente el server, ver lib/racha-server.ts), aunque
-    // affectedKeys() no distinga sub-campos de un mismo mapa.
-    function soloAsistenciaCambio() {
-      let prev = resource.data.get('estadisticas', {});
-      let next = request.resource.data.get('estadisticas', {});
-      return next.get('clasesReservadas', 0) == prev.get('clasesReservadas', 0)
-        && next.get('racha', 0) == prev.get('racha', 0)
-        && next.get('rachaSemana', 0) == prev.get('rachaSemana', 0);
-    }
-
     // ── usuarios ────────────────────────────────────────────
 
     match /usuarios/{uid} {
-      // rol=='profesor' es lectura pública (sin isEstudiante()) a propósito:
-      // el wizard de planes (/dashboard/planes) es "abierto a invitados" y
-      // el paso de elegir entrenador del Plan Virtual necesita esta lista
-      // ANTES de que el visitante inicie sesión — mismo criterio ya usado
-      // para abrir sedes/grupos/tarifas (nombre/sede de un profesor no es
-      // dato sensible). Sigue sin exponer nada de un alumno a nadie más
-      // que su propio dueño/admin/profesor.
-      allow read: if isOwner(uid) || isAdmin() || isProfesor()
-        || resource.data.rol == 'profesor';
+      // El documento completo (cédula, teléfono, EPS, dificultades, etc.)
+      // solo lo lee su dueño, un admin o un profesor — nunca es público.
+      // La lectura pública de "nombre de un profesor" para el wizard sin
+      // login vive en `perfiles_publicos/{uid}` (subconjunto sin PII),
+      // no acá.
+      allow read: if isOwner(uid) || isAdmin() || isProfesor();
 
       // Lista blanca explícita: impide que el estudiante se auto-asigne
       // suscripcionActiva, estadisticas u otros campos sensibles al registrarse.
@@ -138,26 +140,26 @@ service cloud.firestore {
         && validString('apellidos', 100)
         && validString('email', 200);
 
-      allow update: if isAdmin()
+      allow update: if (isAdmin()
+            // rol queda excluido acá a propósito: el único lugar donde debe
+            // poder cambiar es POST /api/admin/usuarios/[uid]/rol (Admin
+            // SDK), que sincroniza perfiles_publicos/{uid} en el mismo
+            // batch — un updateDoc() directo del cliente saltaría ese sync.
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['rol']))
         // estadisticas queda fuera de lo que el dueño puede tocar: se
         // escribe solo server-side (Admin SDK en inscribir/cancelar, ver
         // esos endpoints) o por el profesor vía la rama de abajo — nunca
         // por el propio alumno, para que la racha cacheada sea confiable.
+        // El profesor ya NO tiene una rama acá: registrarAsistencia()
+        // (lib/firestore.ts) pasa por POST /api/clases/[claseId]/asistencia
+        // (Admin SDK), que sí puede validar que sea instructor de ESA clase
+        // puntual y que el alumno esté inscrito en ella antes de tocar
+        // estadisticas — algo que esta regla, evaluando el doc de usuarios
+        // de forma aislada, nunca pudo verificar.
         || (isOwner(uid)
             && !request.resource.data.diff(resource.data).affectedKeys()
-                .hasAny(['rol', 'activo', 'suscripcionActiva', 'estadisticas'])
-            && disponibilidadValida())
-        // registrarAsistencia() (lib/firestore.ts) corre client-side y
-        // necesita que el profesor pueda sumar/restar clasesAsistidas del
-        // ALUMNO al marcar asistencia — sin esto la transacción entera
-        // aborta (incluida la escritura en `asistencias`) porque Firestore
-        // no permite escrituras parciales. No puede verificar acá que sea
-        // instructor de la clase puntual (esa validación real vive en la
-        // regla de `asistencias`, que sí la exige); esta rama solo se
-        // limita a los 2 campos de asistencia, nunca a racha/reservadas.
-        || (isProfesor()
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['estadisticas'])
-            && soloAsistenciaCambio());
+                .hasAny(['rol', 'activo', 'suscripcionActiva', 'suscripcionesActivas', 'estadisticas'])
+            && disponibilidadValida());
 
       allow delete: if isAdmin();
     }
@@ -172,6 +174,18 @@ service cloud.firestore {
     function disponibilidadValida() {
       let d = request.resource.data.get('disponibilidadPersonal', []);
       return d is list && d.size() <= 20;
+    }
+
+    // ── perfiles_publicos ───────────────────────────────────
+    // Subconjunto público de un profesor, sin PII — ver nota de schema
+    // arriba. Único propósito: listar entrenadores en el wizard de
+    // inscripción antes de que el visitante inicie sesión. Se escribe
+    // solo desde POST /api/admin/usuarios/[uid]/rol (Admin SDK) al
+    // cambiar el rol de un usuario, nunca desde el cliente.
+
+    match /perfiles_publicos/{uid} {
+      allow read: if true;
+      allow write: if false;
     }
 
     // ── catalogo ────────────────────────────────────────────
@@ -302,24 +316,14 @@ service cloud.firestore {
       allow read: if isAdmin() || isProfesor()
         || (isAuthenticated() && resource.data.usuarioId == request.auth.uid);
 
-      // El profesor solo puede registrar asistencia en clases donde es instructor.
-      allow create: if isAdminOrProfesor()
-        && (isAdmin()
-            || get(/databases/$(database)/documents/clases/$(request.resource.data.claseId))
-                 .data.instructor_id == request.auth.uid)
-        && request.resource.data.keys().hasOnly([
-            'asistenciaId', 'claseId', 'usuarioId', 'asistio',
-            'fecha_registro', 'registradoPor', 'creadoEn',
-          ])
-        && request.resource.data.asistio is bool
-        && request.resource.data.registradoPor == request.auth.uid;
-
-      allow update: if isAdminOrProfesor()
-        && (isAdmin()
-            || get(/databases/$(database)/documents/clases/$(resource.data.claseId))
-                 .data.instructor_id == request.auth.uid)
-        && request.resource.data.diff(resource.data).affectedKeys()
-           .hasOnly(['asistio', 'fecha_registro']);
+      // El profesor ya no escribe acá desde el cliente: registrarAsistencia()
+      // (lib/firestore.ts) pasa por POST /api/clases/[claseId]/asistencia
+      // (Admin SDK), que valida instructor_id + estudiantes_inscritos antes
+      // de tocar este doc y el de usuarios/{uid}.estadisticas en la misma
+      // transacción — algo que esta regla, viendo solo `asistencias` de
+      // forma aislada, nunca pudo validar (no chequeaba estudiantes_inscritos).
+      allow create: if isAdmin();
+      allow update: if isAdmin();
 
       allow delete: if isAdmin();
     }
@@ -359,7 +363,9 @@ service cloud.firestore {
         && request.resource.data.estado in ['activa', 'archivada'];
 
       allow update: if isAdmin()
-        || (isProfesor() && resource.data.profesorId == request.auth.uid);
+        || (isProfesor() && resource.data.profesorId == request.auth.uid
+            && request.resource.data.diff(resource.data).affectedKeys()
+                 .hasOnly(['nombre', 'estado', 'actualizadoEn', 'nombre_alumno', 'nombre_profesor']));
 
       allow delete: if isAdmin();
 
@@ -465,7 +471,7 @@ service cloud.firestore {
     // ── sugerencias ──────────────────────────────────────────
 
     match /sugerencias/{sugId} {
-      allow read: if isAdmin();
+      allow read: if isAdmin() || isOwner(resource.data.uid);
 
       allow create: if isAuthenticated()
         && request.resource.data.uid == request.auth.uid
@@ -474,6 +480,63 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(['uid', 'displayName', 'mensaje', 'createdAt', 'leida']);
 
       allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ── notificaciones ───────────────────────────────────────
+    // Avisos por acciones que afectan a otro usuario. La mayoría se
+    // escriben vía Admin SDK (aceptar/rechazar/solicitar/cancelar clase
+    // personalizada — bypassea estas reglas igual que solicitudes_
+    // personalizadas). Dos puntos SÍ escriben client-side y necesitan
+    // reglas: el admin notifica al alumno puntual al aprobar su plan
+    // (aprobarTransaccion, runTransaction del propio admin) y el
+    // estudiante notifica "al grupo admin" (paraRol) al subir su
+    // comprobante — nunca puede dirigirse a otro usuario específico,
+    // así no puede hacerse pasar por el sistema para spamear a otro alumno.
+
+    function notifCamposValidos() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(
+             ['destinatarioId', 'paraRol', 'tipo', 'titulo', 'mensaje', 'enlace', 'actorId', 'leida', 'creadoEn'])
+        && d.keys().hasAll(['tipo', 'titulo', 'mensaje', 'actorId', 'leida', 'creadoEn'])
+        && d.tipo in [
+             'plan_aprobado', 'plan_rechazado', 'comprobante_subido',
+             'clase_solicitada', 'clase_aceptada', 'clase_rechazada', 'clase_cancelada'
+           ]
+        && validString('titulo', 120) && d.titulo.size() > 0
+        && validString('mensaje', 500)
+        && d.leida == false
+        && d.creadoEn is number
+        && d.actorId == request.auth.uid
+        && (!('enlace' in d) || d.enlace == null || (d.enlace is string && d.enlace.size() <= 200))
+        && (!('destinatarioId' in d) || d.destinatarioId == null || d.destinatarioId is string)
+        && (!('paraRol' in d) || d.paraRol == null || d.paraRol == 'admin');
+    }
+
+    match /notificaciones/{notifId} {
+      allow read: if isAdmin()
+        || (isAuthenticated() && resource.data.destinatarioId == request.auth.uid);
+
+      allow create: if notifCamposValidos()
+        && (
+          // Admin → alumno puntual (aprobar el plan desde el cliente).
+          (isAdmin()
+            && 'destinatarioId' in request.resource.data
+            && request.resource.data.destinatarioId is string
+            && !('paraRol' in request.resource.data && request.resource.data.paraRol != null))
+          // Estudiante → grupo admin, solo al subir comprobante.
+          || (isEstudiante()
+              && request.resource.data.get('paraRol', null) == 'admin'
+              && !('destinatarioId' in request.resource.data && request.resource.data.destinatarioId != null)
+              && request.resource.data.tipo == 'comprobante_subido')
+        );
+
+      // Solo marcar como leída — el dueño de un aviso puntual, o
+      // cualquier admin para los avisos de grupo (paraRol=='admin').
+      allow update: if (isAdmin() || (isAuthenticated() && resource.data.destinatarioId == request.auth.uid))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['leida'])
+        && request.resource.data.leida == true;
+
       allow delete: if isAdmin();
     }
   }

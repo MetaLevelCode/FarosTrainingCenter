@@ -5,11 +5,12 @@
 // ============================================================
 
 import { getFirebase } from './firebase'
+import { notifPayload } from './notificaciones'
 import type {
   Usuario, Catalogo, Plan, Suscripcion, Transaccion,
   Clase, Asistencia, Movimiento, Categoria, UserRole,
   Sede, Grupo, Tarifas, RutinaVirtual, SesionVirtual,
-  Sugerencia,
+  Sugerencia, PerfilPublico,
 } from './types'
 
 // ── Utilidades internas ──────────────────────────────────────
@@ -60,6 +61,21 @@ export async function setUsuarioActivo(uid: string, activo: boolean): Promise<vo
   ])
   // Guardamos estado en un campo `activo` booleano
   await updateDoc(doc(db, 'usuarios', uid), { activo })
+}
+
+/**
+ * Lista pública de profesores (nombres/apellidos/rol, sin PII) para el
+ * wizard de inscripción abierto a invitados — ver `perfiles_publicos/{uid}`
+ * en firestore.rules. A diferencia de getUsuarios('profesor'), esta
+ * colección sí es legible sin sesión iniciada.
+ */
+export async function getPerfilesPublicos(): Promise<PerfilPublico[]> {
+  const [{ db }, { collection, query, orderBy, getDocs }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  const q = query(collection(db, 'perfiles_publicos'), orderBy('apellidos'))
+  const snap = await getDocs(q)
+  return snap.docs.map((d) => ({ ...d.data(), uid: d.id }) as PerfilPublico)
 }
 
 /** Guarda solo el link de Storage — la imagen ya vive comprimida ahí, nunca en Firestore. */
@@ -220,9 +236,20 @@ export async function aprobarTransaccion(
     if (esPlanGrupal) {
       const usuarioSnap = await tx.get(doc(db, 'usuarios', t.usuarioId))
       const usuarioActual = usuarioSnap.exists() ? usuarioSnap.data() : null
-      const grupoIdActual = usuarioActual?.suscripcionActiva?.esJefeGrupo
-        ? usuarioActual.suscripcionActiva.grupoId
-        : null
+      // Busca primero en suscripcionesActivas (múltiples planes) una
+      // entrada de la MISMA sub-modalidad (tipo+personalId, o vacaciones)
+      // de la que el usuario ya es jefe — así una renovación de, ej.,
+      // "Familia" reutiliza el grupo de Familia sin importar que también
+      // tenga activo otro plan personal distinto (ej. natación + AFP).
+      // Fallback al campo legacy suscripcionActiva mientras el mapa
+      // nuevo no esté poblado para todos los usuarios (ver migración).
+      const entradasActuales: Record<string, any> = usuarioActual?.suscripcionesActivas ?? {}
+      const mismaSubModalidad = Object.values(entradasActuales).find((s: any) =>
+        s?.esJefeGrupo && s?.grupoId
+        && (sel.tipo === 'vacaciones' ? s.tipo === 'vacaciones' : (s.tipo === 'personal' && s.personalId === sel.personalId)))
+      const grupoIdActual = mismaSubModalidad
+        ? (mismaSubModalidad as any).grupoId
+        : (usuarioActual?.suscripcionActiva?.esJefeGrupo ? usuarioActual.suscripcionActiva.grupoId : null)
 
       // Reutiliza el grupo si ya era jefe de uno (renovación) — así no se
       // pierde a los miembros ya inscritos ni se les cambia el código.
@@ -312,26 +339,36 @@ export async function aprobarTransaccion(
       suscripcionCreada: { suscripcionId: suscRef.id, fechaActivacion: now },
     })
 
-    // 3. Actualizar usuario.suscripcionActiva — tipo/personalId/personas
-    // denormalizados desde la selección para que el dashboard del alumno
-    // sepa si su plan es personalizado sin un fetch aparte.
+    // 3. Actualizar usuario.suscripcionActiva/suscripcionesActivas —
+    // tipo/personalId/combinacionId/personas denormalizados desde la
+    // selección para que el dashboard del alumno sepa si su plan es
+    // personalizado sin un fetch aparte.
+    // Dual-write en transición: suscripcionActiva (legacy, un solo plan,
+    // SE SOBRESCRIBE) se mantiene por compatibilidad mientras el resto
+    // del código no haya migrado a suscripcionesActivas (mapa, ADITIVO
+    // por suscripcionId — nunca pisa otros planes activos del usuario,
+    // ej. natación personalizada + actividad física a la vez). Ver
+    // PLAN de refactor — este write legacy se retira en Release 4.
+    const entradaSuscripcion = {
+      suscripcionId: suscRef.id,
+      planId: t.planId ?? '',
+      nombrePlan,
+      sesionesRestantes: sesiones,
+      sesionesCompradas: sesiones,
+      fechaVencimiento,
+      estado: 'activa',
+      tipo: sel.tipo,
+      combinacionId: sel.tipo === 'personal' ? sel.combinacionId : null,
+      personalId: sel.tipo === 'personal' ? sel.personalId : null,
+      personas: sel.tipo === 'personal' ? sel.personas : null,
+      week: sel.tipo === 'personal' ? sel.week : null,
+      ninos: sel.tipo === 'vacaciones' ? sel.ninos : null,
+      grupoId: grupoRef?.id ?? null,
+      esJefeGrupo: esPlanGrupal,
+    }
     tx.update(doc(db, 'usuarios', t.usuarioId), {
-      suscripcionActiva: {
-        suscripcionId: suscRef.id,
-        planId: t.planId ?? '',
-        nombrePlan,
-        sesionesRestantes: sesiones,
-        sesionesCompradas: sesiones,
-        fechaVencimiento,
-        estado: 'activa',
-        tipo: sel.tipo,
-        personalId: sel.tipo === 'personal' ? sel.personalId : null,
-        personas: sel.tipo === 'personal' ? sel.personas : null,
-        week: sel.tipo === 'personal' ? sel.week : null,
-        ninos: sel.tipo === 'vacaciones' ? sel.ninos : null,
-        grupoId: grupoRef?.id ?? null,
-        esJefeGrupo: esPlanGrupal,
-      },
+      suscripcionActiva: entradaSuscripcion,
+      [`suscripcionesActivas.${suscRef.id}`]: entradaSuscripcion,
     })
 
     // 4. Crear movimiento de ingreso
@@ -348,6 +385,17 @@ export async function aprobarTransaccion(
       transaccionId,
       creadoEn: now,
     })
+
+    // 4b. Notificar al alumno — su plan ya está activo.
+    const notifRef = doc(collection(db, 'notificaciones'))
+    tx.set(notifRef, notifPayload({
+      destinatarioId: t.usuarioId,
+      tipo: 'plan_aprobado',
+      titulo: 'Tu plan fue aprobado',
+      mensaje: `${nombrePlan} ya está activo.`,
+      enlace: '/dashboard/planes',
+      actorId: adminUid,
+    }))
 
     // 5. Plan Virtual: crear la rutina para que el profesor vea a su
     // alumno de inmediato en /portal/virtual, sin sesiones todavía.
@@ -581,6 +629,14 @@ export async function getAsistenciasClase(claseId: string): Promise<Asistencia[]
 /**
  * Registra o corrige la asistencia del alumno a una clase.
  *
+ * Pasa por POST /api/clases/[claseId]/asistencia (Admin SDK) en vez de
+ * escribir directo con el SDK cliente: el server valida que quien marca
+ * sea el instructor de ESA clase y que el alumno esté en
+ * estudiantes_inscritos — algo que firestore.rules no puede atar entre
+ * la escritura a `asistencias` y la escritura hermana a
+ * `usuarios/{uid}.estadisticas` (son documentos distintos, evaluados de
+ * forma independiente).
+ *
  * La sesión ya se descontó de sesionesRestantes al inscribirse
  * (POST /api/clases/[id]/inscribir) — marcar asistencia NO vuelve a
  * tocar el saldo, solo corrige las estadísticas de asistencia:
@@ -595,57 +651,20 @@ export async function registrarAsistencia(
   claseId: string,
   usuarioId: string,
   asistio: boolean,
-  profesorId: string,
+  _profesorId: string,
 ): Promise<void> {
-  const [{ db }, { doc, collection, runTransaction }] = await Promise.all([
-    getFirebase(), import('firebase/firestore'),
-  ])
+  const { getAuth } = await import('firebase/auth')
+  const idToken = await getAuth().currentUser?.getIdToken()
+  if (!idToken) throw new Error('No hay sesión activa')
 
-  // ID determinista permite tx.get() en lugar de una query no-transaccional
-  const asistenciaRef = doc(db, 'asistencias', `${claseId}_${usuarioId}`)
-  let huboCambio = false
-
-  await runTransaction(db, async (tx) => {
-    const now = Date.now()
-    const usuRef = doc(db, 'usuarios', usuarioId)
-
-    // Lecturas primero (regla de Firestore: todas las gets antes de writes)
-    const [existingSnap, usuSnap] = await Promise.all([
-      tx.get(asistenciaRef),
-      tx.get(usuRef),
-    ])
-
-    const previo = existingSnap.exists() ? Boolean(existingSnap.data()!.asistio) : null
-    const delta = asistio === previo ? 0 : (asistio ? 1 : -1)
-
-    // 1. Upsert asistencia
-    if (existingSnap.exists()) {
-      tx.update(asistenciaRef, { asistio, fecha_registro: now })
-    } else {
-      tx.set(asistenciaRef, {
-        asistenciaId: asistenciaRef.id,
-        claseId, usuarioId, asistio,
-        fecha_registro: now,
-        registradoPor: profesorId,
-        creadoEn: now,
-      })
-    }
-
-    // 2. Ajustar estadísticas + suscripción según la delta
-    if (delta === 0 || !usuSnap.exists()) return
-    huboCambio = true
-    const usu = usuSnap.data() as Record<string, any>
-
-    const asistidasPrev = (usu.estadisticas?.clasesAsistidas as number) ?? 0
-    const reservadasPrev = (usu.estadisticas?.clasesReservadas as number) ?? 0
-    const asistidas = Math.max(0, asistidasPrev + delta)
-    const tasaAsistencia = reservadasPrev > 0 ? Math.min(1, asistidas / reservadasPrev) : 0
-
-    tx.update(usuRef, {
-      'estadisticas.clasesAsistidas': asistidas,
-      'estadisticas.tasaAsistencia': tasaAsistencia,
-    })
+  const res = await fetch(`/api/clases/${claseId}/asistencia`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+    body: JSON.stringify({ usuarioId, asistio }),
   })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error ?? 'No se pudo registrar la asistencia')
+  const huboCambio = Boolean(data.huboCambio)
 
   // Mantiene fresca la racha cacheada (ver lib/racha-server.ts) apenas
   // cambia la asistencia — best-effort: si falla (ej. sin conexión, esto
@@ -655,15 +674,11 @@ export async function registrarAsistencia(
   // registro de asistencia, que ya se guardó arriba.
   if (huboCambio) {
     try {
-      const { getAuth } = await import('firebase/auth')
-      const idToken = await getAuth().currentUser?.getIdToken()
-      if (idToken) {
-        await fetch('/api/racha/recalcular', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
-          body: JSON.stringify({ usuarioId }),
-        })
-      }
+      await fetch('/api/racha/recalcular', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ usuarioId }),
+      })
     } catch (err) {
       console.error('[registrarAsistencia] no se pudo refrescar la racha', err)
     }
@@ -686,11 +701,24 @@ export async function getTransaccionesUsuario(usuarioId: string): Promise<Transa
 export async function updateComprobanteTransaccion(
   transaccionId: string,
   comprobanteUrl: string,
+  uid: string,
+  nombreUsuario?: string,
 ): Promise<void> {
-  const [{ db }, { doc, updateDoc }] = await Promise.all([
+  const [{ db }, { doc, updateDoc, addDoc, collection }] = await Promise.all([
     getFirebase(), import('firebase/firestore'),
   ])
   await updateDoc(doc(db, 'transacciones', transaccionId), { comprobante_url: comprobanteUrl })
+
+  // Aviso para el grupo admin — no sabemos sus uid desde el cliente, por
+  // eso va con paraRol en vez de destinatarioId (ver firestore.rules).
+  await addDoc(collection(db, 'notificaciones'), notifPayload({
+    paraRol: 'admin',
+    tipo: 'comprobante_subido',
+    titulo: 'Nuevo comprobante para revisar',
+    mensaje: `${nombreUsuario ?? 'Un alumno'} subió un comprobante de pago.`,
+    enlace: '/admin/finanzas',
+    actorId: uid,
+  }))
 }
 
 // ── movimientos ──────────────────────────────────────────────
@@ -778,14 +806,14 @@ function validarPlan(data: Partial<PlanEditable>) {
 }
 
 export async function crearPlan(data: PlanEditable): Promise<string> {
-  // En creación todos los campos son obligatorios; validar todo el shape
+  // catalogo_codigo y sede son opcionales en el tipo Plan (legacy / sin uso
+  // en el formulario de Plantillas, que usa sede_aplica) — no forzarlos acá
+  // o crearPlan queda inutilizable para toda plantilla que no los llene.
   validarPlan({
     nombre: data.nombre,
     precio_total: data.precio_total,
     sesiones_incluidas: data.sesiones_incluidas,
     duracion_dias: data.duracion_dias,
-    catalogo_codigo: data.catalogo_codigo,
-    sede: data.sede,
   })
 
   const [{ db }, { collection, doc, addDoc, updateDoc }] = await Promise.all([
@@ -815,11 +843,23 @@ export const archivarPlan = (planId: string) => actualizarPlan(planId, { estado:
 
 // ── usuarios rol ─────────────────────────────────────────────
 
+/**
+ * Cambiar el rol pasa por Admin SDK (en vez de updateDoc directo) porque
+ * también hay que sincronizar `perfiles_publicos/{uid}` — ver
+ * POST /api/admin/usuarios/[uid]/rol y la nota de schema en firestore.rules.
+ */
 export async function setUsuarioRol(uid: string, rol: UserRole): Promise<void> {
-  const [{ db }, { doc, updateDoc }] = await Promise.all([
-    getFirebase(), import('firebase/firestore'),
-  ])
-  await updateDoc(doc(db, 'usuarios', uid), { rol })
+  const { getAuth } = await import('firebase/auth')
+  const idToken = await getAuth().currentUser?.getIdToken()
+  const res = await fetch(`/api/admin/usuarios/${uid}/rol`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+    body: JSON.stringify({ rol }),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.error ?? 'No se pudo cambiar el rol.')
+  }
 }
 
 
@@ -958,12 +998,13 @@ export async function crearRutinaVirtual(data: {
   alumnoId: string; profesorId: string; nombre: string
   nombreAlumno?: string; nombreProfesor?: string
 }): Promise<string> {
-  const [{ db }, { collection, addDoc, updateDoc }] = await Promise.all([
+  const [{ db }, { collection, doc, setDoc }] = await Promise.all([
     getFirebase(), import('firebase/firestore'),
   ])
   const now = Date.now()
-  const ref = await addDoc(collection(db, 'rutinas_virtuales'), {
-    rutinaId: '',
+  const ref = doc(collection(db, 'rutinas_virtuales'))
+  await setDoc(ref, {
+    rutinaId: ref.id,
     alumnoId: data.alumnoId,
     profesorId: data.profesorId,
     nombre: data.nombre,
@@ -973,7 +1014,6 @@ export async function crearRutinaVirtual(data: {
     ...(data.nombreAlumno ? { nombre_alumno: data.nombreAlumno } : {}),
     ...(data.nombreProfesor ? { nombre_profesor: data.nombreProfesor } : {}),
   })
-  await updateDoc(ref, { rutinaId: ref.id })
   return ref.id
 }
 

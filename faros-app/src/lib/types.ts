@@ -19,6 +19,13 @@ export interface SuscripcionActiva {
   // Denormalizado desde SeleccionPlan al aprobar — permite saber si el plan
   // es personalizado sin un fetch aparte a suscripciones/{id}.
   tipo?: import('./planes').TipoPlan
+  // Solo cuando tipo === 'personal' — distingue sub-modalidades que
+  // comparten tipo pero son planes independientes (ej. natación
+  // personalizada 'natacion' vs actividad física 'funcional', ver
+  // COMBINACIONES en lib/planes.ts). Sin esto no hay forma de saber a
+  // cuál de los varios planes 'personal' de un usuario corresponde esta
+  // entrada dentro de Usuario.suscripcionesActivas.
+  combinacionId?: string | null
   personalId?: string | null
   personas?: number
   // Frecuencia semanal del plan (1/2/3 veces por semana) — determina
@@ -34,6 +41,46 @@ export interface SuscripcionActiva {
   // grupo — a diferencia de `personas`, cada miembro puede aportar una
   // cantidad distinta (ver MiembroGrupo.ninos).
   ninos?: number
+}
+
+// ── Helpers de Usuario.suscripcionesActivas (múltiples planes) ──────
+// Un usuario puede tener varios planes activos a la vez (ej. natación
+// personalizada + actividad física, ambos tipo:'personal' pero distintos
+// combinacionId) — estos helpers evitan repetir Object.values(...) y los
+// criterios de comparación en cada pantalla/ruta que los consume.
+
+/** Todas las entradas activas/vencidas del usuario, más próximas a vencer primero. */
+export function listaSuscripciones(
+  u: Pick<Usuario, 'suscripcionesActivas'> | null | undefined,
+): SuscripcionActiva[] {
+  return Object.values(u?.suscripcionesActivas ?? {}).sort((a, b) => b.fechaVencimiento - a.fechaVencimiento)
+}
+
+/** La entrada tipo:'personal' que matchea combinacionId (NP vs AFP) — o la primera si no se especifica. */
+export function suscripcionPersonal(
+  u: Pick<Usuario, 'suscripcionesActivas'> | null | undefined,
+  combinacionId?: string | null,
+): SuscripcionActiva | undefined {
+  const personales = listaSuscripciones(u).filter((s) => s.tipo === 'personal')
+  return combinacionId ? personales.find((s) => s.combinacionId === combinacionId) : personales[0]
+}
+
+/** Entradas ACTIVAS cuyo tipo está en la lista dada (ej. inscribir/cancelar clase: grupal|conjunto|vacaciones). */
+export function suscripcionesPorTipo(
+  u: Pick<Usuario, 'suscripcionesActivas'> | null | undefined,
+  tipos: Array<import('./planes').TipoPlan>,
+): SuscripcionActiva[] {
+  return listaSuscripciones(u).filter((s) => s.tipo != null && tipos.includes(s.tipo) && s.estado === 'activa')
+}
+
+/** ¿Ya tiene una entrada activa y vigente de la MISMA sub-modalidad exacta (evita duplicar el mismo plan)? */
+export function tieneSubModalidad(
+  u: Pick<Usuario, 'suscripcionesActivas'> | null | undefined,
+  criterio: { tipo: import('./planes').TipoPlan; personalId?: string | null; combinacionId?: string | null },
+): boolean {
+  return listaSuscripciones(u).some((s) =>
+    s.estado === 'activa' && s.fechaVencimiento > Date.now() && s.tipo === criterio.tipo
+    && (criterio.tipo !== 'personal' || (s.personalId === criterio.personalId && s.combinacionId === criterio.combinacionId)))
 }
 
 // ── Clases personalizadas (1-a-1, pareja, familia, grupo reducido) ──
@@ -58,9 +105,14 @@ export interface SolicitudPersonalizada {
   // todas con el mismo profesor, en días distintos. Ver lib/recurrencia.ts.
   franjas: FranjaDisponibilidad[]
   personas: number
-  // Denormalizado desde usuario.suscripcionActiva.grupoId al crear la
-  // solicitud — permite que /aceptar inscriba a todo el grupo sin releer
-  // la suscripción del alumno.
+  // De cuál de las (potencialmente varias) entradas tipo:'personal' del
+  // alumno en suscripcionesActivas es esta solicitud — necesario en
+  // cuanto puede tener, ej., natación personalizada Y actividad física
+  // activas a la vez (ver combinacionId en SuscripcionActiva).
+  suscripcionId: string
+  // Denormalizado desde esa entrada .grupoId al crear la solicitud —
+  // permite que /aceptar inscriba a todo el grupo sin releer la
+  // suscripción del alumno.
   grupoId?: string | null
   estado: 'pendiente' | 'aceptada' | 'rechazada' | 'cancelada'
   direccion: string   // casa/conjunto donde el profesor debe ir a dar la clase
@@ -109,12 +161,42 @@ export interface Usuario {
   dificultades?: string[]
   fecha_registro?: number
   estadisticas?: Estadisticas
+  // LEGACY — un solo plan activo, sobrescrito en cada aprobación. En
+  // transición hacia suscripcionesActivas (ver PLAN de refactor); se
+  // retira una vez completada la migración (Release 4).
   suscripcionActiva?: SuscripcionActiva | null
+  // Varios planes activos concurrentes, indexados por suscripcionId —
+  // ver helpers listaSuscripciones/suscripcionPersonal/etc. arriba.
+  suscripcionesActivas?: Record<string, SuscripcionActiva>
 }
 
 // Helper computado (no se guarda en Firestore)
 export function displayName(u: Pick<Usuario, 'nombres' | 'apellidos'>): string {
   return `${u.nombres} ${u.apellidos}`.trim()
+}
+
+// ── perfiles_publicos/{uid} ──────────────────────────────────
+// Subconjunto público de un profesor (usuarios/{uid}), sin PII — lectura
+// abierta (sin login) para el wizard de inscripción. Sincronizado
+// server-side al cambiar el rol, ver /api/admin/usuarios/[uid]/rol.
+export interface PerfilPublico {
+  uid: string
+  nombres: string
+  apellidos: string
+  rol: 'profesor'
+}
+
+// Subconjunto extendido de un profesor para pantallas YA autenticadas
+// (chat, selección de clase personalizada) que necesitan más que
+// PerfilPublico. Servido por GET /api/profesores/publico (Admin SDK):
+// las reglas de Firestore no dejan que un alumno lea usuarios/{uid} de
+// otro usuario directo. Nunca cédula/teléfono/email/EPS/dificultades.
+export interface ProfesorAutenticado {
+  uid: string
+  nombres: string
+  apellidos: string
+  foto_perfil?: string | null
+  disponibilidadPersonal?: FranjaDisponibilidad[]
 }
 
 // ── catalogo/{codigo} ────────────────────────────────────────
@@ -258,6 +340,12 @@ export interface Clase {
   nivel_requerimiento?: string
   cupo_maximo: number
   estudiantes_inscritos: string[]
+  // De cuál suscripcionesActivas[suscripcionId] del alumno se descontó
+  // su sesión al inscribirse (solo clases abiertas grupal/conjunto/
+  // vacaciones — las personalizadas no pasan por /inscribir) — permite
+  // que /cancelar reembolse exactamente esa misma entrada cuando el
+  // alumno tiene varios planes activos a la vez.
+  cargosSuscripcion?: Record<string, string>
   estado: 'programada' | 'en_curso' | 'finalizada' | 'cancelada'
   plan?: string[]
   observaciones_profesor?: string | null
@@ -438,4 +526,34 @@ export interface Sugerencia {
   leida: boolean
   respuesta?: string
   respondidaAt?: number
+}
+
+// ── notificaciones/{notificacionId} ─────
+// Avisos por acciones que afectan a otro usuario (no solo mensajes de
+// chat): plan aprobado/rechazado, comprobante subido, clase personalizada
+// solicitada/aceptada/rechazada/cancelada. `destinatarioId` apunta a un
+// usuario puntual; `paraRol` (solo 'admin' por ahora) es un aviso para
+// cualquier admin, ya que el estudiante que sube un comprobante no puede
+// saber los uid de los admins. Exactamente uno de los dos está presente.
+
+export type TipoNotificacion =
+  | 'plan_aprobado'
+  | 'plan_rechazado'
+  | 'comprobante_subido'
+  | 'clase_solicitada'
+  | 'clase_aceptada'
+  | 'clase_rechazada'
+  | 'clase_cancelada'
+
+export interface Notificacion {
+  id?: string
+  destinatarioId?: string | null
+  paraRol?: 'admin' | null
+  tipo: TipoNotificacion
+  titulo: string
+  mensaje: string
+  enlace?: string | null
+  actorId: string
+  leida: boolean
+  creadoEn: number
 }
