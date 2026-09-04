@@ -17,6 +17,7 @@ import { Card, Badge, Button, Spinner } from '@/components/ui'
 import { getFirebase } from '@/lib/firebase'
 import { SolicitudPersonalizada } from '@/components/dashboard/SolicitudPersonalizada'
 import { agruparPorCategoria, labelCategoria, proximaClase } from '@/lib/categoriaClase'
+import { listaSuscripciones, suscripcionesPorTipo } from '@/lib/types'
 import type { Clase } from '@/lib/types'
 
 const EASE = [0.22, 1, 0.36, 1] as const
@@ -91,8 +92,22 @@ export default function AsistenciaPage() {
   const [errorAccion, setErrorAccion] = useState<string | null>(null)
   const [categoriaAbierta, setCategoriaAbierta] = useState<string | null>(null)
 
-  const susc = user?.suscripcionActiva
-  const puedeInscribirse = !!susc && susc.estado === 'activa' && (susc.sesionesRestantes ?? 0) > 0
+  // El alumno puede tener varios planes activos a la vez (ej. natación
+  // personalizada + actividad física) — se listan todos en vez de "el
+  // plan". Las clases abiertas (grupal/conjunto/vacaciones) descuentan
+  // de cualquiera de esos con saldo (ver /api/clases/[id]/inscribir);
+  // los 'personal' se agendan aparte con SolicitudPersonalizada.
+  const planes = listaSuscripciones(user)
+  const tienePersonal = planes.some((s) => s.tipo === 'personal' && s.estado === 'activa')
+  const planesAbiertos = suscripcionesPorTipo(user, ['grupal', 'conjunto', 'vacaciones'])
+  const puedeInscribirse = planesAbiertos.some((s) => (s.sesionesRestantes ?? 0) > 0)
+  // Para el aviso "vencido/sin sesiones" cuando NO puede inscribirse —
+  // el más reciente de tipo abierto, vigente o no (planesAbiertos ya
+  // filtró a solo 'activa', así que una vencida no aparecería ahí).
+  const abiertoRelevante = planes.find((s) => s.tipo === 'grupal' || s.tipo === 'conjunto' || s.tipo === 'vacaciones')
+  // Mantiene compat con el resto del archivo (tarjeta "Plan activo" de
+  // más abajo, que ahora lista TODOS los planes en vez de uno solo).
+  const susc = planes[0] ?? user?.suscripcionActiva
 
   useEffect(() => {
     if (!user) return
@@ -349,25 +364,29 @@ export default function AsistenciaPage() {
           </Reveal>
         )}
 
-        {/* ── Suscripción activa ── */}
+        {/* ── Suscripción(es) activa(s) — puede tener varias a la vez ── */}
         <Reveal delay={0.06}>
-          {susc ? (
-            <Card padding="lg">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="label-caps text-[var(--color-on-surface-variant)]/60">Plan activo</h3>
-                <Badge variant={susc.estado === 'activa' ? 'success' : 'danger'}>
-                  {susc.estado === 'activa' ? 'Activo' : 'Vencido'}
-                </Badge>
-              </div>
-              <p className="font-display text-2xl font-black text-[var(--color-primary-fixed)] mb-1">{susc.nombrePlan}</p>
-              <div className="flex items-baseline gap-3 mt-4">
-                <span className="font-display text-display-lg font-black text-white leading-none">{susc.sesionesRestantes}</span>
-                <span className="label-caps text-[var(--color-on-surface-variant)]/50">sesiones restantes</span>
-              </div>
-              <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mt-3">
-                Vence: {new Date(susc.fechaVencimiento).toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })}
-              </p>
-            </Card>
+          {planes.length > 0 ? (
+            <div className="space-y-4">
+              {planes.map((p) => (
+                <Card key={p.suscripcionId} padding="lg">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="label-caps text-[var(--color-on-surface-variant)]/60">Plan activo</h3>
+                    <Badge variant={p.estado === 'activa' ? 'success' : 'danger'}>
+                      {p.estado === 'activa' ? 'Activo' : 'Vencido'}
+                    </Badge>
+                  </div>
+                  <p className="font-display text-2xl font-black text-[var(--color-primary-fixed)] mb-1">{p.nombrePlan}</p>
+                  <div className="flex items-baseline gap-3 mt-4">
+                    <span className="font-display text-display-lg font-black text-white leading-none">{p.sesionesRestantes}</span>
+                    <span className="label-caps text-[var(--color-on-surface-variant)]/50">sesiones restantes</span>
+                  </div>
+                  <p className="label-caps text-[10px] text-[var(--color-on-surface-variant)]/50 mt-3">
+                    Vence: {new Date(p.fechaVencimiento).toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric' })}
+                  </p>
+                </Card>
+              ))}
+            </div>
           ) : (
             <Card padding="lg">
               <div className="flex items-center gap-4">
@@ -468,24 +487,27 @@ export default function AsistenciaPage() {
           </div>
         </Reveal>
 
-        {/* ── Clases disponibles (grupal) / Clase personalizada ──
+        {/* ── Clase personalizada / Clases disponibles (grupal) ──
             Un plan 'personal' no navega un pool público de clases — el
-            horario se pacta con el profesor (ver SolicitudPersonalizada). */}
-        {susc?.tipo === 'personal' ? (
+            horario se pacta con el profesor (ver SolicitudPersonalizada).
+            Con varios planes a la vez (ej. natación personalizada + un
+            plan grupal), se muestran AMBAS secciones. */}
+        {tienePersonal && (
           <Reveal delay={0.22}>
             <SolicitudPersonalizada />
           </Reveal>
-        ) : (
+        )}
+        {(!tienePersonal || planesAbiertos.length > 0) && (
           <Reveal delay={0.22}>
             <div>
               <h3 className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight mb-5">
                 Clases disponibles
               </h3>
-              {!puedeInscribirse && susc && (
+              {!puedeInscribirse && abiertoRelevante && (
                 <div className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 mb-4 flex items-center gap-3">
                   <span className="material-symbols-outlined text-[var(--color-on-surface-variant)]/40 text-[18px]">info</span>
                   <p className="text-xs text-[var(--color-on-surface-variant)]/60">
-                    {susc.estado !== 'activa' ? 'Tu suscripción está vencida.' : 'No tienes sesiones disponibles.'}{' '}
+                    {abiertoRelevante.estado !== 'activa' ? 'Tu suscripción está vencida.' : 'No tienes sesiones disponibles.'}{' '}
                     Renueva tu plan para inscribirte en clases.
                   </p>
                 </div>
