@@ -81,7 +81,16 @@ const nextConfig = {
       {
         source: '/sw.js',
         headers: [
-          { key: 'Cache-Control', value: 'public, max-age=0, must-revalidate' },
+          // no-store, y no `max-age=0, must-revalidate`: los archivos de
+          // public/ se sirven con un ETag `W/"<tamaño>-<mtime>"` donde el
+          // mtime está fijado a 1980-01-01 por el build reproducible, así
+          // que el ETag depende SOLO del tamaño. Subir la VERSION del SW
+          // ('faros-v11' → 'faros-v12') no cambia la longitud del archivo:
+          // el ETag salía idéntico, el servidor respondía 304 y el
+          // navegador se quedaba con el worker viejo para siempre — el
+          // versionado nunca llegaba a invalidar nada. Sin almacenar la
+          // respuesta no hay petición condicional que pueda dar 304.
+          { key: 'Cache-Control', value: 'no-store' },
           { key: 'Service-Worker-Allowed', value: '/' },
         ],
       },

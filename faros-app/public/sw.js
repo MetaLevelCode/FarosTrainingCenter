@@ -7,8 +7,15 @@
 //   · Google Fonts ............... cache-first (fonts rarely change)
 //   · Firebase / APIs ............ never intercepted
 // Bump VERSION on every deploy that should invalidate caches.
+//
+// Ojo: este archivo se sirve con Cache-Control:no-store desde
+// next.config.mjs. No es opcional — los archivos de public/ llevan un
+// ETag `W/"<tamaño>-<mtime>"` con el mtime fijado por el build
+// reproducible, así que subir solo la VERSION (mismo número de
+// caracteres, mismo tamaño de archivo) daba un ETag idéntico: el
+// servidor respondía 304 y el navegador nunca veía el worker nuevo.
 // ============================================================
-const VERSION = 'faros-v12'
+const VERSION = 'faros-v13'
 const PRECACHE = `${VERSION}-precache`
 const RUNTIME = `${VERSION}-runtime`
 const MEDIA = `${VERSION}-media`
