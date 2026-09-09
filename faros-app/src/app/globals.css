@@ -117,6 +117,20 @@ a, button, [role='button'], input, textarea, select {
   touch-action: manipulation;
 }
 
+/* El popup de un <select> lo pinta el sistema operativo, no el CSS de la
+   página: hereda `color` (blanco) pero NO el fondo translúcido del control,
+   así que en Windows las opciones salían blancas sobre el blanco del OS y
+   solo se leía la resaltada. color-scheme le dice al navegador que use su
+   paleta oscura; la regla de `option` cubre los que la ignoran (Firefox). */
+select {
+  color-scheme: dark;
+}
+
+select option {
+  background-color: #111;
+  color: #f5f5f5;
+}
+
 /* iOS Safari hace zoom automático al enfocar un input con font-size
    menor a 16px — y en modo PWA (standalone) ese zoom a veces se queda
    "pegado" al cerrar el teclado, desarmando el layout. Forzamos 16px
