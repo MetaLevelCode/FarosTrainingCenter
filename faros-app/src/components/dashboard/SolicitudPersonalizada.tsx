@@ -5,8 +5,11 @@
 // Reemplaza la sección "Clases disponibles" grupal cuando el plan
 // activo del alumno es tipo 'personal': el alumno elige un profesor y
 // N franjas de las que declaró (N = frecuencia semanal del plan — 1x/
-// 2x/3x), todas en días distintos, y manda la solicitud. El profesor la
-// acepta/rechaza desde /portal (ver SolicitudesPendientes).
+// 2x/3x) y manda la solicitud. Las N sesiones NO tienen que caer en días
+// distintos: un caso real y común es el mismo día en horas seguidas (ej.
+// viernes 2pm y 3pm). Lo único que no se puede repetir es el horario
+// exacto (día + hora). El profesor la acepta/rechaza desde /portal (ver
+// SolicitudesPendientes).
 // ============================================================
 
 import { useEffect, useMemo, useState } from 'react'
@@ -22,7 +25,7 @@ import type { FranjaDisponibilidad, SolicitudPersonalizada as Solicitud } from '
 
 const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 
-type Profesor = { uid: string; nombre: string; franjas: FranjaDisponibilidad[]; diasDistintos: number }
+type Profesor = { uid: string; nombre: string; franjas: FranjaDisponibilidad[]; slotsTotales: number }
 // Una fila = una de las N franjas semanales que exige el plan.
 // franjaIdx referencia una posición en profesor.franjas (-1 = sin elegir).
 type FilaSlot = { franjaIdx: number; slot: string }
@@ -54,35 +57,79 @@ async function cargarOcupados(profesorId: string): Promise<Set<string>> {
   return ocupados
 }
 
-function slotsLibres(franja: FranjaDisponibilidad, ocupados: Set<string>): string[] {
-  return slotsDisponibles(franja.horaInicio, franja.horaFin)
-    .filter((s) => !ocupados.has(`${franja.dow}:${s}`))
+/** Cuántas clases de 60 min caben en todo lo que declaró el profesor. */
+function contarSlots(franjas: FranjaDisponibilidad[]): number {
+  return franjas.reduce((n, f) => n + slotsDisponibles(f.horaInicio, f.horaFin).length, 0)
 }
 
-/** Arma las N filas iniciales: una franja por día distinto, con la primera hora libre. */
+/**
+ * Horas de inicio elegibles dentro de una franja: se descartan las que ya
+ * tiene ocupadas una Clase real (`ocupados`) y las que ya eligió OTRA
+ * sesión de esta misma solicitud (`tomados`) — dos sesiones pueden caer el
+ * mismo día, pero no a la misma hora.
+ */
+function slotsLibres(
+  franja: FranjaDisponibilidad, ocupados: Set<string>, tomados: Set<string> = new Set(),
+): string[] {
+  return slotsDisponibles(franja.horaInicio, franja.horaFin)
+    .filter((s) => !ocupados.has(`${franja.dow}:${s}`) && !tomados.has(`${franja.dow}:${s}`))
+}
+
+/** `${dow}:${hora}` que ya reservaron las demás sesiones (excluye la fila actual). */
+function slotsTomadosPorOtras(profesor: Profesor, filas: FilaSlot[], filaIdx: number): Set<string> {
+  const tomados = new Set<string>()
+  filas.forEach((fl, i) => {
+    if (i === filaIdx || fl.franjaIdx < 0 || !fl.slot) return
+    const f = profesor.franjas[fl.franjaIdx]
+    if (f) tomados.add(`${f.dow}:${fl.slot}`)
+  })
+  return tomados
+}
+
+/**
+ * Arma las N filas iniciales. Primero intenta repartir en días distintos
+ * (default más natural para un plan de 2x/3x); si al profesor no le
+ * alcanzan los días, cae a otra hora del mismo día en vez de dejar la
+ * sesión vacía — que era lo que bloqueaba el caso "viernes 2pm y 3pm".
+ */
 function inicializarFilas(profesor: Profesor, ocupados: Set<string>, n: number): FilaSlot[] {
+  const usados = new Set<string>()
   const diasUsados = new Set<number>()
   const filas: FilaSlot[] = []
+
   for (let i = 0; i < n; i++) {
-    const idx = profesor.franjas.findIndex((f) => !diasUsados.has(f.dow))
-    if (idx === -1) { filas.push({ franjaIdx: -1, slot: '' }); continue }
-    diasUsados.add(profesor.franjas[idx].dow)
-    filas.push({ franjaIdx: idx, slot: slotsLibres(profesor.franjas[idx], ocupados)[0] ?? '' })
+    let elegido: { idx: number; slot: string } | null = null
+    for (const soloDiaNuevo of [true, false]) {
+      for (let idx = 0; idx < profesor.franjas.length && !elegido; idx++) {
+        const f = profesor.franjas[idx]
+        if (soloDiaNuevo && diasUsados.has(f.dow)) continue
+        const slot = slotsLibres(f, ocupados, usados)[0]
+        if (slot) elegido = { idx, slot }
+      }
+      if (elegido) break
+    }
+    if (!elegido) { filas.push({ franjaIdx: -1, slot: '' }); continue }
+    const f = profesor.franjas[elegido.idx]
+    usados.add(`${f.dow}:${elegido.slot}`)
+    diasUsados.add(f.dow)
+    filas.push({ franjaIdx: elegido.idx, slot: elegido.slot })
   }
   return filas
 }
 
-/** Franjas del profesor elegibles para esta fila — sin repetir el día de otra fila. */
-function opcionesFranjaPara(profesor: Profesor, filas: FilaSlot[], filaIdx: number) {
-  const diasOtras = new Set(
-    filas
-      .filter((_, i) => i !== filaIdx)
-      .map((fl) => (fl.franjaIdx >= 0 ? profesor.franjas[fl.franjaIdx]?.dow : null))
-      .filter((d): d is number => d != null),
-  )
+/**
+ * Franjas elegibles para esta fila: todas las que todavía tengan alguna
+ * hora libre. Ya NO se excluyen las del mismo día de otra sesión — la
+ * franja que esta fila tiene elegida siempre sobrevive, porque su propio
+ * slot no cuenta como tomado.
+ */
+function opcionesFranjaPara(
+  profesor: Profesor, filas: FilaSlot[], filaIdx: number, ocupados: Set<string>,
+) {
+  const tomados = slotsTomadosPorOtras(profesor, filas, filaIdx)
   return profesor.franjas
     .map((f, i) => ({ f, i }))
-    .filter(({ f }) => !diasOtras.has(f.dow))
+    .filter(({ f }) => slotsLibres(f, ocupados, tomados).length > 0)
 }
 
 export function SolicitudPersonalizada() {
@@ -171,7 +218,7 @@ export function SolicitudPersonalizada() {
               uid: u.uid,
               nombre: `${u.nombres ?? ''} ${u.apellidos ?? ''}`.trim(),
               franjas,
-              diasDistintos: new Set(franjas.map((f) => f.dow)).size,
+              slotsTotales: contarSlots(franjas),
             }
           })
           // Se listan todos los que declararon algo — incluso los que no
@@ -180,7 +227,7 @@ export function SolicitudPersonalizada() {
           // silencio (ver opción deshabilitada más abajo).
           .filter((p) => p.franjas.length > 0)
         setProfesores(lista)
-        const primerValido = lista.find((p) => p.diasDistintos >= franjasRequeridas)
+        const primerValido = lista.find((p) => p.slotsTotales >= franjasRequeridas)
         if (primerValido) await elegirProfesor(primerValido.uid, lista)
       }
     } catch (err) {
@@ -256,8 +303,16 @@ export function SolicitudPersonalizada() {
   }
 
   const profesorActual = profesores.find((p) => p.uid === profesorSel)
+  // Dos sesiones pueden caer el mismo día, pero no a la misma hora — el
+  // servidor rechaza horarios repetidos, así que se valida acá también.
+  const horariosElegidos = profesorActual
+    ? filas
+      .filter((fl) => fl.franjaIdx >= 0 && fl.slot)
+      .map((fl) => `${profesorActual.franjas[fl.franjaIdx]?.dow}:${fl.slot}`)
+    : []
   const puedeEnviar = filas.length === franjasRequeridas
     && filas.every((fl) => fl.franjaIdx >= 0 && fl.slot)
+    && new Set(horariosElegidos).size === franjasRequeridas
     && !!direccion.trim()
 
   return (
@@ -350,11 +405,11 @@ export function SolicitudPersonalizada() {
               >
                 {!profesorActual && <option value="" disabled hidden>Selecciona un profesor</option>}
                 {profesores.map((p) => {
-                  const insuficiente = p.diasDistintos < franjasRequeridas
+                  const insuficiente = p.slotsTotales < franjasRequeridas
                   return (
                     <option key={p.uid} value={p.uid} disabled={insuficiente}>
                       {p.nombre}
-                      {insuficiente ? ` — cubre ${p.diasDistintos} de ${franjasRequeridas} días` : ''}
+                      {insuficiente ? ` — No disponible (${p.slotsTotales} de ${franjasRequeridas} horarios)` : ''}
                     </option>
                   )
                 })}
@@ -363,22 +418,26 @@ export function SolicitudPersonalizada() {
 
             {!profesorActual ? (
               <p className="text-xs text-[var(--color-on-surface-variant)]/50">
-                Ningún profesor alcanza a cubrir los {franjasRequeridas} días distintos que requiere tu plan
-                (tu plan es {franjasRequeridas} {franjasRequeridas === 1 ? 'vez' : 'veces'} por semana) — los que
-                aparecen arriba en gris no tienen suficientes días declarados. Consulta con la administración.
+                Ningún profesor tiene {franjasRequeridas} horarios declarados para tu plan
+                ({franjasRequeridas} {franjasRequeridas === 1 ? 'vez' : 'veces'} por semana) — los que aparecen
+                arriba en gris no alcanzan. Consulta con la administración.
               </p>
             ) : (
               <>
                 {franjasRequeridas > 1 && (
                   <p className="text-xs text-[var(--color-on-surface-variant)]/50">
-                    Tu plan es {franjasRequeridas} veces por semana — elige {franjasRequeridas} días distintos.
+                    Tu plan es {franjasRequeridas} veces por semana — elige {franjasRequeridas} horarios.
+                    Pueden ser el mismo día a horas distintas.
                   </p>
                 )}
 
                 {filas.map((fila, filaIdx) => {
-                  const opciones = profesorActual ? opcionesFranjaPara(profesorActual, filas, filaIdx) : []
+                  const tomados = profesorActual
+                    ? slotsTomadosPorOtras(profesorActual, filas, filaIdx) : new Set<string>()
+                  const opciones = profesorActual
+                    ? opcionesFranjaPara(profesorActual, filas, filaIdx, ocupados) : []
                   const franjaActual = fila.franjaIdx >= 0 ? profesorActual?.franjas[fila.franjaIdx] : undefined
-                  const slots = franjaActual ? slotsLibres(franjaActual, ocupados) : []
+                  const slots = franjaActual ? slotsLibres(franjaActual, ocupados, tomados) : []
 
                   return (
                     <div key={filaIdx} className="p-3 rounded-2xl border border-white/5 bg-white/[0.02] space-y-3">
@@ -389,7 +448,7 @@ export function SolicitudPersonalizada() {
                         <label className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">Día</label>
                         {opciones.length === 0 ? (
                           <p className="text-xs text-[var(--color-on-surface-variant)]/50">
-                            No quedan días disponibles de este profesor.
+                            No quedan horarios disponibles de este profesor.
                           </p>
                         ) : (
                           <select
@@ -398,7 +457,7 @@ export function SolicitudPersonalizada() {
                               const i = Number(e.target.value)
                               const f = profesorActual?.franjas[i]
                               setFilas((prev) => prev.map((fl, idx) => idx === filaIdx
-                                ? { franjaIdx: i, slot: f ? (slotsLibres(f, ocupados)[0] ?? '') : '' }
+                                ? { franjaIdx: i, slot: f ? (slotsLibres(f, ocupados, tomados)[0] ?? '') : '' }
                                 : fl))
                             }}
                             className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white"

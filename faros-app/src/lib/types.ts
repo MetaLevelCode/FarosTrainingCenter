@@ -102,7 +102,8 @@ export interface SolicitudPersonalizada {
   nombreAlumno: string   // denormalizado al crear — evita N+1 reads en la bandeja del profesor
   profesorId: string
   // N franjas semanales (N = suscripcionActiva.week del alumno al pedir) —
-  // todas con el mismo profesor, en días distintos. Ver lib/recurrencia.ts.
+  // todas con el mismo profesor. Pueden repetir día si la hora cambia
+  // (ej. viernes 2-3pm y 3-4pm). Ver lib/recurrencia.ts.
   franjas: FranjaDisponibilidad[]
   personas: number
   // De cuál de las (potencialmente varias) entradas tipo:'personal' del
@@ -426,7 +427,11 @@ export interface Grupo {
   sedeCodigo: string
   horarios: string[]     // ["Lun · 6:00 PM", "Mié · 6:00 PM"]
   nivel: string
+  // Nombre visible (desnormalizado desde usuarios/{coachId} al asignar).
   coach?: string
+  // uid real del profesor asignado — fuente de verdad para sincronizar
+  // `clases/{claseId}.instructor_id` cuando se reasigna el coach del grupo.
+  coachId?: string
   cupoMaximo: number
   disponible: boolean
   // Ausente = 'grupal' (compatibilidad con docs creados antes de Conjuntos).

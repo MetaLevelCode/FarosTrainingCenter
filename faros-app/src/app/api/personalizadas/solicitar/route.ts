@@ -2,7 +2,8 @@
 // POST /api/personalizadas/solicitar
 // Alumno con plan personal activo solicita N franjas (N = la frecuencia
 // semanal de su plan: 1x/2x/3x) de las que el profesor declaró en su
-// disponibilidad, todas con el mismo profesor y en días distintos. Queda
+// disponibilidad, todas con el mismo profesor. Pueden caer el mismo día
+// en horas distintas (ej. viernes 2-3pm y 3-4pm) mientras no se pisen. Queda
 // 'pendiente' hasta que el profesor la acepte o rechace (ver ./[id]/aceptar,
 // ./[id]/rechazar).
 // Body: { profesorId, franjas: [{ dow, horaInicio, horaFin }, ...], direccion,
@@ -74,8 +75,22 @@ export async function POST(req: NextRequest) {
       || !franjas.every(franjaValida)) {
       return NextResponse.json({ error: 'Datos de la solicitud inválidos' }, { status: 400 })
     }
-    if (new Set(franjas.map((f) => f.dow)).size !== franjas.length) {
-      return NextResponse.json({ error: 'Elige días distintos para cada franja' }, { status: 400 })
+    // Las sesiones NO tienen que ser en días distintos — un caso real y
+    // común es el mismo día en horas seguidas (ej. viernes 2-3pm y 3-4pm).
+    // Lo que no se puede es repetir el horario exacto…
+    const claves = franjas.map((f) => `${f.dow}:${f.horaInicio}`)
+    if (new Set(claves).size !== claves.length) {
+      return NextResponse.json({ error: 'No puedes elegir el mismo día y hora en dos sesiones' }, { status: 400 })
+    }
+    // …ni pedir dos sesiones del mismo día que se pisen entre sí (las horas
+    // de inicio pueden ser distintas y aun así solaparse: 14:00 y 14:30).
+    for (let i = 0; i < franjas.length; i++) {
+      for (let j = i + 1; j < franjas.length; j++) {
+        const a = franjas[i], b = franjas[j]
+        if (a.dow === b.dow && haySolape(a.horaInicio!, a.horaFin!, b.horaInicio!, b.horaFin!)) {
+          return NextResponse.json({ error: 'Dos de tus sesiones se solapan en el mismo día' }, { status: 400 })
+        }
+      }
     }
 
     // La clase personalizada ocurre en la casa/conjunto del alumno, no en
