@@ -22,7 +22,7 @@ import type { FranjaDisponibilidad, SolicitudPersonalizada as Solicitud } from '
 
 const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
 
-type Profesor = { uid: string; nombre: string; franjas: FranjaDisponibilidad[] }
+type Profesor = { uid: string; nombre: string; franjas: FranjaDisponibilidad[]; diasDistintos: number }
 // Una fila = una de las N franjas semanales que exige el plan.
 // franjaIdx referencia una posición en profesor.franjas (-1 = sin elegir).
 type FilaSlot = { franjaIdx: number; slot: string }
@@ -165,16 +165,23 @@ export function SolicitudPersonalizada() {
         const data = await res.json().catch(() => ({}))
         const profs = (data.profesores ?? []) as { uid: string; nombres: string; apellidos: string; disponibilidadPersonal?: FranjaDisponibilidad[] }[]
         const lista = profs
-          .map((u) => ({
-            uid: u.uid,
-            nombre: `${u.nombres ?? ''} ${u.apellidos ?? ''}`.trim(),
-            franjas: (u.disponibilidadPersonal ?? []) as FranjaDisponibilidad[],
-          }))
-          // Necesita al menos `franjasRequeridas` días distintos declarados
-          // — si no, no alcanza a cubrir la frecuencia semanal del plan.
-          .filter((p) => new Set(p.franjas.map((f) => f.dow)).size >= franjasRequeridas)
+          .map((u) => {
+            const franjas = (u.disponibilidadPersonal ?? []) as FranjaDisponibilidad[]
+            return {
+              uid: u.uid,
+              nombre: `${u.nombres ?? ''} ${u.apellidos ?? ''}`.trim(),
+              franjas,
+              diasDistintos: new Set(franjas.map((f) => f.dow)).size,
+            }
+          })
+          // Se listan todos los que declararon algo — incluso los que no
+          // alcanzan a cubrir la frecuencia semanal del plan, para que quede
+          // claro POR QUÉ no se pueden elegir en vez de desaparecer en
+          // silencio (ver opción deshabilitada más abajo).
+          .filter((p) => p.franjas.length > 0)
         setProfesores(lista)
-        if (lista[0]) await elegirProfesor(lista[0].uid, lista)
+        const primerValido = lista.find((p) => p.diasDistintos >= franjasRequeridas)
+        if (primerValido) await elegirProfesor(primerValido.uid, lista)
       }
     } catch (err) {
       console.error(err)
@@ -328,9 +335,7 @@ export function SolicitudPersonalizada() {
       ) : profesores.length === 0 ? (
         <Card>
           <p className="text-sm text-[var(--color-on-surface-variant)]/60">
-            {franjasRequeridas > 1
-              ? `Ningún profesor tiene disponibilidad declarada en ${franjasRequeridas} días distintos (tu plan es ${franjasRequeridas} veces por semana). Consulta con la administración.`
-              : 'Ningún profesor tiene franjas disponibles todavía. Consulta con la administración.'}
+            Ningún profesor tiene franjas disponibles todavía. Consulta con la administración.
           </p>
         </Card>
       ) : (
@@ -343,93 +348,112 @@ export function SolicitudPersonalizada() {
                 onChange={(e) => elegirProfesor(e.target.value, profesores)}
                 className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white"
               >
-                {profesores.map((p) => <option key={p.uid} value={p.uid}>{p.nombre}</option>)}
+                {!profesorActual && <option value="" disabled hidden>Selecciona un profesor</option>}
+                {profesores.map((p) => {
+                  const insuficiente = p.diasDistintos < franjasRequeridas
+                  return (
+                    <option key={p.uid} value={p.uid} disabled={insuficiente}>
+                      {p.nombre}
+                      {insuficiente ? ` — cubre ${p.diasDistintos} de ${franjasRequeridas} días` : ''}
+                    </option>
+                  )
+                })}
               </select>
             </div>
 
-            {franjasRequeridas > 1 && (
+            {!profesorActual ? (
               <p className="text-xs text-[var(--color-on-surface-variant)]/50">
-                Tu plan es {franjasRequeridas} veces por semana — elige {franjasRequeridas} días distintos.
+                Ningún profesor alcanza a cubrir los {franjasRequeridas} días distintos que requiere tu plan
+                (tu plan es {franjasRequeridas} {franjasRequeridas === 1 ? 'vez' : 'veces'} por semana) — los que
+                aparecen arriba en gris no tienen suficientes días declarados. Consulta con la administración.
               </p>
-            )}
+            ) : (
+              <>
+                {franjasRequeridas > 1 && (
+                  <p className="text-xs text-[var(--color-on-surface-variant)]/50">
+                    Tu plan es {franjasRequeridas} veces por semana — elige {franjasRequeridas} días distintos.
+                  </p>
+                )}
 
-            {filas.map((fila, filaIdx) => {
-              const opciones = profesorActual ? opcionesFranjaPara(profesorActual, filas, filaIdx) : []
-              const franjaActual = fila.franjaIdx >= 0 ? profesorActual?.franjas[fila.franjaIdx] : undefined
-              const slots = franjaActual ? slotsLibres(franjaActual, ocupados) : []
+                {filas.map((fila, filaIdx) => {
+                  const opciones = profesorActual ? opcionesFranjaPara(profesorActual, filas, filaIdx) : []
+                  const franjaActual = fila.franjaIdx >= 0 ? profesorActual?.franjas[fila.franjaIdx] : undefined
+                  const slots = franjaActual ? slotsLibres(franjaActual, ocupados) : []
 
-              return (
-                <div key={filaIdx} className="p-3 rounded-2xl border border-white/5 bg-white/[0.02] space-y-3">
-                  {franjasRequeridas > 1 && (
-                    <p className="label-caps text-[9px] text-[var(--color-primary-fixed)]">Sesión {filaIdx + 1}</p>
-                  )}
-                  <div className="flex flex-col gap-1.5">
-                    <label className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">Día</label>
-                    {opciones.length === 0 ? (
-                      <p className="text-xs text-[var(--color-on-surface-variant)]/50">
-                        No quedan días disponibles de este profesor.
-                      </p>
-                    ) : (
-                      <select
-                        value={fila.franjaIdx}
-                        onChange={(e) => {
-                          const i = Number(e.target.value)
-                          const f = profesorActual?.franjas[i]
-                          setFilas((prev) => prev.map((fl, idx) => idx === filaIdx
-                            ? { franjaIdx: i, slot: f ? (slotsLibres(f, ocupados)[0] ?? '') : '' }
-                            : fl))
-                        }}
-                        className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white"
-                      >
-                        {opciones.map(({ f, i }) => (
-                          <option key={i} value={i}>{DIAS[f.dow]} · {f.horaInicio} – {f.horaFin}</option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <label className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">Hora</label>
-                    {slots.length === 0 ? (
-                      <p className="text-xs text-[var(--color-on-surface-variant)]/50">
-                        Este profesor no tiene horarios de {DURACION_PERSONALIZADA_MIN} min disponibles en esta franja.
-                      </p>
-                    ) : (
-                      <select
-                        value={fila.slot}
-                        onChange={(e) => {
-                          const slot = e.target.value
-                          setFilas((prev) => prev.map((fl, idx) => idx === filaIdx ? { ...fl, slot } : fl))
-                        }}
-                        className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white"
-                      >
-                        {slots.map((s) => (
-                          <option key={s} value={s}>{s} – {sumarMinutos(s, DURACION_PERSONALIZADA_MIN)}</option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
+                  return (
+                    <div key={filaIdx} className="p-3 rounded-2xl border border-white/5 bg-white/[0.02] space-y-3">
+                      {franjasRequeridas > 1 && (
+                        <p className="label-caps text-[9px] text-[var(--color-primary-fixed)]">Sesión {filaIdx + 1}</p>
+                      )}
+                      <div className="flex flex-col gap-1.5">
+                        <label className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">Día</label>
+                        {opciones.length === 0 ? (
+                          <p className="text-xs text-[var(--color-on-surface-variant)]/50">
+                            No quedan días disponibles de este profesor.
+                          </p>
+                        ) : (
+                          <select
+                            value={fila.franjaIdx}
+                            onChange={(e) => {
+                              const i = Number(e.target.value)
+                              const f = profesorActual?.franjas[i]
+                              setFilas((prev) => prev.map((fl, idx) => idx === filaIdx
+                                ? { franjaIdx: i, slot: f ? (slotsLibres(f, ocupados)[0] ?? '') : '' }
+                                : fl))
+                            }}
+                            className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white"
+                          >
+                            {opciones.map(({ f, i }) => (
+                              <option key={i} value={i}>{DIAS[f.dow]} · {f.horaInicio} – {f.horaFin}</option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">Hora</label>
+                        {slots.length === 0 ? (
+                          <p className="text-xs text-[var(--color-on-surface-variant)]/50">
+                            Este profesor no tiene horarios de {DURACION_PERSONALIZADA_MIN} min disponibles en esta franja.
+                          </p>
+                        ) : (
+                          <select
+                            value={fila.slot}
+                            onChange={(e) => {
+                              const slot = e.target.value
+                              setFilas((prev) => prev.map((fl, idx) => idx === filaIdx ? { ...fl, slot } : fl))
+                            }}
+                            className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white"
+                          >
+                            {slots.map((s) => (
+                              <option key={s} value={s}>{s} – {sumarMinutos(s, DURACION_PERSONALIZADA_MIN)}</option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })}
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">
+                    Dirección donde será la clase
+                  </label>
+                  <input
+                    value={direccion}
+                    onChange={(e) => setDireccion(e.target.value)}
+                    placeholder="Casa, conjunto, torre/apto, punto de referencia…"
+                    maxLength={300}
+                    className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder:text-white/30"
+                  />
+                  <p className="text-[11px] text-[var(--color-on-surface-variant)]/40">
+                    El profesor va a tu casa o conjunto — necesita saber dónde llegar.
+                  </p>
                 </div>
-              )
-            })}
-
-            <div className="flex flex-col gap-1.5">
-              <label className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50">
-                Dirección donde será la clase
-              </label>
-              <input
-                value={direccion}
-                onChange={(e) => setDireccion(e.target.value)}
-                placeholder="Casa, conjunto, torre/apto, punto de referencia…"
-                maxLength={300}
-                className="bg-white/5 border border-white/10 rounded-xl px-3 py-2.5 text-sm text-white placeholder:text-white/30"
-              />
-              <p className="text-[11px] text-[var(--color-on-surface-variant)]/40">
-                El profesor va a tu casa o conjunto — necesita saber dónde llegar.
-              </p>
-            </div>
-            <Button fullWidth loading={enviando} disabled={!puedeEnviar} onClick={solicitar}>
-              Solicitar {franjasRequeridas > 1 ? 'estos horarios' : 'este horario'}
-            </Button>
+                <Button fullWidth loading={enviando} disabled={!puedeEnviar} onClick={solicitar}>
+                  Solicitar {franjasRequeridas > 1 ? 'estos horarios' : 'este horario'}
+                </Button>
+              </>
+            )}
           </div>
         </Card>
       )}
