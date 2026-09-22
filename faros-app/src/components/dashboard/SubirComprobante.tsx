@@ -94,8 +94,8 @@ export function SubirComprobante({ transaccionId, uid, nombreUsuario, onSubido }
           <h3 className="text-sm font-semibold text-white">Realiza tu transferencia a:</h3>
         </div>
         <div className="space-y-2 text-sm text-[var(--color-on-surface-variant)]">
-          <p><strong className="text-white">Bancolombia (Ahorros):</strong> 000-000000-00</p>
-          <p><strong className="text-white">Nequi:</strong> 300 000 0000</p>
+          <p><strong className="text-white">Bancolombia (Ahorros):</strong> 85100070141</p>
+          <p><strong className="text-white">Llave de bre-B:</strong> @juanh511</p>
           <p className="text-xs opacity-70 mt-2">Titular: Faros Training Center</p>
         </div>
       </div>
