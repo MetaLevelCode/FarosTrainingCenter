@@ -6,7 +6,7 @@
 // guardadas en Firestore.
 // ============================================================
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
@@ -23,10 +23,16 @@ import { MensajesPreview } from '@/components/dashboard/MensajesPreview'
 import { RachaFaro } from '@/components/dashboard/RachaFaro'
 import { faseDeSuscripcion, cuposDisponibles, parseVencimiento } from '@/lib/matricula'
 import { calcularRacha } from '@/lib/racha'
-import { dowColombia } from '@/lib/recurrencia'
+import { dowColombia, fechaIsoColombia, inicioDiaColombia } from '@/lib/recurrencia'
 import { listaSuscripciones } from '@/lib/types'
 
 const EASE = [0.22, 1, 0.36, 1] as const
+
+// Cuántos días hacia atrás se conservan en el selector del plan de clase.
+// El alumno pidió poder releer el plan de sesiones que ya pasaron (para
+// repetirlas por su cuenta), pero sin que el selector crezca sin límite.
+const VENTANA_PASADO_DIAS = 21
+const DIA_MS = 24 * 60 * 60 * 1000
 
 function Reveal({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) {
   return (
@@ -74,8 +80,16 @@ export default function DashboardPage() {
   const [companeros, setCompaneros] = useState<Companero[]>([])
   const [txPendiente, setTxPendiente] = useState<Transaccion | null>(null)
   const [txCargada, setTxCargada] = useState(false)
-  const [claseHoy, setClaseHoy] = useState<Clase | null>(null)
-  const [claseHoyCargada, setClaseHoyCargada] = useState(false)
+  // Agenda del alumno: últimas 3 semanas + todo lo que viene. Antes solo
+  // se guardaba la clase de HOY, así que ni el plan que el profesor ya
+  // había publicado para los días siguientes ni el de las sesiones ya
+  // dictadas eran visibles para el alumno (reportado en QA).
+  const [agenda, setAgenda] = useState<Clase[]>([])
+  const [agendaCargada, setAgendaCargada] = useState(false)
+  // Día elegido en el selector del plan de clase (yyyy-MM-dd, hora Colombia).
+  const [diaSel, setDiaSel] = useState<string | null>(null)
+  // Clase elegida dentro del día, cuando ese día tiene más de una.
+  const [claseSelId, setClaseSelId] = useState<string | null>(null)
   // Cada día puede tener su propia hora (plan personal 2x/3x por semana con
   // franjas distintas por día) — antes se guardaba una sola hora global y se
   // mostraba igual bajo TODOS los días marcados, aunque las franjas reales
@@ -94,6 +108,59 @@ export default function DashboardPage() {
   // tasaAsistencia se guarda como fracción (0-1) — a porcentaje para mostrar.
   const tasa = Math.round((user?.estadisticas?.tasaAsistencia ?? 0) * 100)
   const asistidas = user?.estadisticas?.clasesAsistidas ?? 0
+
+  // ── Plan de clase por día ──────────────────────────────────
+  // La agenda se agrupa por día calendario (hora Colombia) para que el
+  // alumno pueda moverse entre TODOS los días con clase —los que ya pasaron
+  // y los que vienen— y leer el plan que su profesor publicó, no solo el de
+  // hoy. Los pasados quedan a la izquierda del día activo.
+  const diasConClase = useMemo(() => {
+    const porDia = new Map<string, Clase[]>()
+    for (const c of agenda) {
+      const iso = fechaIsoColombia(c.fecha_hora_inicio)
+      const previas = porDia.get(iso)
+      if (previas) previas.push(c)
+      else porDia.set(iso, [c])
+    }
+    const hoyIso = fechaIsoColombia(Date.now())
+    return [...porDia.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([iso, clases]) => {
+        const [anio, mes, dia] = iso.split('-').map(Number)
+        const fecha = new Date(anio, mes - 1, dia)
+        const sinPunto = (t: string) => t.replace('.', '')
+        return {
+          iso,
+          clases,
+          esHoy: iso === hoyIso,
+          // Comparación de strings ISO (yyyy-MM-dd), no de Date: evita que
+          // la zona horaria del navegador corra el día de un lado a otro.
+          esPasado: iso < hoyIso,
+          diaCorto: sinPunto(fecha.toLocaleDateString('es-CO', { weekday: 'short' })),
+          numero: String(dia).padStart(2, '0'),
+          mesCorto: sinPunto(fecha.toLocaleDateString('es-CO', { month: 'short' })),
+          largo: fecha.toLocaleDateString('es-CO', { weekday: 'long', day: '2-digit', month: 'long' }),
+        }
+      })
+  }, [agenda])
+
+  // Fallback mientras el listener aún no fija `diaSel`: el primer día que
+  // no es pasado (hoy o el próximo); si ya no quedan, el último dictado.
+  const diaPorDefecto =
+    diasConClase.find((d) => !d.esPasado)?.iso ?? diasConClase[diasConClase.length - 1]?.iso ?? null
+  const diaActivo = diaSel ?? diaPorDefecto
+  const infoDiaActivo = diasConClase.find((d) => d.iso === diaActivo) ?? null
+  const clasesDelDia = infoDiaActivo?.clases ?? []
+  const claseSel = clasesDelDia.find((c) => c.id === claseSelId) ?? clasesDelDia[0] ?? null
+
+  // El selector abre con días pasados a la izquierda, así que el día activo
+  // puede quedar fuera de la vista al cargar — se trae al centro.
+  const tabsRef = useRef<HTMLDivElement | null>(null)
+  useEffect(() => {
+    if (!diaActivo) return
+    const tab = tabsRef.current?.querySelector<HTMLElement>(`[data-dia="${diaActivo}"]`)
+    tab?.scrollIntoView({ block: 'nearest', inline: 'center' })
+  }, [diaActivo])
 
   // Fase del ciclo de matrícula, derivada de la suscripción + transacción pendiente.
   // Solo se calcula cuando la tx ya fue consultada (txCargada) para evitar
@@ -117,9 +184,10 @@ export default function DashboardPage() {
 
   // "Clase del Día" (protocolo de sesión, notas del coach) vivía 100%
   // hardcodeada, sin ninguna relación con las clases reales del alumno
-  // (reportado en QA manual) — se busca su clase inscrita de hoy y se
+  // (reportado en QA manual) — se buscan sus clases inscritas y se
   // muestra el plan real que subió el profesor (o el aviso de que aún
-  // no lo sube), en vez de datos de ejemplo.
+  // no lo sube), en vez de datos de ejemplo. Se incluyen las 'finalizada'
+  // para que el plan de una sesión ya dictada siga siendo consultable.
   useEffect(() => {
     if (!user?.uid) return
     let unsub = () => {}
@@ -134,18 +202,33 @@ export default function DashboardPage() {
           query(
             collection(db, 'clases'),
             where('estudiantes_inscritos', 'array-contains', user.uid),
-            where('estado', 'in', ['programada', 'en_curso']),
+            where('estado', 'in', ['programada', 'en_curso', 'finalizada']),
           ),
           (snap) => {
             const todas = snap.docs
               .map((d) => ({ id: d.id, ...d.data() }) as Clase)
               .sort((a, b) => a.fecha_hora_inicio - b.fecha_hora_inicio)
 
-            const hoy = new Date()
-            const inicioDia = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()).getTime()
-            const finDia = inicioDia + 24 * 60 * 60 * 1000
-            const deHoy = todas.filter((c) => c.fecha_hora_inicio >= inicioDia && c.fecha_hora_inicio < finDia)
-            setClaseHoy(deHoy[0] ?? null)
+            const inicioHoy = inicioDiaColombia(Date.now())
+            const desde = inicioHoy - VENTANA_PASADO_DIAS * DIA_MS
+            const enVentana = todas.filter((c) => c.fecha_hora_inicio >= desde)
+            setAgenda(enVentana)
+            // Día inicial: hoy si hay clase hoy; si no, la próxima; y si ya
+            // no viene ninguna, la última que tuvo (así el alumno siempre cae
+            // parado en algo, aunque su plan esté vencido).
+            // `prev ?? ...` para no pisar el día que el alumno ya eligió
+            // cuando el listener vuelve a emitir.
+            const hoyIso = fechaIsoColombia(Date.now())
+            const proxima = enVentana.find((c) => c.fecha_hora_inicio >= inicioHoy)
+            const ultima = enVentana[enVentana.length - 1]
+            const inicial = enVentana.some((c) => fechaIsoColombia(c.fecha_hora_inicio) === hoyIso)
+              ? hoyIso
+              : proxima
+                ? fechaIsoColombia(proxima.fecha_hora_inicio)
+                : ultima
+                  ? fechaIsoColombia(ultima.fecha_hora_inicio)
+                  : null
+            if (inicial) setDiaSel((prev) => prev ?? inicial)
 
             // "Tu semana" (Semanario) se deriva de las clases reales en las
             // que el alumno ya está inscrito (el plan del wizard solo guarda
@@ -165,16 +248,16 @@ export default function DashboardPage() {
               }
             }
             setDiasSemana([...porDia.entries()].map(([dow, hora]) => ({ dow, hora })))
-            setClaseHoyCargada(true)
+            setAgendaCargada(true)
           },
           (err) => {
             console.error(err)
-            setClaseHoyCargada(true)
+            setAgendaCargada(true)
           }
         )
       } catch (err) {
         console.error(err)
-        setClaseHoyCargada(true)
+        setAgendaCargada(true)
       }
     })()
     return () => {
@@ -385,7 +468,7 @@ export default function DashboardPage() {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Plan de clase del día */}
+          {/* Plan de clase — con selector de día */}
           <div className="lg:col-span-8 space-y-6">
             <Reveal delay={0.1}>
               <Card padding="lg">
@@ -396,67 +479,155 @@ export default function DashboardPage() {
                     <Badge variant="default">Sin plan</Badge>
                   )}
                 </div>
-                <h3 className="font-display text-headline-lg text-white mb-10 uppercase tracking-tighter">
-                  Clase del Día
-                </h3>
-                {!claseHoyCargada ? (
+                <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 mb-8">
+                  <h3 className="font-display text-headline-lg text-white uppercase tracking-tighter">
+                    Plan de clase
+                  </h3>
+                  {infoDiaActivo && (
+                    <span className="label-caps text-[11px] text-[var(--color-on-surface-variant)]/60 capitalize">
+                      {infoDiaActivo.esHoy
+                        ? `Hoy · ${infoDiaActivo.largo}`
+                        : infoDiaActivo.esPasado
+                          ? `Sesión pasada · ${infoDiaActivo.largo}`
+                          : infoDiaActivo.largo}
+                    </span>
+                  )}
+                </div>
+
+                {!agendaCargada ? (
                   <div className="flex justify-center py-8"><Spinner size="md" /></div>
-                ) : !claseHoy ? (
+                ) : diasConClase.length === 0 ? (
                   <p className="text-[var(--color-on-surface-variant)]/60">
-                    No tienes clase programada hoy.{' '}
+                    No tienes clases programadas.{' '}
                     <Link href="/dashboard/asistencia" className="text-[var(--color-primary-fixed)] hover:underline">
                       Inscríbete en una clase
                     </Link>{' '}
-                    para verla acá.
+                    para ver su plan acá.
                   </p>
                 ) : (
                   <>
-                    <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-8">
-                      <span className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight">
-                        {claseHoy.nombre_clase}
-                      </span>
-                      <span className="label-caps text-[var(--color-on-surface-variant)]/60 text-[11px]">
-                        {new Date(claseHoy.fecha_hora_inicio).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
-                        {' · '}{claseHoy.sede}
-                      </span>
+                    {/* Selector de día — cada día con clase: las ya dictadas
+                        (últimas 3 semanas) a la izquierda y las que vienen a la
+                        derecha. Sin esto el alumno solo veía el plan del día en
+                        curso, aunque su profesor ya hubiera publicado los
+                        siguientes y aunque quisiera releer el de ayer. */}
+                    <div
+                      ref={tabsRef}
+                      role="tablist"
+                      aria-label="Días con clase"
+                      className="-mx-2 mb-8 flex gap-2 overflow-x-auto px-2 pb-2"
+                    >
+                      {diasConClase.map((d) => {
+                        const activo = d.iso === diaActivo
+                        return (
+                          <button
+                            key={d.iso}
+                            type="button"
+                            role="tab"
+                            data-dia={d.iso}
+                            aria-selected={activo}
+                            onClick={() => { setDiaSel(d.iso); setClaseSelId(null) }}
+                            className={`shrink-0 rounded-2xl border px-4 py-3 text-center transition-colors duration-200 ${
+                              activo
+                                ? 'border-[var(--color-primary-fixed)] bg-[rgba(230,255,0,0.1)]'
+                                : d.esPasado
+                                  ? 'border-white/5 bg-transparent opacity-50 hover:opacity-100 hover:border-white/20'
+                                  : 'border-white/5 bg-white/[0.02] hover:border-white/20'
+                            }`}
+                          >
+                            <span className={`block label-caps text-[9px] capitalize ${activo ? 'text-[var(--color-primary-fixed)]' : 'text-[var(--color-on-surface-variant)]/50'}`}>
+                              {d.diaCorto}
+                            </span>
+                            <span className="mt-1 block font-display text-[15px] font-black text-white">{d.numero}</span>
+                            <span className="mt-0.5 block label-caps text-[8px] capitalize text-[var(--color-on-surface-variant)]/40">
+                              {d.esHoy ? 'Hoy' : d.mesCorto}
+                            </span>
+                          </button>
+                        )
+                      })}
                     </div>
-                    <div className="space-y-6">
-                      <p className="label-caps text-[var(--color-primary-fixed)] border-b border-[rgba(230,255,0,0.2)] pb-2 inline-block">
-                        Protocolo de sesión
-                      </p>
-                      {claseHoy.plan && claseHoy.plan.length > 0 ? (
-                        <ul className="space-y-4">
-                          {claseHoy.plan.map((item, i) => (
-                            <li key={i} className="flex items-baseline gap-4 group">
-                              <span className="text-[12px] font-black text-[rgba(230,255,0,0.5)] group-hover:text-[var(--color-primary-fixed)] transition-colors">
-                                0{i + 1}
-                              </span>
-                              <span className="text-[var(--color-on-surface)]/70 group-hover:text-white transition-colors">
-                                {item}
-                              </span>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="text-sm text-[var(--color-on-surface-variant)]/50">
-                          Tu profesor todavía no subió el plan de esta sesión.
-                        </p>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-2 gap-8 mt-12 pt-8 border-t border-white/5">
-                      <div>
-                        <span className="block label-caps text-[var(--color-on-surface-variant)]/50 mb-2">Cupo</span>
-                        <span className="block font-display text-headline-md font-extrabold text-[var(--color-primary-fixed)] uppercase tracking-tighter">
-                          {claseHoy.estudiantes_inscritos?.length ?? 0}<span className="text-sm opacity-50">/{claseHoy.cupo_maximo}</span>
-                        </span>
+
+                    {/* Un mismo día puede tener más de una clase (ej. natación
+                        + funcional) — se elige cuál se está mirando. */}
+                    {clasesDelDia.length > 1 && (
+                      <div className="mb-6 flex flex-wrap gap-2">
+                        {clasesDelDia.map((c) => {
+                          const activa = c.id === claseSel?.id
+                          return (
+                            <button
+                              key={c.id}
+                              type="button"
+                              onClick={() => setClaseSelId(c.id)}
+                              className={`rounded-full border px-3 py-1.5 label-caps text-[9px] transition-colors duration-200 ${
+                                activa
+                                  ? 'border-[var(--color-primary-fixed)] text-[var(--color-primary-fixed)]'
+                                  : 'border-white/10 text-[var(--color-on-surface-variant)]/50 hover:border-white/25'
+                              }`}
+                            >
+                              {new Date(c.fecha_hora_inicio).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
+                              {' · '}{c.nombre_clase}
+                            </button>
+                          )
+                        })}
                       </div>
-                      <div>
-                        <span className="block label-caps text-[var(--color-on-surface-variant)]/50 mb-2">Estado</span>
-                        <span className="block font-display text-headline-md font-extrabold text-[var(--color-primary-fixed)] uppercase tracking-tighter">
-                          {claseHoy.estado === 'en_curso' ? 'En curso' : 'Programada'}
-                        </span>
-                      </div>
-                    </div>
+                    )}
+
+                    {claseSel && (
+                      <>
+                        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 mb-8">
+                          <span className="font-display text-headline-md font-extrabold text-white uppercase tracking-tight">
+                            {claseSel.nombre_clase}
+                          </span>
+                          <span className="label-caps text-[var(--color-on-surface-variant)]/60 text-[11px]">
+                            {new Date(claseSel.fecha_hora_inicio).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })}
+                            {' · '}{claseSel.direccion || claseSel.sede}
+                          </span>
+                        </div>
+                        <div className="space-y-6">
+                          <p className="label-caps text-[var(--color-primary-fixed)] border-b border-[rgba(230,255,0,0.2)] pb-2 inline-block">
+                            Protocolo de sesión
+                          </p>
+                          {claseSel.plan && claseSel.plan.length > 0 ? (
+                            <ul className="space-y-4">
+                              {claseSel.plan.map((item, i) => (
+                                <li key={i} className="flex items-baseline gap-4 group">
+                                  <span className="text-[12px] font-black text-[rgba(230,255,0,0.5)] group-hover:text-[var(--color-primary-fixed)] transition-colors">
+                                    {String(i + 1).padStart(2, '0')}
+                                  </span>
+                                  <span className="text-[var(--color-on-surface)]/70 group-hover:text-white transition-colors">
+                                    {item}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="text-sm text-[var(--color-on-surface-variant)]/50">
+                              {infoDiaActivo?.esPasado
+                                ? 'Tu profesor no subió el plan de esta sesión.'
+                                : 'Tu profesor todavía no subió el plan de esta sesión.'}
+                            </p>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-8 mt-12 pt-8 border-t border-white/5">
+                          <div>
+                            <span className="block label-caps text-[var(--color-on-surface-variant)]/50 mb-2">Cupo</span>
+                            <span className="block font-display text-headline-md font-extrabold text-[var(--color-primary-fixed)] uppercase tracking-tighter">
+                              {claseSel.estudiantes_inscritos?.length ?? 0}<span className="text-sm opacity-50">/{claseSel.cupo_maximo}</span>
+                            </span>
+                          </div>
+                          <div>
+                            <span className="block label-caps text-[var(--color-on-surface-variant)]/50 mb-2">Estado</span>
+                            <span className="block font-display text-headline-md font-extrabold text-[var(--color-primary-fixed)] uppercase tracking-tighter">
+                              {claseSel.estado === 'en_curso'
+                                ? 'En curso'
+                                : claseSel.estado === 'finalizada'
+                                  ? 'Finalizada'
+                                  : 'Programada'}
+                            </span>
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </>
                 )}
               </Card>

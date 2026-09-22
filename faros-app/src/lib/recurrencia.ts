@@ -42,6 +42,20 @@ export function horaColombia(ts: number): string {
   return `${hh}:${mm}`
 }
 
+/** Fecha calendario (yyyy-MM-dd) del día colombiano al que pertenece `ts`. */
+export function fechaIsoColombia(ts: number): string {
+  const d = toColombiaDate(ts)
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(d.getUTCDate()).padStart(2, '0')
+  return `${d.getUTCFullYear()}-${mm}-${dd}`
+}
+
+/** Timestamp UTC del inicio (00:00 Colombia) del día al que pertenece `ts`. */
+export function inicioDiaColombia(ts: number): number {
+  const d = toColombiaDate(ts)
+  return fromColombiaComponents(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0)
+}
+
 /** Extrae el día de la semana (0=Dom...6=Sáb) en Colombia a partir de un timestamp. */
 export function dowColombia(ts: number): number {
   return toColombiaDate(ts).getUTCDay()

@@ -167,7 +167,7 @@ function generarCodigoGrupo(): string {
 export async function aprobarTransaccion(
   transaccionId: string,
   adminUid: string,
-  opts?: { montoOverride?: number },
+  opts?: { montoOverride?: number; diasOverride?: number },
 ): Promise<void> {
   const [{ db }, { doc, collection, runTransaction }] = await Promise.all([
     getFirebase(), import('firebase/firestore'),
@@ -202,7 +202,7 @@ export async function aprobarTransaccion(
     }
 
     const sesiones = plantilla?.sesiones_incluidas ?? sesionesDelPlan(sel)
-    const dias = plantilla?.duracion_dias ?? duracionDiasDelPlan(sel)
+    const dias = opts?.diasOverride ?? plantilla?.duracion_dias ?? duracionDiasDelPlan(sel)
     const fechaVencimiento = now + dias * 86_400_000
     const monto = Number.isFinite(opts?.montoOverride) ? (opts!.montoOverride as number) : t.monto
     const resumen = resumenPlan(sel)
@@ -958,6 +958,37 @@ export async function upsertGrupo(id: string, data: Omit<Grupo, 'id' | 'creadoEn
     ...(existente.exists() ? {} : { creadoEn: now }),
   })
   await setDoc(ref, payload, { merge: true })
+}
+
+/**
+ * Al (re)asignar el coach de un grupo, las clases YA generadas para ese
+ * grupo (ver /api/seed-clases, que las crea con nombre_clase == grupo.nombre)
+ * quedan con el instructor_id viejo — nada las vuelve a tocar solo por
+ * editar grupos/{id}.coach. Esto empuja el nuevo instructor a las clases
+ * futuras (estado 'programada') de ese grupo. Devuelve cuántas se tocaron,
+ * para que el admin sepa si de verdad había algo que sincronizar.
+ */
+export async function sincronizarInstructorGrupo(
+  nombreGrupo: string, instructorId: string, nombreInstructor: string,
+): Promise<number> {
+  const [{ db }, { collection, query, where, getDocs, writeBatch }] = await Promise.all([
+    getFirebase(), import('firebase/firestore'),
+  ])
+  const q = query(
+    collection(db, 'clases'),
+    where('nombre_clase', '==', nombreGrupo),
+    where('estado', '==', 'programada'),
+  )
+  const snap = await getDocs(q)
+  const porTocar = snap.docs.filter((d) => d.data().instructor_id !== instructorId)
+  if (porTocar.length === 0) return 0
+  const batch = writeBatch(db)
+  const now = Date.now()
+  for (const d of porTocar) {
+    batch.update(d.ref, { instructor_id: instructorId, nombre_instructor: nombreInstructor, actualizadoEn: now })
+  }
+  await batch.commit()
+  return porTocar.length
 }
 
 export async function eliminarGrupo(id: string): Promise<void> {

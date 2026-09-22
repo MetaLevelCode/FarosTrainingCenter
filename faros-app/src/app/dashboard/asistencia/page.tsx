@@ -8,7 +8,7 @@
 //  3. Historial           → asistencias registradas por el profesor
 // ============================================================
 
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { motion } from 'motion/react'
 import { useRoleGuard } from '@/hooks/useRoleGuard'
 import { useAuth } from '@/contexts/AuthContext'
@@ -39,6 +39,10 @@ type HistorialItem = {
   clase: string
   tipo: string
   asistio: boolean
+  // Plan que el profesor publicó para esa sesión. Se trae junto con el
+  // nombre de la clase (mismo getDoc, sin lecturas extra) para que el
+  // alumno pueda releer lo que entrenó y repetirlo por su cuenta.
+  plan: string[]
 }
 
 async function getIdToken(): Promise<string | null> {
@@ -80,6 +84,65 @@ async function postConToken(url: string, mensajeGenerico: string): Promise<any> 
   return data
 }
 
+/**
+ * Plan de clase de una sesión futura, plegable dentro de su tarjeta.
+ * Lo publica el profesor desde su portal (campo `plan` del doc de clase);
+ * si aún no lo subió se dice explícitamente, para que el alumno no crea
+ * que la app se lo está escondiendo.
+ */
+function PlanDeClase({
+  clase, abierto, onToggle,
+}: {
+  clase: Clase
+  abierto: boolean
+  onToggle: () => void
+}) {
+  const pasos = clase.plan ?? []
+
+  if (pasos.length === 0) {
+    return (
+      <div className="mb-4 rounded-2xl border border-white/5 bg-white/[0.02] px-4 py-3">
+        <p className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/40">
+          Tu profesor todavía no subió el plan
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="mb-4 rounded-2xl border border-[rgba(230,255,0,0.15)] bg-[rgba(230,255,0,0.03)]">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={abierto}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+      >
+        <span className="label-caps text-[9px] text-[var(--color-primary-fixed)]">
+          Plan de clase · {pasos.length} {pasos.length === 1 ? 'paso' : 'pasos'}
+        </span>
+        <span
+          className={`material-symbols-outlined text-[18px] text-[var(--color-on-surface-variant)]/50 transition-transform duration-200 ${abierto ? 'rotate-180' : ''}`}
+          aria-hidden="true"
+        >
+          expand_more
+        </span>
+      </button>
+      {abierto && (
+        <ol className="space-y-3 border-t border-[rgba(230,255,0,0.12)] px-4 py-4">
+          {pasos.map((paso, i) => (
+            <li key={i} className="flex items-baseline gap-3">
+              <span className="shrink-0 text-[11px] font-black text-[rgba(230,255,0,0.5)]">
+                {String(i + 1).padStart(2, '0')}
+              </span>
+              <span className="text-sm text-[var(--color-on-surface)]/70">{paso}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  )
+}
+
 export default function AsistenciaPage() {
   const { authorized, loading, user } = useRoleGuard(['estudiante'])
   const { refreshUser } = useAuth()
@@ -91,6 +154,11 @@ export default function AsistenciaPage() {
   const [cancelando, setCancelando] = useState<string | null>(null)
   const [errorAccion, setErrorAccion] = useState<string | null>(null)
   const [categoriaAbierta, setCategoriaAbierta] = useState<string | null>(null)
+  // Plan de clase desplegado por tarjeta (clases por venir) y por fila del
+  // historial (clases ya dictadas). El plan que el profesor publica desde su
+  // portal solo se veía en el dashboard y solo para la clase de HOY, así que
+  // ni el de una clase futura ya publicada ni el de una pasada eran visibles.
+  const [planAbierto, setPlanAbierto] = useState<Record<string, boolean>>({})
 
   // El alumno puede tener varios planes activos a la vez (ej. natación
   // personalizada + actividad física) — se listan todos en vez de "el
@@ -137,9 +205,13 @@ export default function AsistenciaPage() {
               for (const d of asistSnap.docs) {
                 const a = d.data()
                 let nombreClase = 'Clase'
+                let plan: string[] = []
                 try {
                   const claseDoc = await getDoc(doc(db, 'clases', a.claseId))
-                  if (claseDoc.exists()) nombreClase = claseDoc.data()?.nombre_clase ?? 'Clase'
+                  if (claseDoc.exists()) {
+                    nombreClase = claseDoc.data()?.nombre_clase ?? 'Clase'
+                    plan = claseDoc.data()?.plan ?? []
+                  }
                 } catch { }
                 items.push({
                   id: d.id,
@@ -147,6 +219,7 @@ export default function AsistenciaPage() {
                   clase: nombreClase,
                   tipo: 'Grupal',
                   asistio: a.asistio,
+                  plan,
                 })
               }
               if (!cancelado) setHistorial(items)
@@ -291,7 +364,9 @@ export default function AsistenciaPage() {
     [clasesInscritas, proximaInscrita],
   )
 
-  function renderClaseInscrita(c: Clase) {
+  // `destacada` = la próxima clase: su plan arranca desplegado, que es lo
+  // que el alumno viene a leer; el resto se abre a demanda.
+  function renderClaseInscrita(c: Clase, destacada = false) {
     const inicio = new Date(c.fecha_hora_inicio)
     const dia = inicio.toLocaleDateString('es-CO', { weekday: 'long', day: '2-digit', month: 'short' })
     const hora = inicio.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
@@ -322,6 +397,11 @@ export default function AsistenciaPage() {
             {c.estudiantes_inscritos?.length ?? 0} / {c.cupo_maximo}
           </span>
         </div>
+        <PlanDeClase
+          clase={c}
+          abierto={planAbierto[c.id] ?? destacada}
+          onToggle={() => setPlanAbierto((p) => ({ ...p, [c.id]: !(p[c.id] ?? destacada) }))}
+        />
         <Button
           variant={puedeCancelar ? 'outline' : 'ghost'}
           size="sm"
@@ -443,7 +523,7 @@ export default function AsistenciaPage() {
                       Próxima clase
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                      {renderClaseInscrita(proximaInscrita)}
+                      {renderClaseInscrita(proximaInscrita, true)}
                     </div>
                   </div>
                 )}
@@ -592,18 +672,64 @@ export default function AsistenciaPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                    {historial.map((h) => (
-                      <tr key={h.id} className="hover:bg-white/[0.03] transition-colors duration-200">
-                        <td className="px-6 py-5 font-display font-black text-white text-sm whitespace-nowrap">{h.fecha}</td>
-                        <td className="px-6 py-5 text-sm text-[var(--color-on-surface)]">{h.clase}</td>
-                        <td className="px-6 py-5"><Badge variant="default">{h.tipo}</Badge></td>
-                        <td className="px-6 py-5">
-                          {h.asistio
-                            ? <Badge variant="success">Asistió</Badge>
-                            : <Badge variant="danger">Faltó</Badge>}
-                        </td>
-                      </tr>
-                    ))}
+                    {historial.map((h) => {
+                      const abierto = !!planAbierto[h.id]
+                      return (
+                        <Fragment key={h.id}>
+                          <tr className="hover:bg-white/[0.03] transition-colors duration-200">
+                            <td className="px-6 py-5 font-display font-black text-white text-sm whitespace-nowrap">{h.fecha}</td>
+                            <td className="px-6 py-5 text-sm text-[var(--color-on-surface)]">
+                              {/* El plan de una sesión ya dictada se puede releer
+                                  acá mismo; si el profesor no lo subió, no hay
+                                  nada que desplegar y no se ofrece el control. */}
+                              {h.plan.length > 0 ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setPlanAbierto((prev) => ({ ...prev, [h.id]: !prev[h.id] }))}
+                                  aria-expanded={abierto}
+                                  className="flex items-center gap-2 text-left hover:text-[var(--color-primary-fixed)] transition-colors duration-200"
+                                >
+                                  {h.clase}
+                                  <span
+                                    className={`material-symbols-outlined text-[16px] text-[var(--color-primary-fixed)]/70 transition-transform duration-200 ${abierto ? 'rotate-180' : ''}`}
+                                    aria-hidden="true"
+                                  >
+                                    expand_more
+                                  </span>
+                                </button>
+                              ) : (
+                                h.clase
+                              )}
+                            </td>
+                            <td className="px-6 py-5"><Badge variant="default">{h.tipo}</Badge></td>
+                            <td className="px-6 py-5">
+                              {h.asistio
+                                ? <Badge variant="success">Asistió</Badge>
+                                : <Badge variant="danger">Faltó</Badge>}
+                            </td>
+                          </tr>
+                          {abierto && h.plan.length > 0 && (
+                            <tr className="bg-[rgba(230,255,0,0.03)]">
+                              <td colSpan={4} className="px-6 py-5">
+                                <p className="label-caps text-[9px] text-[var(--color-primary-fixed)] mb-4">
+                                  Plan de clase · {h.plan.length} {h.plan.length === 1 ? 'paso' : 'pasos'}
+                                </p>
+                                <ol className="space-y-3">
+                                  {h.plan.map((paso, i) => (
+                                    <li key={i} className="flex items-baseline gap-3">
+                                      <span className="shrink-0 text-[11px] font-black text-[rgba(230,255,0,0.5)]">
+                                        {String(i + 1).padStart(2, '0')}
+                                      </span>
+                                      <span className="text-sm text-[var(--color-on-surface)]/70">{paso}</span>
+                                    </li>
+                                  ))}
+                                </ol>
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

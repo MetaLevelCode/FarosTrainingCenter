@@ -21,12 +21,13 @@ import { RutinaVirtualCard } from '@/components/shared/RutinaVirtualCard'
 import { fmtCOP, COMBINACIONES, PERSONALES, claveTarifaPersonal, TARIFAS_FALLBACK } from '@/lib/planes'
 import {
   getSedes, upsertSede, eliminarSede,
-  getGrupos, upsertGrupo, eliminarGrupo,
+  getGrupos, upsertGrupo, eliminarGrupo, sincronizarInstructorGrupo,
   getTarifas, actualizarTarifas,
   getPlanes, crearPlan, actualizarPlan, archivarPlan,
   getTodasRutinasVirtuales,
+  getUsuarios,
 } from '@/lib/firestore'
-import type { Sede, Grupo, Tarifas, Plan, RutinaVirtual } from '@/lib/types'
+import type { Sede, Grupo, Tarifas, Plan, RutinaVirtual, Usuario } from '@/lib/types'
 import { useAuth } from '@/contexts/AuthContext'
 
 const EASE = [0.22, 1, 0.36, 1] as const
@@ -428,20 +429,24 @@ function SedeFormBody({ value, onChange }: { value: Partial<Sede>; onChange: (v:
 function GruposTab() {
   const [grupos, setGrupos] = useState<Grupo[]>([])
   const [sedes, setSedes] = useState<Sede[]>([])
+  const [profesores, setProfesores] = useState<Usuario[]>([])
   const [cargando, setCargando] = useState(true)
   const [borrador, setBorrador] = useState<Partial<Grupo> | null>(null)
   const [procesando, setProcesando] = useState<string | null>(null)
   const [errorPersistente, setErrorPersistente] = useState<string | null>(null)
+  const [aviso, setAviso] = useState<string | null>(null)
+  const [generandoId, setGenerandoId] = useState<string | null>(null)
 
   useEffect(() => {
-    Promise.all([getGrupos(), getSedes(false)])
-      .then(([g, s]) => { setGrupos(g); setSedes(s) })
+    Promise.all([getGrupos(), getSedes(false), getUsuarios('profesor')])
+      .then(([g, s, p]) => { setGrupos(g); setSedes(s); setProfesores(p) })
       .catch((e) => setErrorPersistente(`Lectura falló: ${errStr(e)}`))
       .finally(() => setCargando(false))
   }, [])
 
   async function guardar(g: Partial<Grupo>) {
     setErrorPersistente(null)
+    setAviso(null)
     const nombre = (g.nombre ?? '').trim()
     const sedeCodigo = (g.sedeCodigo ?? '').trim().toUpperCase()
     if (!nombre || !sedeCodigo) { setErrorPersistente('Nombre y sede son obligatorios.'); return }
@@ -451,6 +456,8 @@ function GruposTab() {
       return
     }
     const id = g.id ?? nombre.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')
+    const coachElegido = g.coachId ? profesores.find((p) => p.uid === g.coachId) : undefined
+    const coachNombre = coachElegido ? `${coachElegido.nombres} ${coachElegido.apellidos}`.trim() : undefined
     setProcesando(id)
     try {
       console.log('[GRUPO_SAVE] escribiendo', id, g)
@@ -459,19 +466,55 @@ function GruposTab() {
         sedeCodigo,
         horarios: (g.horarios ?? []).filter((h) => h.trim().length > 0),
         nivel: g.nivel ?? 'Todos los niveles',
-        coach: g.coach?.trim() || undefined,
+        coach: coachNombre,
+        coachId: g.coachId || undefined,
         cupoMaximo: Number.isFinite(g.cupoMaximo) ? (g.cupoMaximo as number) : 12,
         disponible: g.disponible ?? true,
         categoria,
         combinacionId: categoria === 'conjunto' ? g.combinacionId : undefined,
       })
       console.log('[GRUPO_SAVE] escritura OK')
+      // El coach del grupo es solo texto/uid en `grupos/{id}` — no mueve por
+      // sí solo las clases ya generadas (ver /api/seed-clases). Sin esto,
+      // reasignar el coach acá no cambia nada en el calendario del profesor.
+      if (coachElegido && coachNombre) {
+        const actualizadas = await sincronizarInstructorGrupo(nombre, coachElegido.uid, coachNombre)
+        if (actualizadas > 0) {
+          setAviso(`Coach asignado. Se actualizaron ${actualizadas} clase(s) programada(s) de "${nombre}" con ${coachNombre} como instructor.`)
+        }
+      }
       setGrupos(await getGrupos())
       setBorrador(null)
     } catch (e: any) {
       console.error('[GRUPO_SAVE] falló', e)
       setErrorPersistente(`Guardar falló: ${errStr(e)}`)
     } finally { setProcesando(null) }
+  }
+
+  async function generarClases(g: Grupo) {
+    if (!g.coachId) return
+    setErrorPersistente(null)
+    setAviso(null)
+    setGenerandoId(g.id)
+    try {
+      const { getAuth } = await import('firebase/auth')
+      const token = await getAuth().currentUser?.getIdToken()
+      if (!token) throw new Error('Debes iniciar sesión')
+      const res = await fetch('/api/seed-clases', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ grupoId: g.id }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`)
+      setAviso(
+        data.creadas > 0
+          ? `Se generaron ${data.creadas} clase(s) nueva(s) para "${g.nombre}" con ${g.coach ?? 'el coach asignado'} como instructor.`
+          : `"${g.nombre}" ya tenía sus próximas clases generadas — no había nada nuevo que crear.`,
+      )
+    } catch (e: any) {
+      setErrorPersistente(`Generar clases falló: ${errStr(e)}`)
+    } finally { setGenerandoId(null) }
   }
 
   async function borrar(g: Grupo) {
@@ -489,6 +532,17 @@ function GruposTab() {
   return (
     <div className="space-y-6">
       <BannerError error={errorPersistente} onDismiss={() => setErrorPersistente(null)} />
+      {aviso && (
+        <div
+          role="status"
+          className="rounded-xl border p-4 flex items-start gap-3"
+          style={{ borderColor: 'rgba(230,255,0,0.35)', background: 'rgba(230,255,0,0.06)' }}
+        >
+          <span className="material-symbols-outlined text-[20px] shrink-0 text-[var(--color-primary-fixed)]">check_circle</span>
+          <p className="flex-1 text-sm text-white/90">{aviso}</p>
+          <button onClick={() => setAviso(null)} className="text-white/60 hover:text-white text-lg leading-none">×</button>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <p className="text-sm text-white/60">
           Grupos grupales con horario fijo. Cada uno vive en una sede.
@@ -505,7 +559,7 @@ function GruposTab() {
       {borrador && (
         <Card>
           <p className="label-caps text-[10px] text-[var(--color-primary-fixed)] mb-4">Nuevo grupo</p>
-          <GrupoFormBody value={borrador} sedes={sedes} onChange={setBorrador} />
+          <GrupoFormBody value={borrador} sedes={sedes} profesores={profesores} onChange={setBorrador} />
           <div className="flex gap-3 mt-5">
             <Button size="sm" onClick={() => guardar(borrador)} loading={procesando === (borrador.id ?? 'new')}>
               Crear
@@ -520,7 +574,11 @@ function GruposTab() {
       ) : (
         <div className="space-y-3">
           {grupos.map((g) => (
-            <GrupoRow key={g.id} grupo={g} sedes={sedes} onGuardar={guardar} onBorrar={borrar} procesando={procesando === g.id} />
+            <GrupoRow
+              key={g.id} grupo={g} sedes={sedes} profesores={profesores}
+              onGuardar={guardar} onBorrar={borrar} onGenerarClases={generarClases}
+              procesando={procesando === g.id} generando={generandoId === g.id}
+            />
           ))}
           {grupos.length === 0 && !borrador && (
             <Card><p className="text-center text-sm text-white/50 py-8">No hay grupos.</p></Card>
@@ -531,12 +589,15 @@ function GruposTab() {
   )
 }
 
-function GrupoRow({ grupo, sedes, onGuardar, onBorrar, procesando }: {
+function GrupoRow({ grupo, sedes, profesores, onGuardar, onBorrar, onGenerarClases, procesando, generando }: {
   grupo: Grupo
   sedes: Sede[]
+  profesores: Usuario[]
   onGuardar: (g: Partial<Grupo>) => Promise<void>
   onBorrar: (g: Grupo) => Promise<void>
+  onGenerarClases: (g: Grupo) => Promise<void>
   procesando: boolean
+  generando: boolean
 }) {
   const [editando, setEditando] = useState(false)
   const [draft, setDraft] = useState<Grupo>(grupo)
@@ -558,6 +619,7 @@ function GrupoRow({ grupo, sedes, onGuardar, onBorrar, procesando }: {
                 </Badge>
               )}
               {!grupo.disponible && <Badge variant="danger">No disponible</Badge>}
+              {grupo.coach && !grupo.coachId && <Badge variant="danger">Coach sin vincular</Badge>}
             </div>
             <p className="text-xs text-white/60 mt-1">
               {grupo.nivel} · Cupo {grupo.cupoMaximo}{grupo.coach ? ` · ${grupo.coach}` : ''}
@@ -571,6 +633,15 @@ function GrupoRow({ grupo, sedes, onGuardar, onBorrar, procesando }: {
             </div>
           </div>
           <div className="flex gap-2">
+            {grupo.coachId && (
+              <Button
+                size="sm" variant="ghost" loading={generando}
+                onClick={() => onGenerarClases(grupo)}
+                title="Genera las próximas 4 semanas de clases de este grupo con el coach asignado"
+              >
+                Generar clases
+              </Button>
+            )}
             <Button size="sm" variant="ghost" onClick={() => { setDraft(grupo); setEditando(true) }}>Editar</Button>
             <Button size="sm" variant="danger" onClick={() => onBorrar(grupo)} loading={procesando}>Eliminar</Button>
           </div>
@@ -581,7 +652,7 @@ function GrupoRow({ grupo, sedes, onGuardar, onBorrar, procesando }: {
 
   return (
     <Card>
-      <GrupoFormBody value={draft} sedes={sedes} onChange={(d) => setDraft(d as Grupo)} />
+      <GrupoFormBody value={draft} sedes={sedes} profesores={profesores} onChange={(d) => setDraft(d as Grupo)} />
       <div className="flex gap-3 mt-5">
         <Button
           size="sm"
@@ -601,8 +672,8 @@ function GrupoRow({ grupo, sedes, onGuardar, onBorrar, procesando }: {
   )
 }
 
-function GrupoFormBody({ value, sedes, onChange }: {
-  value: Partial<Grupo>; sedes: Sede[]; onChange: (v: Partial<Grupo>) => void
+function GrupoFormBody({ value, sedes, profesores, onChange }: {
+  value: Partial<Grupo>; sedes: Sede[]; profesores: Usuario[]; onChange: (v: Partial<Grupo>) => void
 }) {
   const horarios = value.horarios ?? ['']
   return (
@@ -662,12 +733,19 @@ function GrupoFormBody({ value, sedes, onChange }: {
           placeholder="Principiantes / Intermedio / Todos"
         />
       </Field>
-      <Field label="Coach">
-        <InputText
-          value={value.coach ?? ''}
-          onChange={(e) => onChange({ ...value, coach: e.target.value })}
-          placeholder="Coach Ana Torres"
-        />
+      <Field label="Coach" hint={value.coach && !value.coachId ? `Actualmente: "${value.coach}" (texto suelto, sin vincular)` : undefined}>
+        <select
+          value={value.coachId ?? ''}
+          onChange={(e) => onChange({ ...value, coachId: e.target.value || undefined })}
+          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:border-[rgba(230,255,0,0.5)] focus:outline-none"
+        >
+          <option value="" className="bg-[#0a0a0a]">Sin coach asignado</option>
+          {profesores.map((p) => (
+            <option key={p.uid} value={p.uid} className="bg-[#0a0a0a]">
+              {p.nombres} {p.apellidos}
+            </option>
+          ))}
+        </select>
       </Field>
       <Field label="Cupo máximo">
         <InputText

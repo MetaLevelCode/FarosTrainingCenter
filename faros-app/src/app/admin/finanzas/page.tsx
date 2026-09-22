@@ -60,6 +60,7 @@ export default function FinanzasPage() {
   // Override opcional del monto por tx (descuento acordado entre admin y alumno).
   // Si queda vacío, se cobra el precio congelado en la transacción.
   const [montoOverride, setMontoOverride] = useState<Record<string, string>>({})
+  const [diasOverride, setDiasOverride] = useState<Record<string, string>>({})
   const [comprobanteModal, setComprobanteModal] = useState<string | null>(null)
   const [comprobanteProxyUrl, setComprobanteProxyUrl] = useState<string | null>(null)
   const [imgError, setImgError] = useState(false)
@@ -185,15 +186,28 @@ export default function FinanzasPage() {
       return
     }
 
+    const overrideDiasStr = diasOverride[t.id]?.trim() ?? ''
+    let diasFinal: number | undefined = undefined
+    if (overrideDiasStr !== '') {
+      const parsedDias = parseInt(overrideDiasStr, 10)
+      if (isNaN(parsedDias) || parsedDias <= 0) {
+        alert('La duración en días debe ser un número mayor a 0.')
+        return
+      }
+      diasFinal = parsedDias
+    }
+
     const alumno = t.nombre_usuario ?? t.usuarioId
     const plan = t.nombre_plan ?? 'Plan solicitado'
-    const msg = `Aprobar el pago de ${alumno}:\n\n  Plan: ${plan}\n  Cobrar: ${fmtCOP(montoFinal)}\n\n¿Continuar?`
+    const msg = `Aprobar el pago de ${alumno}:\n\n  Plan: ${plan}\n  Cobrar: ${fmtCOP(montoFinal)}${diasFinal ? `\n  Duración: ${diasFinal} días` : ''}\n\n¿Continuar?`
     if (!window.confirm(msg)) return
 
     setProcesando(t.id)
     try {
-      await aprobarTransaccion(t.id, user.uid,
-        overrideStr !== '' ? { montoOverride: montoFinal } : undefined)
+      const opts: { montoOverride?: number; diasOverride?: number } = {}
+      if (overrideStr !== '') opts.montoOverride = montoFinal
+      if (diasFinal !== undefined) opts.diasOverride = diasFinal
+      await aprobarTransaccion(t.id, user.uid, Object.keys(opts).length > 0 ? opts : undefined)
       setTransacciones((prev) => prev.map((x) => x.id === t.id
         ? { ...x, estado: 'aprobada', monto: montoFinal } : x))
       getMovimientosDesde(0).then(setMovimientos).catch(console.error)
@@ -624,22 +638,39 @@ export default function FinanzasPage() {
                       </p>
                     </div>
 
-                    {/* Ajuste opcional del monto (descuento acordado o
-                        "tarifa por confirmar"). Vacío → cobra el precio congelado. */}
-                    <div>
-                      <label className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50 block mb-1.5">
-                        {t.monto > 0
-                          ? `Ajustar monto (opcional) · precio del alumno: ${fmtCOP(t.monto)}`
-                          : 'Definir monto (obligatorio · el alumno pidió tarifa por confirmar)'}
-                      </label>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        value={montoOverride[t.id] ?? ''}
-                        onChange={(e) => setMontoOverride((prev) => ({ ...prev, [t.id]: e.target.value }))}
-                        placeholder={t.monto > 0 ? `Dejar vacío para cobrar ${fmtCOP(t.monto)}` : 'Ej: 120000'}
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-white/20 focus:border-[rgba(230,255,0,0.5)] focus:outline-none"
-                      />
+                    <div className="space-y-3">
+                      {/* Ajuste opcional del monto (descuento acordado o
+                          "tarifa por confirmar"). Vacío → cobra el precio congelado. */}
+                      <div>
+                        <label className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50 block mb-1.5">
+                          {t.monto > 0
+                            ? `Ajustar monto (opcional) · precio del alumno: ${fmtCOP(t.monto)}`
+                            : 'Definir monto (obligatorio · el alumno pidió tarifa por confirmar)'}
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={montoOverride[t.id] ?? ''}
+                          onChange={(e) => setMontoOverride((prev) => ({ ...prev, [t.id]: e.target.value }))}
+                          placeholder={t.monto > 0 ? `Dejar vacío para cobrar ${fmtCOP(t.monto)}` : 'Ej: 120000'}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-white/20 focus:border-[rgba(230,255,0,0.5)] focus:outline-none"
+                        />
+                      </div>
+                      
+                      {/* Ajuste opcional de duración */}
+                      <div>
+                        <label className="label-caps text-[9px] text-[var(--color-on-surface-variant)]/50 block mb-1.5">
+                          Ajustar duración en días (opcional · estándar: 30 días)
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={diasOverride[t.id] ?? ''}
+                          onChange={(e) => setDiasOverride((prev) => ({ ...prev, [t.id]: e.target.value }))}
+                          placeholder="Ej: 15 (dejar vacío para duración estándar)"
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white placeholder:text-white/20 focus:border-[rgba(230,255,0,0.5)] focus:outline-none"
+                        />
+                      </div>
                     </div>
 
                     {mostrarRechazo === t.id ? (

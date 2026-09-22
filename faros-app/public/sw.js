@@ -15,7 +15,7 @@
 // caracteres, mismo tamaño de archivo) daba un ETag idéntico: el
 // servidor respondía 304 y el navegador nunca veía el worker nuevo.
 // ============================================================
-const VERSION = 'faros-v13'
+const VERSION = 'faros-v15'
 const PRECACHE = `${VERSION}-precache`
 const RUNTIME = `${VERSION}-runtime`
 const MEDIA = `${VERSION}-media`

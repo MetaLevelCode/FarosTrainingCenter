@@ -1,45 +1,50 @@
 // ============================================================
 // POST /api/seed-clases
-// Crea instancias reales de clases (próximas N semanas) a partir de
-// los horarios fijos de los grupos ya existentes. Uso puntual: poblar
-// el calendario del profesor con datos reales (no de prueba/mock).
-// Solo accesible por admins. Body: { instructorEmail: string, semanas?: number }
+// Crea instancias reales de clases (próximas N semanas) leyendo
+// directamente los grupos (Firestore: grupos/), su `coachId` y sus
+// `horarios` (["Lun · 6:00 PM", ...]) — ya no depende de una lista
+// hardcodeada de grupos ni de que el admin escriba a mano el correo
+// del instructor: cada grupo trae su propio coach.
+//
+// Body: { grupoId?: string, semanas?: number }
+//   - grupoId presente  → regenera solo ese grupo (aunque no tenga
+//     `disponible: true`, por si sigue con alumnos activos).
+//   - grupoId ausente   → recorre TODOS los grupos con coachId asignado.
+// Idempotente: no duplica una clase que ya exista para el mismo grupo
+// en el mismo fecha_hora_inicio — reasignar instructor a clases ya
+// creadas es responsabilidad de sincronizarInstructorGrupo() (lib/firestore.ts),
+// no de este endpoint.
+// Solo accesible por admins.
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getAdminAuth, getAdminDb } from '@/lib/admin'
 import { log } from '@/lib/logger'
 import { clientIp } from '@/lib/ratelimit'
+import { ocurrenciasSemanales, sumarMinutos } from '@/lib/recurrencia'
 
 export const runtime = 'nodejs'
 
-// dow según Date.getDay(): 0=domingo, 1=lunes … 6=sábado
-const GRUPOS_HORARIO = [
-  {
-    nombre_clase: 'Estrellas UTP', sede: 'UTP', catalogo_codigo: 'estrellas-utp', cupo_maximo: 12,
-    horarios: [{ dow: 1, hora: 18 }, { dow: 3, hora: 18 }, { dow: 6, hora: 10 }],
-  },
-  {
-    nombre_clase: 'Tiburones', sede: 'UTP', catalogo_codigo: 'knowill-vip', cupo_maximo: 10,
-    horarios: [{ dow: 2, hora: 18 }, { dow: 4, hora: 18 }, { dow: 6, hora: 14 }],
-  },
-  {
-    nombre_clase: 'Tulcán II', sede: 'TULCAN', catalogo_codigo: 'tulcan-ii', cupo_maximo: 12,
-    horarios: [{ dow: 3, hora: 18 }, { dow: 5, hora: 18 }],
-  },
-] as const
+const DURACION_GRUPAL_MIN = 60
 
-const HORA_MS = 60 * 60 * 1000
+const DIAS: Record<string, number> = { dom: 0, lun: 1, mar: 2, mie: 3, jue: 4, vie: 5, sab: 6 }
 
-/** Próxima fecha (Date) para un día de la semana + hora, N semanas adelante. */
-function proximaFecha(dow: number, hora: number, semanaOffset: number, ahora: Date): Date {
-  const d = new Date(ahora)
-  d.setHours(0, 0, 0, 0)
-  let diff = (dow - d.getDay() + 7) % 7
-  if (diff === 0 && ahora.getHours() >= hora) diff = 7
-  d.setDate(d.getDate() + diff + semanaOffset * 7)
-  d.setHours(hora, 0, 0, 0)
-  return d
+function normalizarDia(s: string): string {
+  return s.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').slice(0, 3)
+}
+
+/** "Lun · 6:00 PM" → { dow: 1, horaInicio: '18:00' }. null si no reconoce el formato. */
+function parseHorario(h: string): { dow: number; horaInicio: string } | null {
+  const partes = h.split('·').map((p) => p.trim())
+  if (partes.length !== 2) return null
+  const dow = DIAS[normalizarDia(partes[0])]
+  if (dow === undefined) return null
+  const m = partes[1].match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
+  if (!m) return null
+  let hora = Number(m[1]) % 12
+  if (/pm/i.test(m[3])) hora += 12
+  const minuto = Number(m[2])
+  return { dow, horaInicio: `${String(hora).padStart(2, '0')}:${String(minuto).padStart(2, '0')}` }
 }
 
 export async function POST(req: NextRequest) {
@@ -55,39 +60,67 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Solo admins' }, { status: 403 })
     }
 
-    const body = await req.json() as { instructorEmail?: string; semanas?: number }
-    const instructorEmail = body?.instructorEmail?.trim()
+    const body = await req.json().catch(() => ({})) as { grupoId?: string; semanas?: number }
     const semanas = Number.isFinite(body?.semanas) ? (body!.semanas as number) : 4
-    if (!instructorEmail) {
-      return NextResponse.json({ error: 'instructorEmail es obligatorio' }, { status: 400 })
+
+    const gruposSnap = body?.grupoId
+      ? await db.collection('grupos').doc(body.grupoId).get().then((d) => (d.exists ? [d] : []))
+      : await db.collection('grupos').get().then((s) => s.docs)
+
+    if (body?.grupoId && gruposSnap.length === 0) {
+      return NextResponse.json({ error: 'Grupo no encontrado' }, { status: 404 })
     }
 
-    const instructor = await getAdminAuth().getUserByEmail(instructorEmail)
-    const instructorSnap = await db.collection('usuarios').doc(instructor.uid).get()
-    const nombreInstructor = instructorSnap.exists
-      ? `${instructorSnap.data()?.nombres ?? ''} ${instructorSnap.data()?.apellidos ?? ''}`.trim()
-      : undefined
-
     const ahora = new Date()
+    const hastaTs = ahora.getTime() + semanas * 7 * 24 * 60 * 60 * 1000
     const batch = db.batch()
     let creadas = 0
+    const gruposSinCoach: string[] = []
+    const horariosInvalidos: string[] = []
 
-    for (const grupo of GRUPOS_HORARIO) {
-      for (const h of grupo.horarios) {
-        for (let semana = 0; semana < semanas; semana++) {
-          const inicio = proximaFecha(h.dow, h.hora, semana, ahora)
-          const fin = new Date(inicio.getTime() + HORA_MS)
+    for (const grupoDoc of gruposSnap) {
+      const grupo = grupoDoc.data() as {
+        nombre: string; sedeCodigo: string; horarios: string[]; coachId?: string; cupoMaximo?: number
+      }
+      if (!grupo.coachId) {
+        gruposSinCoach.push(grupo.nombre ?? grupoDoc.id)
+        continue
+      }
+
+      const instructorSnap = await db.collection('usuarios').doc(grupo.coachId).get()
+      if (!instructorSnap.exists) {
+        gruposSinCoach.push(grupo.nombre ?? grupoDoc.id)
+        continue
+      }
+      const nombreInstructor = `${instructorSnap.data()?.nombres ?? ''} ${instructorSnap.data()?.apellidos ?? ''}`.trim()
+
+      // Ocurrencias ya creadas para este grupo — evita duplicar si se corre
+      // el endpoint más de una vez (ej. el admin reasigna coach y regenera).
+      const existentesSnap = await db.collection('clases')
+        .where('nombre_clase', '==', grupo.nombre)
+        .where('estado', '==', 'programada')
+        .get()
+      const yaExisten = new Set(existentesSnap.docs.map((d) => d.data().fecha_hora_inicio))
+
+      for (const horarioStr of grupo.horarios ?? []) {
+        const parsed = parseHorario(horarioStr)
+        if (!parsed) { horariosInvalidos.push(`${grupo.nombre}: "${horarioStr}"`); continue }
+        const horaFin = sumarMinutos(parsed.horaInicio, DURACION_GRUPAL_MIN)
+        const ocurrencias = ocurrenciasSemanales(parsed.dow, parsed.horaInicio, horaFin, ahora, hastaTs)
+
+        for (const oc of ocurrencias) {
+          if (yaExisten.has(oc.inicio)) continue
           const ref = db.collection('clases').doc()
           batch.set(ref, {
             claseId: ref.id,
-            catalogo_codigo: grupo.catalogo_codigo,
-            nombre_clase: grupo.nombre_clase,
-            instructor_id: instructor.uid,
+            catalogo_codigo: grupoDoc.id,
+            nombre_clase: grupo.nombre,
+            instructor_id: grupo.coachId,
             nombre_instructor: nombreInstructor,
-            sede: grupo.sede,
-            fecha_hora_inicio: inicio.getTime(),
-            fecha_hora_fin: fin.getTime(),
-            cupo_maximo: grupo.cupo_maximo,
+            sede: grupo.sedeCodigo,
+            fecha_hora_inicio: oc.inicio,
+            fecha_hora_fin: oc.fin,
+            cupo_maximo: grupo.cupoMaximo ?? 12,
             estudiantes_inscritos: [],
             estado: 'programada',
             creadoEn: Date.now(),
@@ -98,10 +131,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    await batch.commit()
+    if (creadas > 0) await batch.commit()
 
-    log.info({ scope: 'seed-clases', event: 'ok', ip, uid: decoded.uid, instructorEmail, creadas })
-    return NextResponse.json({ ok: true, creadas })
+    log.info({ scope: 'seed-clases', event: 'ok', ip, uid: decoded.uid, grupoId: body?.grupoId, creadas, gruposSinCoach, horariosInvalidos })
+    return NextResponse.json({ ok: true, creadas, gruposSinCoach, horariosInvalidos })
   } catch (err: any) {
     if ((err?.code ?? '').startsWith('auth/')) {
       return NextResponse.json({ error: 'Token inválido' }, { status: 401 })
